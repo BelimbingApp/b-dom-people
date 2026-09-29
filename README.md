@@ -5,14 +5,16 @@ at `apps/domains/people`. The thirteen module packages reserve ownership
 boundaries. The reference module owns fresh People reference and calendar
 tables, a company-scoped operator route, and an API. The workforce module
 exposes a scoped native read seam and a per-company operator settings page.
-Other modules remain empty; there are no People menu entries or sample rows yet.
+The employee workspace owns People-specific profiles, portal eligibility,
+change requests, and saved views, with a workbench under the People menu.
+Other modules remain empty; no sample rows are installed.
 
 | Module ID | Future ownership |
 | --- | --- |
 | `people/settings` | Hidden People navigation anchor |
 | `people/reference_data` | Company-scoped People references and calendar exceptions |
 | `people/workforce` | Scoped native company and employee reads with per-company working statuses |
-| `people/employee_workspace` | People-specific employee work |
+| `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Positions and assignments |
 | `people/attendance` | Time and attendance |
 | `people/leave` | Leave policy and balances |
@@ -53,6 +55,12 @@ operator can open `/people/companies/:company_id/references` for an accessible
 company. This route creates reference entries, aliases, and calendar exceptions
 without seeding company-specific values. The menu leaf remains hidden because
 navigation has no selected company ID to build this explicit route.
+
+The People > Team > Employees menu opens `/people/employees` for the signed-in
+actor's validated company. Employee detail shows Core Employee facts read-only
+alongside People-owned work profile, portal eligibility, and profile change
+requests. Review decisions record history but do not modify Core Employee
+identity. Saved views belong to one login actor and company.
 
 ## License
 
