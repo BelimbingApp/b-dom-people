@@ -13,23 +13,33 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
   end
 
   @impl true
-  def handle_event("clock", %{"type" => type, "key" => key}, socket) do
+  def handle_event("clock", params, socket) do
     current = socket.assigns.current_scope
 
-    case Attendance.self_clock(current.scope, current.actor.company_id, current.actor, type, key) do
+    case Attendance.self_clock(
+           current.scope,
+           current.actor.company_id,
+           current.actor,
+           params["type"],
+           socket.assigns.clock_key
+         ) do
       {:ok, _} ->
         {:noreply, socket |> load() |> put_flash(:success, "Clock event recorded.")}
 
-      {:error, _} ->
+      {:error, :unavailable} ->
         {:noreply, put_flash(socket, :error, "Clocking is unavailable for this account.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Clock event could not be recorded.")}
     end
   end
 
   defp load(socket) do
     current = socket.assigns.current_scope
 
-    assign(
-      socket,
+    socket
+    |> assign(:clock_key, Ecto.UUID.generate())
+    |> assign(
       :state,
       with {:ok, days} <-
              Attendance.self_days(current.scope, current.actor.company_id, current.actor),
@@ -55,10 +65,10 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
           <.empty_state :if={days == []} id="my-attendance-empty"
             title="No clock events yet." reason="Your recorded days will appear here." />
           <div :if={enabled} class="flex gap-2 mt-5">
-            <.button phx-click="clock" phx-value-type="in" phx-value-key={Ecto.UUID.generate()}>
+            <.button phx-click="clock" phx-value-type="in">
               Clock in
             </.button>
-            <.button phx-click="clock" phx-value-type="out" phx-value-key={Ecto.UUID.generate()}>
+            <.button phx-click="clock" phx-value-type="out">
               Clock out
             </.button>
           </div>

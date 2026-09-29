@@ -32,15 +32,6 @@ defmodule Bilimbi.People.Attendance.Contributions do
       },
       menu: [
         %{
-          id: "people.my_work",
-          label: "My work",
-          icon: "user-circle",
-          parent: "people",
-          route: nil,
-          capability: nil,
-          order: 10
-        },
-        %{
           id: "people.attendance.my",
           label: "My attendance",
           icon: "clipboard-document-list",
@@ -48,15 +39,6 @@ defmodule Bilimbi.People.Attendance.Contributions do
           route: "/people/attendance/my",
           capability: "people.attendance.self.view",
           order: 10
-        },
-        %{
-          id: "people.settings",
-          label: "Settings",
-          icon: "cog-6-tooth",
-          parent: "people",
-          route: nil,
-          capability: nil,
-          order: 90
         },
         %{
           id: "people.attendance.rules",

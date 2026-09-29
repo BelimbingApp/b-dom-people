@@ -113,4 +113,42 @@ defmodule Bilimbi.People.AttendanceTest do
     assert {:ok, [%{on_date: ~D[2026-10-01]}]} = Attendance.list_days(scope, 73, employee.id)
     assert {:ok, %{self_clock_enabled: false}} = Attendance.rules(scope, 74)
   end
+
+  test "replays stay idempotent after the company time zone changes", %{
+    scope: scope,
+    employee: employee
+  } do
+    attrs = %{
+      source: "provider",
+      event_key: "one",
+      event_type: "in",
+      occurred_at: ~U[2026-09-30 09:00:00Z]
+    }
+
+    assert {:ok, event} = Attendance.record_clock(scope, 73, employee.id, attrs)
+    assert {:ok, _} = Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", false)
+    assert {:ok, ^event} = Attendance.record_clock(scope, 73, employee.id, attrs)
+  end
+
+  test "an out before the first in stays pending", %{scope: scope, employee: employee} do
+    out = %{
+      source: "provider",
+      event_key: "out",
+      event_type: "out",
+      occurred_at: ~U[2026-09-30 08:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, out)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               out
+               | event_key: "in",
+                 event_type: "in",
+                 occurred_at: ~U[2026-09-30 09:00:00Z]
+             })
+
+    assert {:ok, [%{worked_minutes: 0, status: "exception_pending"}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
 end

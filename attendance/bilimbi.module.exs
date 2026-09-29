@@ -15,6 +15,7 @@
     "base/ui",
     "core/company",
     "core/user",
+    "people/settings",
     "people/workforce"
   ],
   migrations: "priv/repo/migrations",

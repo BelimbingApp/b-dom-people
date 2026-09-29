@@ -11,12 +11,13 @@ defmodule Bilimbi.People.Attendance do
   alias Bilimbi.Core.User
   alias Bilimbi.People.Attendance.{ClockEvent, Day}
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.ReadResult
 
   @timezone_key "people.attendance.timezone"
   @self_clock_key "people.attendance.self_clock_enabled"
 
   def rules(%Scope{} = scope, company_id) do
-    with {:ok, company} <- Workforce.company(scope, company_id) do
+    with {:ok, company} <- current_company(scope, company_id) do
       settings_scope = SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
 
       {:ok,
@@ -29,7 +30,7 @@ defmodule Bilimbi.People.Attendance do
 
   def put_rules(%Scope{} = scope, company_id, timezone, enabled)
       when is_binary(timezone) and is_boolean(enabled) do
-    with {:ok, company} <- Workforce.company(scope, company_id),
+    with {:ok, company} <- current_company(scope, company_id),
          {:ok, _} <- local_date(DateTime.utc_now(), timezone) do
       settings_scope = SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
 
@@ -44,16 +45,11 @@ defmodule Bilimbi.People.Attendance do
 
   @doc "Idempotent by company, source and key; conflicting replays are refused."
   def record_clock(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
-    with {:ok, _employee} <- Workforce.employee(scope, company_id, employee_id),
+    with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
          {:ok, %{timezone: timezone}} <- rules(scope, company_id),
          {:ok, event} <- normalize_event(attrs, timezone) do
-      case Repo.transaction(fn -> write_event(scope, company_id, employee_id, event) end) do
-        {:ok, result} -> {:ok, result}
-        {:error, reason} -> {:error, reason}
-      end
+      Repo.transaction(fn -> write_event(scope, company_id, employee_id, event) end)
     end
-  rescue
-    Ecto.ConstraintError -> {:error, :event_key_conflict}
   end
 
   def self_clock(%Scope{} = scope, company_id, actor, type, key)
@@ -81,7 +77,7 @@ defmodule Bilimbi.People.Attendance do
   end
 
   def list_days(%Scope{} = scope, company_id, employee_id) do
-    with {:ok, _employee} <- Workforce.employee(scope, company_id, employee_id) do
+    with {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
       {:ok,
        Repo.all(
          from(d in Tenancy.scope_query(Day, scope),
@@ -98,11 +94,21 @@ defmodule Bilimbi.People.Attendance do
     with true <- actor.type == :user and actor.company_id == company_id,
          {:ok, user} <- User.get_user(scope, company_id, actor.id),
          employee_id when is_integer(employee_id) <- user.employee_id,
-         {:ok, _employee} <- Workforce.employee(scope, company_id, employee_id) do
+         {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
       {:ok, employee_id}
     else
       _ -> {:error, :unavailable}
     end
+  end
+
+  defp current_company(scope, company_id) do
+    with {:ok, read} <- Workforce.company(scope, company_id),
+         do: ReadResult.require_current(read)
+  end
+
+  defp current_employee(scope, company_id, employee_id) do
+    with {:ok, read} <- Workforce.employee(scope, company_id, employee_id),
+         do: ReadResult.require_current(read)
   end
 
   defp normalize_event(attrs, timezone) do
@@ -153,25 +159,29 @@ defmodule Bilimbi.People.Attendance do
 
     if existing do
       if existing.employee_id == employee_id and existing.event_type == event.event_type and
-           existing.occurred_at == event.occurred_at and existing.timezone == event.timezone and
+           existing.occurred_at == event.occurred_at and
            existing.actor_user_id == event.actor_user_id,
          do: event_view(existing),
          else: Repo.rollback(:event_key_conflict)
     else
       day = get_or_create_day(scope, company_id, employee_id, event.on_date)
 
-      saved =
-        %ClockEvent{
-          tenant_id: Scope.tenant_id(scope),
-          company_id: company_id,
-          employee_id: employee_id,
-          day_id: day.id
-        }
-        |> ClockEvent.changeset(Map.delete(event, :on_date))
-        |> Repo.insert!()
+      %ClockEvent{
+        tenant_id: Scope.tenant_id(scope),
+        company_id: company_id,
+        employee_id: employee_id,
+        day_id: day.id
+      }
+      |> ClockEvent.changeset(Map.delete(event, :on_date))
+      |> Repo.insert()
+      |> case do
+        {:ok, saved} ->
+          project_day(scope, day)
+          event_view(saved)
 
-      project_day(scope, day)
-      event_view(saved)
+        {:error, _changeset} ->
+          Repo.rollback(:event_key_conflict)
+      end
     end
   end
 
@@ -182,19 +192,16 @@ defmodule Bilimbi.People.Attendance do
           d.company_id == ^company_id and d.employee_id == ^employee_id and d.on_date == ^date
       )
 
-    Repo.one(query) ||
-      %Day{
-        tenant_id: Scope.tenant_id(scope),
-        company_id: company_id,
-        employee_id: employee_id,
-        on_date: date
-      }
-      |> Day.changeset(%{status: "in_progress"})
-      |> Repo.insert!(on_conflict: :nothing)
-      |> case do
-        %Day{id: nil} -> Repo.one!(query)
-        day -> day
-      end
+    %Day{
+      tenant_id: Scope.tenant_id(scope),
+      company_id: company_id,
+      employee_id: employee_id,
+      on_date: date
+    }
+    |> Day.changeset(%{status: "in_progress"})
+    |> Repo.insert!(on_conflict: :nothing)
+
+    Repo.one!(lock(query, "FOR UPDATE"))
   end
 
   defp project_day(scope, day) do
@@ -209,13 +216,16 @@ defmodule Bilimbi.People.Attendance do
     first_in = Enum.find(events, &(&1.event_type == "in"))
     last_out = Enum.find(Enum.reverse(events), &(&1.event_type == "out"))
 
-    minutes =
-      if first_in && last_out &&
-           DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt,
-         do: div(DateTime.diff(last_out.occurred_at, first_in.occurred_at), 60),
-         else: 0
+    complete? =
+      first_in && last_out &&
+        DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt
 
-    status = if first_in && last_out, do: "ready_for_review", else: "exception_pending"
+    minutes =
+      if complete?,
+        do: div(DateTime.diff(last_out.occurred_at, first_in.occurred_at), 60),
+        else: 0
+
+    status = if complete?, do: "ready_for_review", else: "exception_pending"
 
     day
     |> Day.changeset(%{

@@ -14,6 +14,24 @@ defmodule Bilimbi.People.Settings.Contributions do
           route: nil,
           capability: nil,
           order: 50
+        },
+        %{
+          id: "people.my_work",
+          label: "My work",
+          icon: "user-circle",
+          parent: "people",
+          route: nil,
+          capability: nil,
+          order: 10
+        },
+        %{
+          id: "people.settings",
+          label: "Settings",
+          icon: "cog-6-tooth",
+          parent: "people",
+          route: nil,
+          capability: nil,
+          order: 90
         }
       ]
     }

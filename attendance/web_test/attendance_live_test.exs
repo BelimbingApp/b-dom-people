@@ -57,7 +57,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", true)
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
       assert has_element?(view, "button[phx-value-type='in']")
-      render_click(view, "clock", %{"type" => "in", "key" => "web-event-one"})
+      render_click(view, "clock", %{"type" => "in"})
       assert render(view) =~ "Clock event recorded."
       assert render(view) =~ "exception pending"
     end
