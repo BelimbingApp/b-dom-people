@@ -1,0 +1,74 @@
+<Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people">
+  <.page id="people-employee-detail" variant={:detail}>
+    <.header>Employee workbench<:subtitle :if={@employee}>{@employee.full_name} · {@employee.employee_number}</:subtitle></.header>
+    <p :if={is_nil(@employee)} class="mt-4 text-sm text-ink-muted">This employee is unavailable in your company.</p>
+    <div :if={@employee} class="mt-5 space-y-5">
+      <.link navigate="/people/employees" class="text-sm text-link hover:underline">Back to employees</.link>
+      <.card inner_class="p-5 sm:p-6" role="region" aria-labelledby="employee-core-heading">
+        <.section_heading id="employee-core-heading" title="Employee" />
+        <.list id="employee-core-facts">
+          <:item title="Name">{@employee.full_name}</:item>
+          <:item title="Number">{@employee.employee_number}</:item>
+          <:item title="Status">{@employee.status}</:item>
+          <:item title="Designation">{@employee.designation || "—"}</:item>
+          <:item title="Email">{@employee.email || "—"}</:item>
+        </.list>
+        <p class="mt-3 text-xs text-ink-muted">Employee identity and employment facts are managed in Core Employee.</p>
+      </.card>
+      <.card inner_class="p-5 sm:p-6" role="region" aria-labelledby="work-profile-heading">
+        <.section_heading id="work-profile-heading" title="Work profile" />
+        <.list id="work-profile-facts">
+          <:item title="Location">{(@profile && @profile.work_location) || "—"}</:item>
+          <:item title="Arrangement">{(@profile && @profile.work_arrangement) || "—"}</:item>
+          <:item title="Notes">{(@profile && @profile.notes) || "—"}</:item>
+        </.list>
+        <form :if={@can_manage?} phx-submit="save_profile" class="mt-4 grid gap-2 sm:grid-cols-2">
+          <input name="profile[work_location]" value={@profile && @profile.work_location} aria-label="Work location" placeholder="Work location" maxlength="200" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
+          <input name="profile[work_arrangement]" value={@profile && @profile.work_arrangement} aria-label="Work arrangement" placeholder="Work arrangement" maxlength="120" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
+          <textarea name="profile[notes]" aria-label="Work notes" placeholder="Notes" maxlength="2000" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm sm:col-span-2">{@profile && @profile.notes}</textarea>
+          <button type="submit" class="rounded-md bg-action px-3 py-1.5 text-sm text-action-ink sm:col-span-2 sm:justify-self-start">Save work profile</button>
+        </form>
+      </.card>
+      <.card inner_class="p-5 sm:p-6" role="region" aria-labelledby="portal-access-heading">
+        <.section_heading id="portal-access-heading" title="Portal access" />
+        <.list id="portal-access-facts">
+          <:item title="Eligible">{if @access && @access.portal_enabled, do: "Enabled", else: "Disabled"}</:item>
+          <:item title="Reason">{(@access && @access.reason) || "—"}</:item>
+        </.list>
+        <p class="mt-2 text-xs text-ink-muted">Eligibility does not create a login account or grant a role.</p>
+        <form :if={@can_manage?} phx-submit="save_access" class="mt-4 flex flex-wrap items-end gap-2">
+          <label class="text-sm text-ink">Portal eligibility
+            <select name="access[portal_enabled]" class="block rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
+              <option value="false" selected={is_nil(@access) || !@access.portal_enabled}>Disabled</option>
+              <option value="true" selected={@access && @access.portal_enabled}>Enabled</option>
+            </select>
+          </label>
+          <input name="access[reason]" value={@access && @access.reason} aria-label="Access reason" placeholder="Reason" maxlength="2000" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
+          <button type="submit" class="rounded-md bg-action px-3 py-1.5 text-sm text-action-ink">Save access</button>
+        </form>
+      </.card>
+      <.card inner_class="p-5 sm:p-6" role="region" aria-labelledby="change-requests-heading">
+        <.section_heading id="change-requests-heading" title="Profile change requests" />
+        <p :if={@requests == []} class="mt-2 text-sm text-ink-muted">No profile changes have been requested.</p>
+        <ul :if={@requests != []} class="mt-3 divide-y divide-line text-sm">
+          <li :for={request <- @requests} class="py-2">
+            <span class="font-medium">{request.field}</span>: {request.proposed_value}
+            <span class="ml-2 text-ink-muted">{request.status}</span>
+            <span :if={@can_review? && request.status == "pending"} class="ml-3 inline-flex gap-2">
+              <button type="button" phx-click="review_change" phx-value-id={request.id} phx-value-decision="approved" class="text-link">Approve</button>
+              <button type="button" phx-click="review_change" phx-value-id={request.id} phx-value-decision="rejected" class="text-link">Reject</button>
+            </span>
+          </li>
+        </ul>
+        <form :if={@can_manage?} phx-submit="request_change" class="mt-4 grid gap-2 sm:grid-cols-2">
+          <select name="request[field]" aria-label="Change field" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
+            <option :for={field <- Bilimbi.People.EmployeeWorkspace.ChangeRequest.fields()} value={field}>{String.replace(field, "_", " ")}</option>
+          </select>
+          <input name="request[proposed_value]" aria-label="Proposed value" placeholder="Proposed value" required maxlength="500" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
+          <input name="request[reason]" aria-label="Change reason" placeholder="Reason" maxlength="2000" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
+          <button type="submit" class="rounded-md bg-action px-3 py-1.5 text-sm text-action-ink sm:justify-self-start">Record request</button>
+        </form>
+      </.card>
+    </div>
+  </.page>
+</Layouts.app>
