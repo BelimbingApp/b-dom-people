@@ -130,10 +130,10 @@ defmodule Bilimbi.People.AttendanceTest do
   end
 
   test "company policy controls local date and self clocking", %{scope: scope, employee: employee} do
-    assert {:ok, %{self_clock_enabled: false}} = Attendance.rules(scope, 73)
+    assert {:ok, %{self_clock_enabled: false, max_shift_hours: 16}} = Attendance.rules(scope, 73)
 
     assert {:ok, %{timezone: "Asia/Kuala_Lumpur", self_clock_enabled: true}} =
-             Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", true)
+             Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", true, 16)
 
     assert {:ok, _} =
              Attendance.record_clock(scope, 73, employee.id, %{
@@ -159,7 +159,7 @@ defmodule Bilimbi.People.AttendanceTest do
     }
 
     assert {:ok, event} = Attendance.record_clock(scope, 73, employee.id, attrs)
-    assert {:ok, _} = Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", false)
+    assert {:ok, _} = Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", false, 16)
     assert {:ok, ^event} = Attendance.record_clock(scope, 73, employee.id, attrs)
   end
 
@@ -183,5 +183,88 @@ defmodule Bilimbi.People.AttendanceTest do
 
     assert {:ok, [%{worked_minutes: 0, status: "exception_pending"}]} =
              Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a shift without a clock-out stays open within the maximum shift length", %{
+    scope: scope,
+    employee: employee
+  } do
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               source: "provider",
+               event_key: "open",
+               event_type: "in",
+               occurred_at: DateTime.add(DateTime.utc_now(), -3600)
+             })
+
+    assert {:ok, [%{status: "in_progress", worked_minutes: 0}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a shift without a clock-out after the maximum shift length is a missed clock-out", %{
+    scope: scope,
+    employee: employee
+  } do
+    assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", false, 8)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               source: "provider",
+               event_key: "missed",
+               event_type: "in",
+               occurred_at: DateTime.add(DateTime.utc_now(), -9 * 3600)
+             })
+
+    assert {:ok, [%{status: "exception_pending"}]} = Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a night shift closes on its clock-in day", %{scope: scope, employee: employee} do
+    night = %{
+      source: "provider",
+      event_key: "night-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-29 22:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, night)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               night
+               | event_key: "night-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-30 06:00:00Z]
+             })
+
+    assert {:ok, [%{on_date: ~D[2026-09-29], status: "ready_for_review", worked_minutes: 480}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a clock-out beyond the maximum shift length does not close the previous day", %{
+    scope: scope,
+    employee: employee
+  } do
+    late = %{
+      source: "provider",
+      event_key: "late-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-01 12:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, late)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               late
+               | event_key: "late-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-02 06:00:00Z]
+             })
+
+    assert {:ok,
+            [
+              %{on_date: ~D[2026-09-02], status: "exception_pending"},
+              %{on_date: ~D[2026-09-01], status: "exception_pending", worked_minutes: 0}
+            ]} = Attendance.list_days(scope, 73, employee.id)
   end
 end

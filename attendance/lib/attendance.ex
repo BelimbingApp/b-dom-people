@@ -15,6 +15,7 @@ defmodule Bilimbi.People.Attendance do
 
   @timezone_key "people.attendance.timezone"
   @self_clock_key "people.attendance.self_clock_enabled"
+  @max_shift_key "people.attendance.max_shift_hours"
 
   def rules(%Scope{} = scope, company_id) do
     with {:ok, company} <- current_company(scope, company_id) do
@@ -23,32 +24,36 @@ defmodule Bilimbi.People.Attendance do
       {:ok,
        %{
          timezone: Settings.get(@timezone_key, settings_scope),
-         self_clock_enabled: Settings.get(@self_clock_key, settings_scope)
+         self_clock_enabled: Settings.get(@self_clock_key, settings_scope),
+         max_shift_hours: Settings.get(@max_shift_key, settings_scope)
        }}
     end
   end
 
-  def put_rules(%Scope{} = scope, company_id, timezone, enabled)
-      when is_binary(timezone) and is_boolean(enabled) do
+  def put_rules(%Scope{} = scope, company_id, timezone, enabled, max_shift_hours)
+      when is_binary(timezone) and is_boolean(enabled) and max_shift_hours in 1..24 do
     with {:ok, company} <- current_company(scope, company_id),
          {:ok, _} <- local_date(DateTime.utc_now(), timezone) do
       settings_scope = SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
 
       with {:ok, _} <- Settings.put(@timezone_key, timezone, settings_scope),
-           {:ok, _} <- Settings.put(@self_clock_key, enabled, settings_scope) do
+           {:ok, _} <- Settings.put(@self_clock_key, enabled, settings_scope),
+           {:ok, _} <- Settings.put(@max_shift_key, max_shift_hours, settings_scope) do
         rules(scope, company_id)
       end
     end
   end
 
-  def put_rules(%Scope{}, _, _, _), do: {:error, :invalid_rules}
+  def put_rules(%Scope{}, _, _, _, _), do: {:error, :invalid_rules}
 
   @doc "Idempotent by company, source and key; conflicting replays are refused."
   def record_clock(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
     with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
-         {:ok, %{timezone: timezone}} <- rules(scope, company_id),
-         {:ok, event} <- normalize_event(attrs, timezone) do
-      Repo.transaction(fn -> write_event(scope, company_id, employee_id, event) end)
+         {:ok, rules} <- rules(scope, company_id),
+         {:ok, event} <- normalize_event(attrs, rules.timezone) do
+      Repo.transaction(fn ->
+        write_event(scope, company_id, employee_id, event, rules.max_shift_hours)
+      end)
     end
   end
 
@@ -77,7 +82,10 @@ defmodule Bilimbi.People.Attendance do
   end
 
   def list_days(%Scope{} = scope, company_id, employee_id) do
-    with {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
+    with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
+         {:ok, %{max_shift_hours: max_shift_hours}} <- rules(scope, company_id) do
+      now = DateTime.utc_now()
+
       {:ok,
        Repo.all(
          from(d in Tenancy.scope_query(Day, scope),
@@ -86,7 +94,7 @@ defmodule Bilimbi.People.Attendance do
            limit: 31
          )
        )
-       |> Enum.map(&day_view/1)}
+       |> Enum.map(&day_view(&1, max_shift_hours, now))}
     end
   end
 
@@ -147,10 +155,10 @@ defmodule Bilimbi.People.Attendance do
 
   defp local_date(_, _), do: {:error, :invalid_timezone}
 
-  defp write_event(scope, company_id, employee_id, event) do
+  defp write_event(scope, company_id, employee_id, event, max_shift_hours) do
     case find_event(scope, company_id, event) do
       nil ->
-        day = get_or_create_day(scope, company_id, employee_id, event.on_date)
+        day = shift_day(scope, company_id, employee_id, event, max_shift_hours)
 
         case find_event(scope, company_id, event) do
           nil -> insert_event(scope, day, event)
@@ -201,14 +209,40 @@ defmodule Bilimbi.People.Attendance do
     end
   end
 
-  defp get_or_create_day(scope, company_id, employee_id, date) do
-    query =
+  defp shift_day(scope, company_id, employee_id, %{event_type: "in"} = event, _),
+    do: get_or_create_day(scope, company_id, employee_id, event.on_date)
+
+  defp shift_day(scope, company_id, employee_id, event, max_shift_hours) do
+    today = locked_day(scope, company_id, employee_id, event.on_date)
+
+    if open_shift?(today) do
+      today
+    else
+      previous = locked_day(scope, company_id, employee_id, Date.add(event.on_date, -1))
+
+      if open_shift?(previous) and
+           DateTime.compare(event.occurred_at, previous.first_in_at) != :lt and
+           DateTime.diff(event.occurred_at, previous.first_in_at) <= max_shift_hours * 3600,
+         do: previous,
+         else: today || get_or_create_day(scope, company_id, employee_id, event.on_date)
+    end
+  end
+
+  defp open_shift?(%Day{status: "in_progress", first_in_at: %DateTime{}}), do: true
+  defp open_shift?(_), do: false
+
+  defp locked_day(scope, company_id, employee_id, date) do
+    Repo.one(
       from(d in Tenancy.scope_query(Day, scope),
         where:
-          d.company_id == ^company_id and d.employee_id == ^employee_id and d.on_date == ^date
+          d.company_id == ^company_id and d.employee_id == ^employee_id and d.on_date == ^date,
+        lock: "FOR UPDATE"
       )
+    )
+  end
 
-    with nil <- Repo.one(lock(query, "FOR UPDATE")) do
+  defp get_or_create_day(scope, company_id, employee_id, date) do
+    with nil <- locked_day(scope, company_id, employee_id, date) do
       # A savepoint keeps a concurrent first insert from aborting the
       # transaction; the loser then waits on the winner's row lock.
       %Day{
@@ -221,7 +255,7 @@ defmodule Bilimbi.People.Attendance do
       |> Repo.insert(mode: :savepoint)
       |> case do
         {:ok, day} -> day
-        {:error, _changeset} -> Repo.one!(lock(query, "FOR UPDATE"))
+        {:error, _changeset} -> locked_day(scope, company_id, employee_id, date)
       end
     end
   end
@@ -247,7 +281,12 @@ defmodule Bilimbi.People.Attendance do
         do: div(DateTime.diff(last_out.occurred_at, first_in.occurred_at), 60),
         else: 0
 
-    status = if complete?, do: "ready_for_review", else: "exception_pending"
+    status =
+      cond do
+        complete? -> "ready_for_review"
+        first_in && is_nil(last_out) -> "in_progress"
+        true -> "exception_pending"
+      end
 
     day
     |> Day.changeset(%{
@@ -259,8 +298,13 @@ defmodule Bilimbi.People.Attendance do
     |> Repo.update!()
   end
 
-  defp day_view(day),
-    do: Map.take(day, [:on_date, :status, :first_in_at, :last_out_at, :worked_minutes])
+  defp day_view(day, max_shift_hours, now) do
+    view = Map.take(day, [:on_date, :status, :first_in_at, :last_out_at, :worked_minutes])
+
+    if open_shift?(day) and DateTime.diff(now, day.first_in_at) > max_shift_hours * 3600,
+      do: %{view | status: "exception_pending"},
+      else: view
+  end
 
   defp event_view(event),
     do: Map.take(event, [:id, :event_type, :occurred_at, :timezone, :source])

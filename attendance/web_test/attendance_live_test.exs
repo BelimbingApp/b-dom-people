@@ -46,7 +46,11 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       assert has_element?(view, "#attendance-rules-form")
 
       view
-      |> form("#attendance-rules-form", timezone: "Etc/UTC", enabled: "true")
+      |> form("#attendance-rules-form",
+        timezone: "Etc/UTC",
+        enabled: "true",
+        max_shift_hours: "12"
+      )
       |> render_submit()
 
       assert render(view) =~ "Attendance rules saved."
@@ -54,12 +58,12 @@ defmodule BilimbiWeb.AttendanceLiveTest do
 
     test "linked employee can clock after operator enables it", %{conn: conn} do
       {:ok, scope} = Tenancy.scope(41)
-      assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", true)
+      assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", true, 16)
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
       assert has_element?(view, "button[phx-value-type='in']")
       render_click(view, "clock", %{"type" => "in"})
       assert render(view) =~ "Clock event recorded."
-      assert render(view) =~ "exception pending"
+      assert render(view) =~ "in progress"
     end
   end
 end

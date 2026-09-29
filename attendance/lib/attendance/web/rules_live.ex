@@ -35,7 +35,8 @@ defmodule Bilimbi.People.Attendance.Web.RulesLive do
                socket.assigns.current_scope.scope,
                company.id,
                Map.get(params, "timezone", ""),
-               Map.get(params, "enabled") == "true"
+               Map.get(params, "enabled") == "true",
+               parse_hours(Map.get(params, "max_shift_hours"))
              ) do
           {:ok, rules} ->
             {:noreply,
@@ -44,10 +45,24 @@ defmodule Bilimbi.People.Attendance.Web.RulesLive do
              |> put_flash(:success, "Attendance rules saved.")}
 
           _ ->
-            {:noreply, put_flash(socket, :error, "Enter a valid time zone.")}
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "Enter a valid time zone and a shift length of 1 to 24 hours."
+             )}
         end
     end
   end
+
+  defp parse_hours(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {hours, ""} -> hours
+      _ -> nil
+    end
+  end
+
+  defp parse_hours(_), do: nil
 
   defp select_company(socket, id) do
     company =
@@ -87,6 +102,10 @@ defmodule Bilimbi.People.Attendance.Web.RulesLive do
             class="rounded-md border border-line bg-surface px-3 py-2" />
           <label class="flex gap-2"><input type="checkbox" name="enabled" value="true"
             checked={@rules.self_clock_enabled} />Allow employee clocking</label>
+          <label for="attendance-max-shift">Maximum shift length (hours)</label>
+          <input id="attendance-max-shift" name="max_shift_hours" type="number" min="1" max="24"
+            value={@rules.max_shift_hours}
+            class="rounded-md border border-line bg-surface px-3 py-2" />
           <.button type="submit" variant="primary">Save rules</.button>
         </form>
       </.page>

@@ -22,6 +22,17 @@ defmodule Bilimbi.People.Attendance.Contributions do
             label: "Employee clocking",
             help: "Allow linked employee accounts to record their own clock events.",
             capability: "people.attendance.rules.manage"
+          },
+          "people.attendance.max_shift_hours" => %{
+            type: :integer,
+            scopes: [:company],
+            default: 16,
+            minimum: 1,
+            maximum: 24,
+            label: "Maximum shift length",
+            help:
+              "Hours after clock-in that a shift stays open; a clock-out within it closes the shift on the clock-in day.",
+            capability: "people.attendance.rules.manage"
           }
         },
         runtime_claims: []
