@@ -4,10 +4,11 @@ defmodule Bilimbi.People.ReferenceDataTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.People.ReferenceData
+  alias Bilimbi.People.ReferenceData.TestFixtures, as: ReferenceFixtures
 
   setup do
     CompanyFixtures.create_company_identity_tables!()
-    create_reference_tables!()
+    ReferenceFixtures.create_reference_tables!()
     CompanyFixtures.insert_tenant!()
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Second tenant", is_platform_operator: false})
     CompanyFixtures.insert_company!()
@@ -73,49 +74,4 @@ defmodule Bilimbi.People.ReferenceDataTest do
   end
 
   defp entry_attrs, do: %{kind: "category", code: "one", label: "First value"}
-
-  defp create_reference_tables! do
-    alias Bilimbi.Base.Repo
-    alias Ecto.Adapters.SQL
-
-    SQL.query!(
-      Repo,
-      """
-      CREATE TEMPORARY TABLE people_reference_entries (
-        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        kind varchar(80) NOT NULL, code varchar(100) NOT NULL,
-        label varchar(200) NOT NULL, active boolean NOT NULL DEFAULT true,
-        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_reference_entries_company_kind_code_unique UNIQUE (company_id, kind, code)
-      ) ON COMMIT PRESERVE ROWS
-      """,
-      []
-    )
-
-    SQL.query!(
-      Repo,
-      """
-      CREATE TEMPORARY TABLE people_reference_aliases (
-        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        entry_id bigint NOT NULL, kind varchar(80) NOT NULL, label varchar(200) NOT NULL,
-        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_reference_aliases_company_kind_label_unique UNIQUE (company_id, kind, label)
-      ) ON COMMIT PRESERVE ROWS
-      """,
-      []
-    )
-
-    SQL.query!(
-      Repo,
-      """
-      CREATE TEMPORARY TABLE people_calendar_exceptions (
-        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        on_date date NOT NULL, label varchar(200) NOT NULL,
-        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_calendar_exceptions_company_date_label_unique UNIQUE (company_id, on_date, label)
-      ) ON COMMIT PRESERVE ROWS
-      """,
-      []
-    )
-  end
 end
