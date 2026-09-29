@@ -8,6 +8,8 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.ReadResult
+  alias Bilimbi.People.Workforce.Web.SettingsLive
 
   setup do
     UserFixtures.create_user_tables!()
@@ -31,9 +33,22 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
     |> form("#workforce-settings-form", %{"statuses" => ["active", "terminated"]})
     |> render_submit()
 
-    assert {:ok, ["active", "terminated"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, %ReadResult{value: ["active", "terminated"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
+
     refute has_element?(view, "#workforce-status-probation[checked]")
     assert has_element?(view, "#workforce-status-terminated[checked]")
+    refute has_element?(view, "#workforce-settings-freshness")
+  end
+
+  test "non-current working-status reads produce operator feedback" do
+    assert SettingsLive.freshness_notice(:current) == nil
+
+    assert SettingsLive.freshness_notice({:stale, ~U[2026-09-01 08:30:00Z]}) ==
+             "These working statuses were last confirmed at 2026-09-01 08:30 UTC and may be out of date."
+
+    assert SettingsLive.freshness_notice({:unavailable, :source_offline}) ==
+             "The current working statuses are unavailable. Saving replaces them with your selection."
   end
 
   test "saving no status is refused and keeps the stored value", %{conn: conn, scope: scope} do
@@ -41,7 +56,9 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
     {:ok, view, _html} = conn |> log_in_as() |> live(~p"/people/workforce/settings")
 
     assert render_submit(view, "save", %{}) =~ "Choose at least one employee status."
-    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
   end
 
   test "the route requires the workforce settings capability", %{conn: conn} do

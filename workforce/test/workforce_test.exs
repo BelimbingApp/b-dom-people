@@ -11,6 +11,7 @@ defmodule Bilimbi.People.WorkforceTest do
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Contributions
+  alias Bilimbi.People.Workforce.ReadResult
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -56,7 +57,7 @@ defmodule Bilimbi.People.WorkforceTest do
     scope: scope
   } do
     assert Workforce.source_id() == "people/native"
-    assert {:ok, company} = Workforce.company(scope, 73)
+    assert {:ok, %ReadResult{value: company, freshness: :current}} = Workforce.company(scope, 73)
     assert company.platform_company_id == 73
     assert company.workforce_company_id == 73
     assert company.reference.source_id == "people/native"
@@ -94,14 +95,18 @@ defmodule Bilimbi.People.WorkforceTest do
                status: "inactive"
              })
 
-    assert {:ok, [value]} = Workforce.employees(scope, 73)
+    assert {:ok, %ReadResult{value: [value], freshness: :current}} =
+             Workforce.employees(scope, 73)
+
     assert value.reference.stable_id == Integer.to_string(employee_a.id)
     assert value.company_reference.stable_id == "73"
     assert value.platform_company_id == 73
     assert value.workforce_company_id == 73
     refute Map.has_key?(value, :user_id)
 
-    assert {:ok, ^value} = Workforce.employee(scope, 73, employee_a.id)
+    assert {:ok, %ReadResult{value: ^value, freshness: :current}} =
+             Workforce.employee(scope, 73, employee_a.id)
+
     assert {:error, :not_found} = Workforce.employee(scope, 73, employee_b.id)
     assert {:error, :not_found} = Workforce.employee(other_scope, 73, employee_a.id)
   end
@@ -137,10 +142,14 @@ defmodule Bilimbi.People.WorkforceTest do
                supervisor_id: agent.id
              })
 
-    assert {:ok, value} = Workforce.employee(scope, 73, employee.id)
+    assert {:ok, %ReadResult{value: value, freshness: :current}} =
+             Workforce.employee(scope, 73, employee.id)
+
     assert value.supervisor_reference == nil
 
-    assert {:ok, [listed]} = Workforce.employees(scope, 73)
+    assert {:ok, %ReadResult{value: [listed], freshness: :current}} =
+             Workforce.employees(scope, 73)
+
     assert listed.supervisor_reference == nil
   end
 
@@ -152,18 +161,26 @@ defmodule Bilimbi.People.WorkforceTest do
     terminated = create_employee!(scope, 73, "T-1", "terminated")
     supervised = create_employee!(scope, 73, "S-1", "active", terminated.id)
 
-    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
 
-    assert {:ok, listing} = Workforce.employees(scope, 73)
+    assert {:ok, %ReadResult{value: listing, freshness: :current}} =
+             Workforce.employees(scope, 73)
 
     assert Enum.map(listing, & &1.reference.stable_id) |> Enum.sort() ==
              Enum.map([probation, active, supervised], &Integer.to_string(&1.id)) |> Enum.sort()
 
-    assert {:ok, _} = Workforce.employee(scope, 73, probation.id)
-    assert {:ok, active_value} = Workforce.employee(scope, 73, active.id)
+    assert {:ok, %ReadResult{freshness: :current}} = Workforce.employee(scope, 73, probation.id)
+
+    assert {:ok, %ReadResult{value: active_value, freshness: :current}} =
+             Workforce.employee(scope, 73, active.id)
+
     assert active_value.supervisor_reference.stable_id == Integer.to_string(probation.id)
     assert {:error, :not_found} = Workforce.employee(scope, 73, terminated.id)
-    assert {:ok, supervised_value} = Workforce.employee(scope, 73, supervised.id)
+
+    assert {:ok, %ReadResult{value: supervised_value, freshness: :current}} =
+             Workforce.employee(scope, 73, supervised.id)
+
     assert supervised_value.supervisor_reference == nil
   end
 
@@ -173,14 +190,22 @@ defmodule Bilimbi.People.WorkforceTest do
     other_probation = create_employee!(scope, 74, "P-3", "probation")
 
     assert {:ok, ["active"]} = Workforce.put_working_statuses(scope, 73, ["active"])
-    assert {:ok, ["active"]} = Workforce.working_statuses(scope, 73)
-    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 74)
 
-    assert {:ok, [only]} = Workforce.employees(scope, 73)
+    assert {:ok, %ReadResult{value: ["active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
+
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 74)
+
+    assert {:ok, %ReadResult{value: [only], freshness: :current}} =
+             Workforce.employees(scope, 73)
+
     assert only.reference.stable_id == Integer.to_string(active.id)
     assert only.supervisor_reference == nil
     assert {:error, :not_found} = Workforce.employee(scope, 73, probation.id)
-    assert {:ok, _} = Workforce.employee(scope, 74, other_probation.id)
+
+    assert {:ok, %ReadResult{freshness: :current}} =
+             Workforce.employee(scope, 74, other_probation.id)
 
     assert {:ok, ["probation", "active", "terminated"]} =
              Workforce.put_working_statuses(scope, 73, ["terminated", "active", "probation"])
@@ -191,7 +216,28 @@ defmodule Bilimbi.People.WorkforceTest do
       assert {:error, :invalid_statuses} = Workforce.put_working_statuses(scope, 73, statuses)
     end
 
-    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
+  end
+
+  test "read results carry freshness and refuse stale or unavailable data" do
+    last_confirmed_at = ~U[2026-09-29 12:30:00Z]
+    current = ReadResult.current(:value)
+    stale = ReadResult.stale(:cached_value, last_confirmed_at)
+    unavailable = ReadResult.unavailable(:provider_unavailable)
+
+    assert current.freshness == :current
+    assert {:ok, :value} = ReadResult.require_current(current)
+
+    assert stale.freshness == {:stale, last_confirmed_at}
+
+    assert {:error, {:not_current, {:stale, ^last_confirmed_at}}} =
+             ReadResult.require_current(stale)
+
+    assert unavailable.freshness == {:unavailable, :provider_unavailable}
+
+    assert {:error, {:not_current, {:unavailable, :provider_unavailable}}} =
+             ReadResult.require_current(unavailable)
   end
 
   defp create_employee!(scope, company_id, number, status, supervisor_id \\ nil) do
