@@ -51,8 +51,8 @@ scoped behavior, and meaningful empty state. Training remains work in progress.
 After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
 operator can open `/people/companies/:company_id/references` for an accessible
 company. This route creates reference entries, aliases, and calendar exceptions
-without seeding company-specific values. The menu leaf remains hidden pending
-the mounted browser check.
+without seeding company-specific values. The menu leaf remains hidden because
+navigation has no selected company ID to build this explicit route.
 
 ## License
 

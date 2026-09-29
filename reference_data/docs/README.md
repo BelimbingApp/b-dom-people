@@ -10,6 +10,10 @@ its schemas. New installations have no reference values or calendar exceptions.
 
 The operator route `/people/companies/:company_id/references` requires
 `people.references.manage` and shows an empty state for a company without
-records. The menu leaf is hidden until a mounted browser check is complete.
+records. The menu leaf is hidden because navigation has no selected company ID
+to build this explicit route.
 The migration version `20260930100101` is `:bilimbi_only` and must remain
 globally unique. No Belimbing table or data adoption is involved.
+The owned `SchemaContract` describes the fresh tables, but the descriptor does
+not register it with compatibility verification: that verifier also runs before
+pending Bilimbi-only migrations, when these tables correctly do not exist.
