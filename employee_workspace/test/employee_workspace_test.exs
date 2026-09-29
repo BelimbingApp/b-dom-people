@@ -110,4 +110,38 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     assert {:ok, :deleted} = EmployeeWorkspace.delete_view(scope, 73, 91, view.id)
     assert {:ok, []} = EmployeeWorkspace.saved_views(scope, 73, 91)
   end
+
+  test "follows Core company liveness: non-active companies stay usable, deleted stay unavailable",
+       %{first: scope} do
+    CompanyFixtures.insert_company!(%{id: 76, code: "pending_company", status: "pending"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 76, %{
+        employee_number: "EMP-76",
+        full_name: "Pending Employee",
+        employee_type: "full_time",
+        status: "active"
+      })
+
+    assert {:ok, [%{id: id}]} = EmployeeWorkspace.employees(scope, 76)
+    assert id == employee.id
+
+    assert {:ok, _} =
+             EmployeeWorkspace.put_work_profile(scope, 76, employee.id, %{work_location: "Hub"})
+
+    assert {:ok, %{work_location: "Hub"}} = EmployeeWorkspace.work_profile(scope, 76, employee.id)
+    assert {:ok, nil} = EmployeeWorkspace.access(scope, 76, employee.id)
+    assert {:ok, []} = EmployeeWorkspace.change_requests(scope, 76, employee.id)
+    assert {:ok, _} = EmployeeWorkspace.save_view(scope, 76, 91, %{name: "Pending"})
+    assert {:ok, [%{name: "Pending"}]} = EmployeeWorkspace.saved_views(scope, 76, 91)
+
+    CompanyFixtures.insert_company!(%{
+      id: 77,
+      code: "deleted_company",
+      deleted_at: DateTime.utc_now()
+    })
+
+    assert {:error, :not_found} = EmployeeWorkspace.employees(scope, 77)
+    assert {:error, :not_found} = EmployeeWorkspace.saved_views(scope, 77, 91)
+  end
 end

@@ -200,7 +200,7 @@ defmodule Bilimbi.People.EmployeeWorkspace do
 
   defp company_exists(scope, company_id) do
     case Company.get_company(scope, company_id) do
-      {:ok, %{status: "active"}} -> :ok
+      {:ok, _company} -> :ok
       _ -> {:error, :not_found}
     end
   end

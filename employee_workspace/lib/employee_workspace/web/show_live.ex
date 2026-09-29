@@ -128,14 +128,22 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
     scope = scope(socket)
     company_id = company_id(socket)
     employee_id = employee_id(socket)
-    {:ok, profile} = EmployeeWorkspace.work_profile(scope, company_id, employee_id)
-    {:ok, access} = EmployeeWorkspace.access(scope, company_id, employee_id)
-    {:ok, requests} = EmployeeWorkspace.change_requests(scope, company_id, employee_id)
 
-    socket
-    |> assign(:profile, profile)
-    |> assign(:access, access)
-    |> assign(:requests, requests)
+    with {:ok, profile} <- EmployeeWorkspace.work_profile(scope, company_id, employee_id),
+         {:ok, access} <- EmployeeWorkspace.access(scope, company_id, employee_id),
+         {:ok, requests} <- EmployeeWorkspace.change_requests(scope, company_id, employee_id) do
+      socket
+      |> assign(:profile, profile)
+      |> assign(:access, access)
+      |> assign(:requests, requests)
+    else
+      _ ->
+        socket
+        |> assign(:employee, nil)
+        |> assign(:profile, nil)
+        |> assign(:access, nil)
+        |> assign(:requests, [])
+    end
   end
 
   defp scope(socket), do: socket.assigns.current_scope.scope

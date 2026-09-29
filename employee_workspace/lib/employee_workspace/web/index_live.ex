@@ -97,22 +97,28 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
   end
 
   defp load(socket) do
-    {:ok, employees} = EmployeeWorkspace.employees(scope(socket), socket.assigns.company_id)
+    with {:ok, employees} <-
+           EmployeeWorkspace.employees(scope(socket), socket.assigns.company_id),
+         {:ok, views} <-
+           EmployeeWorkspace.saved_views(
+             scope(socket),
+             socket.assigns.company_id,
+             actor_id(socket)
+           ) do
+      search = String.downcase(socket.assigns.search)
+      status = socket.assigns.status
 
-    {:ok, views} =
-      EmployeeWorkspace.saved_views(scope(socket), socket.assigns.company_id, actor_id(socket))
+      visible =
+        Enum.filter(employees, fn employee ->
+          (search == "" or String.contains?(String.downcase(employee.full_name), search) or
+             String.contains?(String.downcase(employee.employee_number), search)) and
+            (status == "" or employee.status == status)
+        end)
 
-    search = String.downcase(socket.assigns.search)
-    status = socket.assigns.status
-
-    visible =
-      Enum.filter(employees, fn employee ->
-        (search == "" or String.contains?(String.downcase(employee.full_name), search) or
-           String.contains?(String.downcase(employee.employee_number), search)) and
-          (status == "" or employee.status == status)
-      end)
-
-    socket |> assign(:employees, visible) |> assign(:views, views)
+      socket |> assign(:employees, visible) |> assign(:views, views)
+    else
+      _ -> socket |> assign(:company, nil) |> assign(:employees, []) |> assign(:views, [])
+    end
   end
 
   defp scope(socket), do: socket.assigns.current_scope.scope
