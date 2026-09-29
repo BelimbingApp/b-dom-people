@@ -1,0 +1,6 @@
+/.validation
+/_build
+/deps
+/cover
+/doc
+/.elixir_ls
