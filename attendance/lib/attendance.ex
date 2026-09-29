@@ -158,11 +158,18 @@ defmodule Bilimbi.People.Attendance do
   defp write_event(scope, company_id, employee_id, event, max_shift_hours) do
     case find_event(scope, company_id, event) do
       nil ->
-        day = shift_day(scope, company_id, employee_id, event, max_shift_hours)
+        target = shift_day(scope, company_id, employee_id, event, max_shift_hours)
 
         case find_event(scope, company_id, event) do
-          nil -> insert_event(scope, day, event, max_shift_hours)
-          existing -> replay_event(existing, employee_id, event)
+          nil ->
+            day =
+              with {:create, date} <- target,
+                   do: get_or_create_day(scope, company_id, employee_id, date)
+
+            insert_event(scope, day, event, max_shift_hours)
+
+          existing ->
+            replay_event(existing, employee_id, event)
         end
 
       existing ->
@@ -196,21 +203,26 @@ defmodule Bilimbi.People.Attendance do
       day_id: day.id
     }
     |> ClockEvent.changeset(Map.delete(event, :on_date))
-    |> Repo.insert()
+    |> Repo.insert(mode: :savepoint)
     |> case do
       {:ok, saved} ->
         project_day(scope, day, max_shift_hours)
         event_view(saved)
 
       {:error, changeset} ->
-        if Enum.any?(changeset.errors, fn {_, {_, opts}} -> opts[:constraint] == :unique end),
-          do: Repo.rollback(:event_key_conflict),
-          else: Repo.rollback(:invalid_event)
+        if Enum.any?(changeset.errors, fn {_, {_, opts}} -> opts[:constraint] == :unique end) do
+          case find_event(scope, day.company_id, event) do
+            nil -> Repo.rollback(:event_key_conflict)
+            existing -> replay_event(existing, day.employee_id, event)
+          end
+        else
+          Repo.rollback(:invalid_event)
+        end
     end
   end
 
   defp shift_day(scope, company_id, employee_id, %{event_type: "in"} = event, _),
-    do: get_or_create_day(scope, company_id, employee_id, event.on_date)
+    do: locked_day(scope, company_id, employee_id, event.on_date) || {:create, event.on_date}
 
   defp shift_day(scope, company_id, employee_id, event, max_shift_hours) do
     today = locked_day(scope, company_id, employee_id, event.on_date)
@@ -224,7 +236,7 @@ defmodule Bilimbi.People.Attendance do
            DateTime.compare(event.occurred_at, previous.first_in_at) != :lt and
            DateTime.diff(event.occurred_at, previous.first_in_at) <= max_shift_hours * 3600,
          do: previous,
-         else: today || get_or_create_day(scope, company_id, employee_id, event.on_date)
+         else: today || {:create, event.on_date}
     end
   end
 
@@ -273,9 +285,9 @@ defmodule Bilimbi.People.Attendance do
     last_out = Enum.find(Enum.reverse(events), &(&1.event_type == "out"))
 
     complete? =
-      (first_in && last_out &&
-         DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt) and
-        DateTime.diff(last_out.occurred_at, first_in.occurred_at) <= max_shift_hours * 3600
+      !!(first_in && last_out &&
+           DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt &&
+           DateTime.diff(last_out.occurred_at, first_in.occurred_at) <= max_shift_hours * 3600)
 
     minutes =
       if complete?,
