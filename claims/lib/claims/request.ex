@@ -50,7 +50,7 @@ defmodule Bilimbi.People.Claims.Request do
     |> validate_length(:description, max: 500)
     |> validate_length(:receipt_number, max: 100)
     |> Money.validate_amount(:amount, min: :positive)
-    |> unique_constraint([:company_id, :employee_id, :claim_type_id, :receipt_number],
+    |> unique_constraint([:company_id, :employee_id, :receipt_number],
       name: :people_claim_requests_receipt_unique
     )
   end

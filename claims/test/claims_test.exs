@@ -397,6 +397,43 @@ defmodule Bilimbi.People.ClaimsTest do
     refute again.duplicate_confirmed
   end
 
+  test "a receipt reference is refused on another claim type and currency",
+       %{scope: scope, employee: employee} do
+    %{claim_type: fuel} = open!(scope)
+
+    {:ok, meals} =
+      Claims.create_claim_type(scope, 73, %{
+        "category_id" => Integer.to_string(fuel.category_id),
+        "code" => "meals",
+        "name" => "Meals",
+        "receipt_requirement" => "never"
+      })
+
+    {:ok, _policy} =
+      Claims.create_policy(scope, 73, %{
+        "claim_type_id" => meals.id,
+        "effective_from" => "2026-01-01",
+        "currency" => "BBB"
+      })
+
+    assert {:ok, first} =
+             Claims.submit_request(
+               scope,
+               73,
+               employee.id,
+               91,
+               claim(fuel, %{"receipt_number" => "Inv 7"})
+             )
+
+    meals_claim = claim(meals, %{"receipt_number" => "INV 7", "currency" => "BBB"})
+
+    assert {:error, :duplicate_receipt} =
+             Claims.submit_request(scope, 73, employee.id, 91, meals_claim)
+
+    assert {:ok, _} = Claims.withdraw_request(scope, 73, employee.id, first.id, 91)
+    assert {:ok, _} = Claims.submit_request(scope, 73, employee.id, 91, meals_claim)
+  end
+
   test "only a login actor linked to a working employee is a self-service claimant", %{
     scope: scope,
     employee: employee

@@ -26,7 +26,9 @@ A claim type belongs to one category and declares a receipt rule: `always`,
 period, a currency from the company's list, and optional per-claim, calendar
 month, and calendar year limits. A threshold receipt rule needs the policy's
 receipt threshold. Periods of one claim type never overlap; an open-ended
-policy can be ended, but not before a live claim incurred under it.
+policy can be ended, but not before a live claim incurred under it. Submission
+holds the effective policy row while it checks and records the claim, so ending
+a policy waits for an in-flight claim and then sees it.
 
 ## Requests
 
@@ -39,8 +41,8 @@ Refusals are explicit atoms, listed in the function documentation.
 
 Duplicates:
 
-- a receipt reference already on a live claim of the same employee and type is
-  refused, comparing case-insensitively and ignoring extra spaces; a partial
+- a receipt reference already on any live claim of the same employee in the
+  company, whatever its type, is refused, comparing case-insensitively and ignoring extra spaces; a partial
   unique index enforces the same rule;
 - a live claim with the same type, date, amount, and currency is refused as a
   possible duplicate unless the submitter confirms it, which is recorded.

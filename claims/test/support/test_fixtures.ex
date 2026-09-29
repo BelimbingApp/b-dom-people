@@ -79,7 +79,7 @@ defmodule Bilimbi.People.Claims.TestFixtures do
       Repo,
       """
       CREATE UNIQUE INDEX people_claim_requests_receipt_unique
-        ON people_claim_requests (company_id, employee_id, claim_type_id, receipt_number)
+        ON people_claim_requests (company_id, employee_id, receipt_number)
         WHERE receipt_number IS NOT NULL AND status <> 'withdrawn'
       """,
       []

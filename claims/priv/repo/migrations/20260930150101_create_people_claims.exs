@@ -133,7 +133,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     create(
       unique_index(
         :people_claim_requests,
-        [:company_id, :employee_id, :claim_type_id, :receipt_number],
+        [:company_id, :employee_id, :receipt_number],
         name: :people_claim_requests_receipt_unique,
         where: "receipt_number IS NOT NULL AND status <> 'withdrawn'"
       )

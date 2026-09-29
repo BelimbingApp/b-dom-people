@@ -216,6 +216,7 @@ defmodule Bilimbi.People.Claims do
         policy =
           scoped(Policy, scope, company_id)
           |> where([p], p.id == ^unlocked.id)
+          |> lock("FOR UPDATE")
           |> Repo.one!()
 
         with nil <- policy.effective_to,
@@ -417,6 +418,7 @@ defmodule Bilimbi.People.Claims do
     scoped(Policy, scope, company_id)
     |> where([p], p.claim_type_id == ^claim_type_id and p.effective_from <= ^on_date)
     |> where([p], is_nil(p.effective_to) or p.effective_to >= ^on_date)
+    |> lock("FOR SHARE")
     |> Repo.one()
     |> tag(:policy)
   end
@@ -490,7 +492,8 @@ defmodule Bilimbi.People.Claims do
   defp duplicate_check(scope, input) do
     receipt_taken? =
       not is_nil(input.receipt_number) and
-        live_requests(scope, input)
+        scoped(Request, scope, input.company_id)
+        |> where([r], r.employee_id == ^input.employee_id and r.status != "withdrawn")
         |> where([r], r.receipt_number == ^input.receipt_number)
         |> Repo.exists?()
 

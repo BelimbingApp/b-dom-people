@@ -120,7 +120,7 @@ defmodule Bilimbi.People.Claims.SchemaContract do
           "people_claim_requests_usage_idx" =>
             index(["company_id", "employee_id", "claim_type_id", "incurred_on"]),
           "people_claim_requests_receipt_unique" => %{
-            columns: ["company_id", "employee_id", "claim_type_id", "receipt_number"],
+            columns: ["company_id", "employee_id", "receipt_number"],
             unique: true,
             where: "receipt_number IS NOT NULL AND (status)::text <> 'withdrawn'::text"
           }
