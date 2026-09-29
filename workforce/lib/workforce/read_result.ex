@@ -4,6 +4,9 @@ defmodule Bilimbi.People.Workforce.ReadResult do
 
   Native reads are current. Adapters can represent cached stale values with the
   time they were last confirmed, or unavailable data with a reason.
+
+  The People connector contract in the separate `b-dom-people-connector`
+  repository (slice 1C) is the first consumer of this seam.
   """
 
   @enforce_keys [:freshness]
