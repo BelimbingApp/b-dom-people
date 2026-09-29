@@ -5,12 +5,14 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
   alias Bilimbi.Core.Company
   alias Bilimbi.People.ReferenceData
 
+  @manage_capability "people.references.manage"
+
   @impl true
   def mount(%{"company_id" => raw_company_id}, _session, socket) do
     company_id = positive_id(raw_company_id)
-    scope = socket.assigns.current_scope.scope
+    actor = socket.assigns.current_scope.actor
 
-    case company_id && Company.get_company(scope, company_id) do
+    case company_id && Company.authorize_company_target(actor, company_id, @manage_capability) do
       {:ok, company} ->
         {:ok,
          socket
@@ -72,17 +74,12 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
     scope = scope(socket)
     company_id = socket.assigns.company_id
     {:ok, entries} = ReferenceData.list_entries(scope, company_id)
+    {:ok, aliases} = ReferenceData.list_aliases(scope, company_id)
     {:ok, exceptions} = ReferenceData.list_calendar_exceptions(scope, company_id)
-
-    aliases =
-      Map.new(entries, fn entry ->
-        {:ok, values} = ReferenceData.list_aliases(scope, company_id, entry.id)
-        {entry.id, values}
-      end)
 
     socket
     |> assign(:entries, entries)
-    |> assign(:aliases, aliases)
+    |> assign(:aliases, Enum.group_by(aliases, & &1.entry_id))
     |> assign(:exceptions, exceptions)
   end
 

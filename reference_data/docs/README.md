@@ -10,8 +10,9 @@ its schemas. An alias label is unique per reference kind within a company.
 New installations have no reference values or calendar exceptions.
 
 The operator route `/people/companies/:company_id/references` requires
-`people.references.manage` and shows an empty state for a company without
-records. The menu leaf is hidden because navigation has no selected company ID
+`people.references.manage` and Core Company's target reach: the actor's own
+company, or a sibling company with tenant-wide company authority. It shows an
+empty state for a company without records. The menu leaf is hidden because navigation has no selected company ID
 to build this explicit route.
 The migration version `20260930100101` is `:bilimbi_only` and must remain
 globally unique. No Belimbing table or data adoption is involved.

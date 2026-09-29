@@ -32,7 +32,8 @@ defmodule Bilimbi.People.ReferenceDataTest do
     assert {:error, :entry_not_found} =
              ReferenceData.add_alias(first, 74, entry.id, %{label: "Other"})
 
-    assert {:error, :entry_not_found} = ReferenceData.list_aliases(first, 74, entry.id)
+    assert {:ok, []} = ReferenceData.list_aliases(first, 74)
+    assert {:error, :company_not_found} = ReferenceData.list_aliases(second, 73)
   end
 
   test "stores operator-provided values without seeded defaults", %{first_scope: scope} do
@@ -40,7 +41,8 @@ defmodule Bilimbi.People.ReferenceDataTest do
     assert {:ok, []} = ReferenceData.list_calendar_exceptions(scope, 73)
     assert {:ok, entry} = ReferenceData.create_entry(scope, 73, entry_attrs())
     assert {:ok, _alias} = ReferenceData.add_alias(scope, 73, entry.id, %{label: "Alternate"})
-    assert {:ok, [_alias]} = ReferenceData.list_aliases(scope, 73, entry.id)
+    assert {:ok, [%{entry_id: entry_id}]} = ReferenceData.list_aliases(scope, 73)
+    assert entry_id == entry.id
 
     assert {:ok, _exception} =
              ReferenceData.create_calendar_exception(scope, 73, %{
@@ -66,7 +68,8 @@ defmodule Bilimbi.People.ReferenceDataTest do
              ReferenceData.add_alias(scope, 73, same_kind.id, %{label: "Other"})
 
     assert {:ok, _alias} = ReferenceData.add_alias(scope, 73, other_kind.id, %{label: "Other"})
-    assert {:ok, [%{label: "Other"}]} = ReferenceData.list_aliases(scope, 73, other_kind.id)
+    assert {:ok, aliases} = ReferenceData.list_aliases(scope, 73)
+    assert Enum.sort(Enum.map(aliases, & &1.entry_id)) == Enum.sort([first.id, other_kind.id])
   end
 
   defp entry_attrs, do: %{kind: "category", code: "one", label: "First value"}

@@ -48,22 +48,16 @@ defmodule Bilimbi.People.ReferenceData do
     end
   end
 
-  def list_aliases(%Scope{} = scope, company_id, entry_id) do
-    with :ok <- validate_company(scope, company_id),
-         %Entry{} <- entry_in_company(scope, company_id, entry_id) do
+  def list_aliases(%Scope{} = scope, company_id) do
+    with :ok <- validate_company(scope, company_id) do
       {:ok,
        Repo.all(
          from(a in Alias,
-           where:
-             a.tenant_id == ^Scope.tenant_id(scope) and a.company_id == ^company_id and
-               a.entry_id == ^entry_id,
-           order_by: [asc: a.label]
+           where: a.tenant_id == ^Scope.tenant_id(scope) and a.company_id == ^company_id,
+           order_by: [asc: a.entry_id, asc: a.label]
          )
        )
        |> Enum.map(&alias_view/1)}
-    else
-      nil -> {:error, :entry_not_found}
-      error -> error
     end
   end
 
