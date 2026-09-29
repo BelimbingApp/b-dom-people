@@ -208,16 +208,22 @@ defmodule Bilimbi.People.Attendance do
           d.company_id == ^company_id and d.employee_id == ^employee_id and d.on_date == ^date
       )
 
-    %Day{
-      tenant_id: Scope.tenant_id(scope),
-      company_id: company_id,
-      employee_id: employee_id,
-      on_date: date
-    }
-    |> Day.changeset(%{status: "in_progress"})
-    |> Repo.insert!(on_conflict: :nothing)
-
-    Repo.one!(lock(query, "FOR UPDATE"))
+    with nil <- Repo.one(lock(query, "FOR UPDATE")) do
+      # A savepoint keeps a concurrent first insert from aborting the
+      # transaction; the loser then waits on the winner's row lock.
+      %Day{
+        tenant_id: Scope.tenant_id(scope),
+        company_id: company_id,
+        employee_id: employee_id,
+        on_date: date
+      }
+      |> Day.changeset(%{status: "in_progress"})
+      |> Repo.insert(mode: :savepoint)
+      |> case do
+        {:ok, day} -> day
+        {:error, _changeset} -> Repo.one!(lock(query, "FOR UPDATE"))
+      end
+    end
   end
 
   defp project_day(scope, day) do

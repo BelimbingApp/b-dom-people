@@ -79,6 +79,39 @@ defmodule Bilimbi.People.AttendanceTest do
              Attendance.list_days(scope, 73, employee.id)
   end
 
+  test "later events on an existing day write no failed audit capture", %{
+    scope: scope,
+    employee: employee
+  } do
+    handler = "attendance-audit-#{System.unique_integer()}"
+    test_pid = self()
+
+    :telemetry.attach(
+      handler,
+      [:bilimbi, :base, :audit, :capture_failure],
+      fn _, _, meta, _ -> send(test_pid, {:capture_failure, meta}) end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    for {key, type, at} <- [
+          {"in", "in", ~U[2026-09-30 09:00:00Z]},
+          {"out", "out", ~U[2026-09-30 17:00:00Z]}
+        ] do
+      assert {:ok, _} =
+               Attendance.record_clock(scope, 73, employee.id, %{
+                 source: "provider",
+                 event_key: key,
+                 event_type: type,
+                 occurred_at: at
+               })
+    end
+
+    refute_received {:capture_failure, _}
+    assert {:ok, [%{worked_minutes: 480}]} = Attendance.list_days(scope, 73, employee.id)
+  end
+
   test "refuses sibling and tenant crossovers", %{
     scope: scope,
     other_scope: other,
