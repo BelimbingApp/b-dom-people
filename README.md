@@ -12,7 +12,7 @@ Other modules remain empty; no sample rows are installed.
 
 | Module ID | Future ownership |
 | --- | --- |
-| `people/settings` | Hidden People navigation anchor |
+| `people/settings` | People navigation anchor and shared menu groups |
 | `people/reference_data` | Company-scoped People references and calendar exceptions |
 | `people/workforce` | Scoped native company and employee reads with per-company working statuses |
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
