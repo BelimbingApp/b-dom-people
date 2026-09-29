@@ -28,6 +28,13 @@ composition-lock commands.
 - Show a menu leaf only after its route, authorization, scope, and empty state
   are complete. Keep unfinished Training and Progression navigation hidden;
   use the task-based menu outline in the port plan when slices are ready.
+  Hang leaves on the outline containers in
+  `settings/lib/settings/contributions.ex` rather than declaring a container
+  in your module: Base Menu raises on duplicate IDs.
+- Check a module's unregistered `SchemaContract` with
+  `Bilimbi.Base.Database.SchemaVerifier.verify/2` against a freshly migrated
+  database; write check and partial-index predicates in PostgreSQL's canonical
+  form (`pg_get_constraintdef`), as `claims/lib/claims/schema_contract.ex` does.
 - Keep the shared composition lock in Bilimbi's ignored
   `.scratchpad/composition-lock/`; never commit a lock here. CI is
   `.github/workflows/ci.yml` and pins Bilimbi via `.github/bilimbi-revision`.
