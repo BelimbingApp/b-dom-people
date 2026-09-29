@@ -161,7 +161,7 @@ defmodule Bilimbi.People.Attendance do
         day = shift_day(scope, company_id, employee_id, event, max_shift_hours)
 
         case find_event(scope, company_id, event) do
-          nil -> insert_event(scope, day, event)
+          nil -> insert_event(scope, day, event, max_shift_hours)
           existing -> replay_event(existing, employee_id, event)
         end
 
@@ -188,7 +188,7 @@ defmodule Bilimbi.People.Attendance do
        else: Repo.rollback(:event_key_conflict)
   end
 
-  defp insert_event(scope, day, event) do
+  defp insert_event(scope, day, event, max_shift_hours) do
     %ClockEvent{
       tenant_id: Scope.tenant_id(scope),
       company_id: day.company_id,
@@ -199,7 +199,7 @@ defmodule Bilimbi.People.Attendance do
     |> Repo.insert()
     |> case do
       {:ok, saved} ->
-        project_day(scope, day)
+        project_day(scope, day, max_shift_hours)
         event_view(saved)
 
       {:error, changeset} ->
@@ -260,7 +260,7 @@ defmodule Bilimbi.People.Attendance do
     end
   end
 
-  defp project_day(scope, day) do
+  defp project_day(scope, day, max_shift_hours) do
     events =
       Repo.all(
         from(e in Tenancy.scope_query(ClockEvent, scope),
@@ -273,8 +273,9 @@ defmodule Bilimbi.People.Attendance do
     last_out = Enum.find(Enum.reverse(events), &(&1.event_type == "out"))
 
     complete? =
-      first_in && last_out &&
-        DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt
+      (first_in && last_out &&
+         DateTime.compare(last_out.occurred_at, first_in.occurred_at) == :gt) and
+        DateTime.diff(last_out.occurred_at, first_in.occurred_at) <= max_shift_hours * 3600
 
     minutes =
       if complete?,

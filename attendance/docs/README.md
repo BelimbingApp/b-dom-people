@@ -10,8 +10,10 @@ clock-out provide a raw worked span. A shift belongs to the day of its clock-in:
 a clock-out after local midnight closes the previous day's open shift when it
 falls within the company's maximum shift length (default 16 hours). A day with a
 clock-in and no clock-out is `in_progress` until that length passes, then reads
-as `exception_pending` for a missed clock-out; roster, breaks, late time and approvals
-belong to the later roster slice. No payroll claim follows from this projection.
+as `exception_pending` for a missed clock-out. A clock-out past that length is
+recorded but does not close the shift; the day stays `exception_pending` for a
+supervisor to review. Roster, breaks, late time and approvals belong to the
+later roster slice. No payroll claim follows from this projection.
 
 The operator page `/people/attendance/rules` sets each company's attendance
 time zone, maximum shift length, and whether linked employee accounts may clock

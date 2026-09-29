@@ -267,4 +267,38 @@ defmodule Bilimbi.People.AttendanceTest do
               %{on_date: ~D[2026-09-01], status: "exception_pending", worked_minutes: 0}
             ]} = Attendance.list_days(scope, 73, employee.id)
   end
+
+  test "a same-day clock-out past the maximum shift length stays in exception", %{
+    scope: scope,
+    employee: employee
+  } do
+    assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", false, 8)
+
+    shift = %{
+      source: "provider",
+      event_key: "long-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-01 08:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, shift)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               shift
+               | event_key: "long-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-01 20:00:00Z]
+             })
+
+    assert {:ok,
+            [
+              %{
+                on_date: ~D[2026-09-01],
+                status: "exception_pending",
+                last_out_at: ~U[2026-09-01 20:00:00Z],
+                worked_minutes: 0
+              }
+            ]} = Attendance.list_days(scope, 73, employee.id)
+  end
 end
