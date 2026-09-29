@@ -12,6 +12,7 @@ defmodule Bilimbi.People.Organisation do
   alias Bilimbi.People.Organisation.{Position, PositionAssignment, PositionVersion}
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Position, as: WorkforcePosition
+  alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Reference
 
   @page_size 50
@@ -186,7 +187,8 @@ defmodule Bilimbi.People.Organisation do
   defp working_ids(scope, company_id, assignments) do
     ids = assignments |> Enum.map(& &1.employee_id) |> Enum.uniq()
 
-    with {:ok, employees} <- Workforce.employees_by_ids(scope, company_id, ids) do
+    with {:ok, result} <- Workforce.employees_by_ids(scope, company_id, ids),
+         {:ok, employees} <- ReadResult.require_current(result) do
       {:ok, MapSet.new(employees, &String.to_integer(&1.reference.stable_id))}
     end
   end

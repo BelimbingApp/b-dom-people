@@ -16,6 +16,7 @@ defmodule Bilimbi.People.OrganisationTest do
   alias Bilimbi.People.Organisation.TestFixtures
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
+  alias Bilimbi.People.Workforce.ReadResult
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -88,13 +89,17 @@ defmodule Bilimbi.People.OrganisationTest do
                effective_to: ~D[2026-08-31]
              })
 
-    assert {:ok, [occupied]} = Workforce.positions(scope, 73, ~D[2026-07-15])
+    assert {:ok, %ReadResult{value: [occupied], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-07-15])
+
     assert occupied.title == "Position Beta"
     refute occupied.vacant?
     assert [%{kind: "substantive", employee_reference: reference}] = occupied.assignments
     assert reference.stable_id == Integer.to_string(holder.id)
 
-    assert {:ok, [vacant]} = Workforce.positions(scope, 73, ~D[2026-09-01])
+    assert {:ok, %ReadResult{value: [vacant], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-09-01])
+
     assert vacant.title == "Position Beta"
     assert vacant.vacant?
   end
@@ -177,7 +182,9 @@ defmodule Bilimbi.People.OrganisationTest do
                })
     end
 
-    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
+
     assert {:ok, _} = Workforce.put_working_statuses(scope, 73, ["active", "inactive"])
 
     assert {:ok, _} =
@@ -213,13 +220,17 @@ defmodule Bilimbi.People.OrganisationTest do
         effective_from: ~D[2026-01-01]
       })
 
-    assert {:ok, [occupied]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    assert {:ok, %ReadResult{value: [occupied], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-09-30])
+
     refute occupied.vacant?
     assert length(occupied.assignments) == 2
 
     assert {:ok, _} = Employee.update_employee(scope, 73, holder.id, %{status: "terminated"})
 
-    assert {:ok, [freed]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    assert {:ok, %ReadResult{value: [freed], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-09-30])
+
     assert freed.vacant?
 
     assert [%{kind: "acting", employee_reference: reference}] = freed.assignments
@@ -270,7 +281,9 @@ defmodule Bilimbi.People.OrganisationTest do
     assert %PositionAssignment{effective_from: ~D[2026-01-01], effective_to: ~D[2026-09-30]} =
              Repo.get(PositionAssignment, previous.id)
 
-    assert {:ok, [held]} = Workforce.positions(scope, 73, ~D[2026-10-15])
+    assert {:ok, %ReadResult{value: [held], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-10-15])
+
     refute held.vacant?
     assert [%{employee_reference: reference}] = held.assignments
     assert reference.stable_id == Integer.to_string(successor.id)
@@ -320,7 +333,9 @@ defmodule Bilimbi.People.OrganisationTest do
 
     on_exit(fn -> :telemetry.detach(handler) end)
 
-    assert {:ok, [projected]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    assert {:ok, %ReadResult{value: [projected], freshness: :current}} =
+             Workforce.positions(scope, 73, ~D[2026-09-30])
+
     :telemetry.detach(handler)
     refute projected.vacant?
 

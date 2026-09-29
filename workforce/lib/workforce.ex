@@ -48,7 +48,7 @@ defmodule Bilimbi.People.Workforce do
     with {:ok, _company} <- live_company(scope, platform_company_id) do
       case :persistent_term.get(@position_reader_key, nil) do
         nil -> {:error, :unavailable}
-        reader -> reader.positions(scope, platform_company_id, as_of, options)
+        reader -> current(reader.positions(scope, platform_company_id, as_of, options))
       end
     end
   end
@@ -115,7 +115,7 @@ defmodule Bilimbi.People.Workforce do
 
   @doc "Returns the exposed employees among at most 1,000 IDs, without reading the workforce."
   @spec employees_by_ids(Scope.t(), term(), term()) ::
-          {:ok, [WorkforceEmployee.t()]} | {:error, :not_found | :invalid_options}
+          {:ok, ReadResult.t()} | {:error, :not_found | :invalid_options}
   def employees_by_ids(%Scope{} = scope, platform_company_id, employee_ids) do
     with {:ok, core_company} <- live_company(scope, platform_company_id),
          {:ok, ids} <- lookup_ids(employee_ids) do
@@ -130,15 +130,17 @@ defmodule Bilimbi.People.Workforce do
         |> available_employees(core_company.id, supervisor_ids, statuses)
         |> MapSet.new(& &1.id)
 
-      {:ok,
-       Enum.map(visible, fn employee ->
-         supervisor_reference =
-           if MapSet.member?(visible_supervisors, employee.supervisor_id),
-             do: reference(:employee, employee.supervisor_id),
-             else: nil
+      values =
+        Enum.map(visible, fn employee ->
+          supervisor_reference =
+            if MapSet.member?(visible_supervisors, employee.supervisor_id),
+              do: reference(:employee, employee.supervisor_id),
+              else: nil
 
-         project_employee(employee, supervisor_reference)
-       end)}
+          project_employee(employee, supervisor_reference)
+        end)
+
+      {:ok, ReadResult.current(values)}
     end
   end
 
@@ -165,6 +167,9 @@ defmodule Bilimbi.People.Workforce do
   end
 
   def employee(%Scope{}, _platform_company_id, _employee_id), do: {:error, :not_found}
+
+  defp current({:ok, value}), do: {:ok, ReadResult.current(value)}
+  defp current(error), do: error
 
   defp live_company(scope, id) do
     with {:ok, company} <- Company.get_company(scope, id),

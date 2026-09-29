@@ -200,12 +200,15 @@ defmodule Bilimbi.People.WorkforceTest do
         employee_type: "agent"
       })
 
-    assert {:ok, [value]} =
+    assert {:ok, %ReadResult{value: [value], freshness: :current}} =
              Workforce.employees_by_ids(scope, 73, [working.id, leaver.id, sibling.id, agent.id])
 
     assert value.reference.stable_id == Integer.to_string(working.id)
     assert value.supervisor_reference.stable_id == Integer.to_string(supervisor.id)
-    assert {:ok, []} = Workforce.employees_by_ids(scope, 73, [])
+
+    assert {:ok, %ReadResult{value: [], freshness: :current}} =
+             Workforce.employees_by_ids(scope, 73, [])
+
     assert {:error, :not_found} = Workforce.employees_by_ids(other_scope, 73, [working.id])
 
     assert {:error, :invalid_options} =

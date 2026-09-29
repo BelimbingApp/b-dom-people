@@ -16,11 +16,11 @@ company identity maps to Core Company today, but the two axes remain distinct.
 References use stable `people/native` source identity and immutable native IDs.
 Employee identity never implies a login actor.
 
-`positions/4` uses the same company boundary and returns bounded position
-projections when Organisation is mounted. Organisation registers that public
-reader during application startup; an absent owner returns
-`{:error, :unavailable}`. Position references use the native source identity
-and remain distinct from Connector projections.
+`positions/4` uses the same company boundary and returns a current `ReadResult`
+of bounded position projections when Organisation is mounted. Organisation
+registers that public reader during application startup; an absent owner returns
+`{:error, :unavailable}`. Position references use the native source identity and
+remain distinct from Connector projections.
 
 Company and employee reads use Core public APIs. Only active companies and
 non-agent employees in the company's working statuses are exposed, both as
