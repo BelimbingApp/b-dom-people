@@ -16,7 +16,15 @@ public APIs; assignments accept only an employee that `Workforce.employee/3`
 exposes, so agents and employees outside the company's working statuses are
 refused. Reads apply the same rule at read time: an assignee who later leaves
 the working statuses is omitted from holders and no longer occupies the
-position, while the assignment row stays as history. `positions/4` returns at most 100
+position, while the assignment row stays as history. Reads check only the
+page's holders through `Workforce.employees_by_ids/3`, never the whole
+workforce. A new substantive assignment ends an earlier substantive holder who
+is no longer working on the day before it starts, in the same transaction, and
+records a `people.organisation.assignment_released` audit action.
+`end_assignment/4` takes an Authz actor holding `people.organisation.manage`
+for the company, only moves an end date earlier, and records a
+`people.organisation.assignment_ended` audit action; the explorer offers it as
+an End action to such actors. `positions/4` returns at most 100
 positions per page; `count_positions/2` supports the explorer's pagination.
 The Organisation application registers its read implementation with the
 `Bilimbi.People.Workforce.positions/4` seam when mounted. Without Organisation,

@@ -7,7 +7,7 @@ defmodule Bilimbi.People.Organisation.Contributions do
     %{
       authz: %{
         domains: %{"people" => "People domain modules"},
-        capabilities: ["people.organisation.view"]
+        capabilities: ["people.organisation.view", "people.organisation.manage"]
       },
       menu: [
         %{

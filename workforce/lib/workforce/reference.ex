@@ -6,7 +6,7 @@ defmodule Bilimbi.People.Workforce.Reference do
 
   @type t :: %__MODULE__{
           source_id: String.t(),
-          type: :company | :employee | :position,
+          type: :company | :employee | :position | :assignment,
           stable_id: String.t()
         }
 end

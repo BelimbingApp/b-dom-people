@@ -21,6 +21,24 @@ defmodule Bilimbi.People.Organisation.PositionAssignment do
     |> exclusion_constraint(:effective_from, name: :people_position_placements_one_substantive)
   end
 
+  def end_changeset(assignment, effective_to) do
+    assignment
+    |> cast(%{effective_to: effective_to}, [:effective_to])
+    |> validate_required([:effective_to])
+    |> validate_interval()
+    |> validate_shortened(assignment.effective_to)
+  end
+
+  defp validate_shortened(changeset, nil), do: changeset
+
+  defp validate_shortened(changeset, previous) do
+    to = get_field(changeset, :effective_to)
+
+    if to && Date.compare(to, previous) != :lt,
+      do: add_error(changeset, :effective_to, "must be before the current end"),
+      else: changeset
+  end
+
   defp validate_interval(changeset) do
     from = get_field(changeset, :effective_from)
     to = get_field(changeset, :effective_to)

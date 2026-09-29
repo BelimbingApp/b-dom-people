@@ -1,6 +1,8 @@
 defmodule Bilimbi.People.OrganisationTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Audit
+  alias Bilimbi.Base.Audit.TestFixtures, as: AuditFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
@@ -36,6 +38,7 @@ defmodule Bilimbi.People.OrganisationTest do
 
     EmployeeFixtures.create_employee_tables!()
     SettingsFixtures.create_settings_table!()
+    AuditFixtures.create_audit_tables!()
     TestFixtures.create_position_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41})
     CompanyFixtures.insert_tenant!(%{id: 42, is_platform_operator: false})
@@ -228,6 +231,104 @@ defmodule Bilimbi.People.OrganisationTest do
     assert employee_id == holder.id
   end
 
+  test "a new substantive holder releases a seat held by a non-working employee", %{
+    scope: scope
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-REFILL"})
+
+    {:ok, leaver} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-LEAVER", full_name: "Leaver"})
+
+    {:ok, successor} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-NEXT", full_name: "Successor"})
+
+    {:ok, previous} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: leaver.id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    assert {:error, changeset} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: successor.id,
+               kind: "substantive",
+               effective_from: ~D[2026-10-01]
+             })
+
+    assert changeset.errors[:effective_from]
+
+    assert {:ok, _} = Employee.update_employee(scope, 73, leaver.id, %{status: "terminated"})
+
+    assert {:ok, current} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: successor.id,
+               kind: "substantive",
+               effective_from: ~D[2026-10-01]
+             })
+
+    assert %PositionAssignment{effective_from: ~D[2026-01-01], effective_to: ~D[2026-09-30]} =
+             Repo.get(PositionAssignment, previous.id)
+
+    assert {:ok, [held]} = Workforce.positions(scope, 73, ~D[2026-10-15])
+    refute held.vacant?
+    assert [%{employee_reference: reference}] = held.assignments
+    assert reference.stable_id == Integer.to_string(successor.id)
+    assert current.effective_to == nil
+
+    assert {:ok, [action]} = Audit.list_actions(scope)
+    assert action.event == "people.organisation.assignment_released"
+    assert action.company_id == 73
+    assert action.payload["assignment_id"] == previous.id
+    assert action.payload["effective_to"] == "2026-09-30"
+  end
+
+  test "position reads look up only the page's holders, not the whole workforce", %{
+    scope: scope
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-BOUNDED"})
+
+    employees =
+      for number <- 1..300 do
+        {:ok, employee} =
+          Employee.create_employee(scope, 73, %{
+            employee_number: "E-B#{number}",
+            full_name: "Employee #{number}"
+          })
+
+        employee
+      end
+
+    {:ok, _} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: hd(employees).id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    test_pid = self()
+    handler = "organisation-bounded-#{System.unique_integer([:positive])}"
+
+    :telemetry.attach(
+      handler,
+      [:bilimbi, :base, :repo, :query],
+      fn _event, _measurements, metadata, _config ->
+        with {:ok, %{num_rows: rows}} <- metadata.result, do: send(test_pid, {:rows, rows})
+      end,
+      nil
+    )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert {:ok, [projected]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    :telemetry.detach(handler)
+    refute projected.vacant?
+
+    counts = collect_rows([])
+    assert counts != []
+    assert Enum.max(counts) < 10
+  end
+
   test "scope, company and cycles are refused", %{scope: scope, other_scope: other_scope} do
     {:ok, root} = Organisation.create_position(scope, 73, %{code: "ROOT"})
     {:ok, child} = Organisation.create_position(scope, 73, %{code: "CHILD", parent_id: root.id})
@@ -312,5 +413,13 @@ defmodule Bilimbi.People.OrganisationTest do
     assert length(projected.assignments) == 500
     assert projected.assignments_incomplete?
     refute projected.vacant?
+  end
+
+  defp collect_rows(counts) do
+    receive do
+      {:rows, rows} -> collect_rows([rows | counts])
+    after
+      0 -> counts
+    end
   end
 end

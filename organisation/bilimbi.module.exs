@@ -6,6 +6,7 @@
   otp_app: :bilimbi_people_organisation,
   namespace: Bilimbi.People.Organisation,
   dependencies: [
+    "base/audit",
     "base/authz",
     "base/database",
     "base/menu",

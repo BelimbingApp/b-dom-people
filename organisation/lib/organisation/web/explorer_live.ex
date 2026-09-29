@@ -7,6 +7,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
   alias Bilimbi.People.Organisation
 
   @capability "people.organisation.view"
+  @manage_capability "people.organisation.manage"
   @page_size 50
 
   @impl true
@@ -65,9 +66,21 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
       total_pages: ceil(total / page_size)
     }
 
+    can_manage? =
+      company != nil and
+        match?(
+          {:ok, _},
+          Company.authorize_company_target(
+            socket.assigns.current_scope.actor,
+            company.id,
+            @manage_capability
+          )
+        )
+
     {:noreply,
      socket
      |> assign(:company, company)
+     |> assign(:can_manage?, can_manage?)
      |> assign(:as_of, day)
      |> assign(:page, page)
      |> assign(:page_size, page_size)
@@ -94,6 +107,35 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
      push_patch(socket,
        to:
          ~p"/people/organisation?company_id=#{company.id}&as_of=#{Date.to_iso8601(socket.assigns.as_of)}&page=#{page}&page_size=#{socket.assigns.page_size}"
+     )}
+  end
+
+  def handle_event(
+        "end_assignment",
+        %{"assignment_id" => assignment_id, "effective_to" => effective_to},
+        %{assigns: %{company: company}} = socket
+      )
+      when not is_nil(company) do
+    result =
+      with {id, ""} <- Integer.parse(assignment_id) do
+        Organisation.end_assignment(
+          socket.assigns.current_scope.actor,
+          company.id,
+          id,
+          effective_to
+        )
+      end
+
+    socket =
+      case result do
+        {:ok, _assignment} -> put_flash(socket, :info, "Assignment ended.")
+        _error -> put_flash(socket, :error, "The assignment could not be ended on that date.")
+      end
+
+    {:noreply,
+     push_patch(socket,
+       to:
+         ~p"/people/organisation?company_id=#{company.id}&as_of=#{Date.to_iso8601(socket.assigns.as_of)}&page=#{socket.assigns.page}&page_size=#{socket.assigns.page_size}"
      )}
   end
 
@@ -177,9 +219,30 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
                   · Reports to position {position.parent_reference.stable_id}
                 </span>
               </p>
-              <p :for={assignment <- position.assignments} class="text-sm">
-                {String.capitalize(assignment.kind)} · Employee {assignment.employee_reference.stable_id}
-              </p>
+              <div :for={assignment <- position.assignments} class="flex flex-wrap items-center gap-2 text-sm">
+                <span>
+                  {String.capitalize(assignment.kind)} · Employee {assignment.employee_reference.stable_id}
+                </span>
+                <form
+                  :if={@can_manage?}
+                  id={"end-assignment-#{assignment.reference.stable_id}"}
+                  phx-submit="end_assignment"
+                  class="flex items-center gap-2"
+                >
+                  <input type="hidden" name="assignment_id" value={assignment.reference.stable_id} />
+                  <input
+                    type="date"
+                    name="effective_to"
+                    value={Date.to_iso8601(@as_of)}
+                    aria-label="Last day of assignment"
+                    required
+                    class="rounded-md border border-line bg-surface px-2 py-1 text-sm"
+                  />
+                  <button type="submit" class="rounded-md border border-line px-2 py-1 text-sm">
+                    End
+                  </button>
+                </form>
+              </div>
               <p :if={position.assignments_incomplete?} class="text-sm text-warning-ink">
                 More assignments exist beyond this page's display limit.
               </p>

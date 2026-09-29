@@ -2,7 +2,8 @@
 
 Module ID: `people/workforce`. Public workforce identity and read contracts.
 
-`company/2`, `employees/2`, `employee/3`, `working_statuses/2`, and
+`company/2`, `employees/2`, `employee/3`, `employees_by_ids/3`,
+`working_statuses/2`, and
 `put_working_statuses/3` require a validated `Bilimbi.Base.Tenancy.Scope` and
 explicit platform company ID. Read functions return `ReadResult` values:
 native reads are `:current`, `stale/2` carries the last confirmation time, and
@@ -23,7 +24,8 @@ and remain distinct from Connector projections.
 
 Company and employee reads use Core public APIs. Only active companies and
 non-agent employees in the company's working statuses are exposed, both as
-employees and as supervisor references. Missing, cross-tenant, archived, and
+employees and as supervisor references. `employees_by_ids/3` applies the same
+rule to at most 1,000 employee IDs without reading the whole workforce. Missing, cross-tenant, archived, and
 malformed company IDs are indistinguishable.
 
 Working statuses are the company-scoped Base Setting
