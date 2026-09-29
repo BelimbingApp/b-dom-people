@@ -44,6 +44,11 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
       })
 
     assert render_patch(view, ~p"/people/organisation?as_of=2026-09-30") =~ "Position Alpha"
+    refute has_element?(view, "#organisation-empty")
+
+    refute render_patch(view, ~p"/people/organisation?company_id=73&page=5") =~ "Position Alpha"
+    refute has_element?(view, "#organisation-empty")
+
     refute render_patch(view, ~p"/people/organisation?company_id=74") =~ "Position Alpha"
   end
 

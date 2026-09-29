@@ -203,13 +203,16 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
           />
 
           <.empty_state
-            :if={@company && @positions == []}
+            :if={@company && @page_data.total_entries == 0}
             id="organisation-empty"
             title="No positions have been recorded for this company."
           />
 
           <div :if={@positions != []} id="organisation-positions" class="mt-6 space-y-3">
-            <article :for={position <- @positions} class="rounded-xl border border-line bg-surface p-4">
+            <article
+              :for={position <- @positions}
+              class="rounded-xl border border-line bg-surface p-4"
+            >
               <h2 class="font-semibold">{position.title || position.code}</h2>
               <p class="text-sm text-ink-muted">{position.code}</p>
               <p class="text-sm">
@@ -219,7 +222,10 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
                   · Reports to position {position.parent_reference.stable_id}
                 </span>
               </p>
-              <div :for={assignment <- position.assignments} class="flex flex-wrap items-center gap-2 text-sm">
+              <div
+                :for={assignment <- position.assignments}
+                class="flex flex-wrap items-center gap-2 text-sm"
+              >
                 <span>
                   {String.capitalize(assignment.kind)} · Employee {assignment.employee_reference.stable_id}
                 </span>
