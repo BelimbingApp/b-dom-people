@@ -64,9 +64,9 @@ requests. Review decisions record history but do not modify Core Employee
 identity. Saved views belong to one login actor and company.
 
 Attendance contributes **My attendance** under My work and **Attendance rules**
-under Settings. The latter sets the time zone and enables employee self clocking
-per company. Its default is off. See `attendance/docs/README.md` for the data
-contract and deployment inventory step.
+under Settings for per-company attendance policy. See
+`attendance/docs/README.md` for the rules, their defaults, the data contract,
+and the deployment inventory step.
 
 ## License
 
