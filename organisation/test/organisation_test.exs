@@ -1,20 +1,41 @@
 defmodule Bilimbi.People.OrganisationTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
+  alias Bilimbi.Base.Settings.ContributionValidator
+  alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
   alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
   alias Bilimbi.People.Organisation
+  alias Bilimbi.People.Organisation.PositionAssignment
   alias Bilimbi.People.Organisation.TestFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
+    settings =
+      ContributionValidator.validate_contributions!([
+        %{
+          descriptor: %{id: "people/workforce"},
+          payload: WorkforceContributions.contributions().settings
+        }
+      ])
+
+    ContributionRegistry.put_snapshot_for_test!(%{
+      graph_fingerprint: "people-organisation-test",
+      consumers: %{settings: settings}
+    })
+
+    on_exit(&ContributionRegistry.clear_for_test!/0)
+
     EmployeeFixtures.create_employee_tables!()
+    SettingsFixtures.create_settings_table!()
     TestFixtures.create_position_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41})
     CompanyFixtures.insert_tenant!(%{id: 42, is_platform_operator: false})
@@ -127,6 +148,86 @@ defmodule Bilimbi.People.OrganisationTest do
              })
   end
 
+  test "assignment refuses employees outside the working statuses and agents", %{scope: scope} do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-REFUSE"})
+
+    {:ok, inactive} =
+      Employee.create_employee(scope, 73, %{
+        employee_number: "E-INACTIVE",
+        full_name: "Employee Inactive",
+        status: "inactive"
+      })
+
+    {:ok, agent} =
+      Employee.create_employee(scope, 73, %{
+        employee_number: "A-1",
+        full_name: "System Agent",
+        employee_type: "agent"
+      })
+
+    for employee <- [inactive, agent] do
+      assert {:error, :not_found} =
+               Organisation.assign(scope, 73, position.id, %{
+                 employee_id: employee.id,
+                 kind: "substantive",
+                 effective_from: ~D[2026-01-01]
+               })
+    end
+
+    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, _} = Workforce.put_working_statuses(scope, 73, ["active", "inactive"])
+
+    assert {:ok, _} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: inactive.id,
+               kind: "substantive",
+               effective_from: ~D[2026-01-01]
+             })
+  end
+
+  test "termination frees the seat at read time and keeps the assignment as history", %{
+    scope: scope
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-FREE"})
+
+    {:ok, holder} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-FREE", full_name: "Holder"})
+
+    {:ok, cover} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-COVER", full_name: "Cover"})
+
+    {:ok, assignment} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: holder.id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    {:ok, _} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: cover.id,
+        kind: "acting",
+        effective_from: ~D[2026-01-01]
+      })
+
+    assert {:ok, [occupied]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    refute occupied.vacant?
+    assert length(occupied.assignments) == 2
+
+    assert {:ok, _} = Employee.update_employee(scope, 73, holder.id, %{status: "terminated"})
+
+    assert {:ok, [freed]} = Workforce.positions(scope, 73, ~D[2026-09-30])
+    assert freed.vacant?
+
+    assert [%{kind: "acting", employee_reference: reference}] = freed.assignments
+    assert reference.stable_id == Integer.to_string(cover.id)
+
+    assert %PositionAssignment{employee_id: employee_id, effective_to: nil} =
+             Repo.get(PositionAssignment, assignment.id)
+
+    assert employee_id == holder.id
+  end
+
   test "scope, company and cycles are refused", %{scope: scope, other_scope: other_scope} do
     {:ok, root} = Organisation.create_position(scope, 73, %{code: "ROOT"})
     {:ok, child} = Organisation.create_position(scope, 73, %{code: "CHILD", parent_id: root.id})
@@ -140,7 +241,7 @@ defmodule Bilimbi.People.OrganisationTest do
     assert {:error, :not_found} = Organisation.positions(other_scope, 73)
     assert {:error, :not_found} = Organisation.positions(scope, 75)
 
-    assert {:error, :employee_not_found} =
+    assert {:error, :not_found} =
              Organisation.assign(scope, 73, root.id, %{
                employee_id: employee.id,
                kind: "acting",

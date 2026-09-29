@@ -11,8 +11,12 @@ rules even for concurrent writers. Parent links are company-bound and cycle
 checked under the Core Company lock.
 
 Every public operation takes a validated `Bilimbi.Base.Tenancy.Scope` and an
-explicit platform company ID. Writes check a live workforce company and an
-employee in that company through public APIs. `positions/4` returns at most 100
+explicit platform company ID. Writes check a live workforce company through
+public APIs; assignments accept only an employee that `Workforce.employee/3`
+exposes, so agents and employees outside the company's working statuses are
+refused. Reads apply the same rule at read time: an assignee who later leaves
+the working statuses is omitted from holders and no longer occupies the
+position, while the assignment row stays as history. `positions/4` returns at most 100
 positions per page; `count_positions/2` supports the explorer's pagination.
 The Organisation application registers its read implementation with the
 `Bilimbi.People.Workforce.positions/4` seam when mounted. Without Organisation,

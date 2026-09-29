@@ -6,7 +6,6 @@ defmodule Bilimbi.People.Organisation do
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
-  alias Bilimbi.Core.Employee
   alias Bilimbi.People.Organisation.{Position, PositionAssignment, PositionVersion}
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Position, as: WorkforcePosition
@@ -63,7 +62,7 @@ defmodule Bilimbi.People.Organisation do
 
     with {:ok, _company} <- Workforce.company(scope, company_id),
          {:ok, _position} <- get_position(company_id, position_id),
-         {:ok, _employee} <- Employee.get_employee(scope, company_id, employee_id) do
+         {:ok, _employee} <- Workforce.employee(scope, company_id, employee_id) do
       %PositionAssignment{}
       |> PositionAssignment.changeset(Map.put(attrs, :position_id, position_id))
       |> Repo.insert()
@@ -74,7 +73,8 @@ defmodule Bilimbi.People.Organisation do
   def positions(%Scope{} = scope, company_id, as_of \\ Date.utc_today(), options \\ []) do
     with {:ok, _company} <- Workforce.company(scope, company_id),
          :ok <- validate_date(as_of),
-         {:ok, page, size} <- page_options(options) do
+         {:ok, page, size} <- page_options(options),
+         {:ok, employees} <- Workforce.employees(scope, company_id) do
       offset = (page - 1) * size
 
       rows =
@@ -87,9 +87,10 @@ defmodule Bilimbi.People.Organisation do
         |> Repo.all()
 
       ids = Enum.map(rows, & &1.id)
+      holder_ids = Enum.map(employees, &String.to_integer(&1.reference.stable_id))
       versions = effective_versions(ids, as_of)
-      {assignments, truncated_at_id} = effective_assignments(ids, as_of)
-      occupied = substantive_position_ids(ids, as_of)
+      {assignments, truncated_at_id} = effective_assignments(ids, holder_ids, as_of)
+      occupied = substantive_position_ids(ids, holder_ids, as_of)
 
       {:ok,
        Enum.map(rows, fn position ->
@@ -133,13 +134,14 @@ defmodule Bilimbi.People.Organisation do
     |> Map.new(&{&1.position_id, &1})
   end
 
-  defp effective_assignments([], _day), do: {%{}, nil}
+  defp effective_assignments([], _holder_ids, _day), do: {%{}, nil}
 
-  defp effective_assignments(ids, day) do
+  defp effective_assignments(ids, holder_ids, day) do
     rows =
       from(assignment in PositionAssignment,
         where:
-          assignment.position_id in ^ids and assignment.effective_from <= ^day and
+          assignment.position_id in ^ids and assignment.employee_id in ^holder_ids and
+            assignment.effective_from <= ^day and
             (is_nil(assignment.effective_to) or assignment.effective_to >= ^day),
         order_by: [asc: assignment.position_id, asc: assignment.id],
         limit: @assignment_limit + 1
@@ -160,12 +162,13 @@ defmodule Bilimbi.People.Organisation do
     {values, truncated_at_id}
   end
 
-  defp substantive_position_ids([], _day), do: MapSet.new()
+  defp substantive_position_ids([], _holder_ids, _day), do: MapSet.new()
 
-  defp substantive_position_ids(ids, day) do
+  defp substantive_position_ids(ids, holder_ids, day) do
     from(assignment in PositionAssignment,
       where:
-        assignment.position_id in ^ids and assignment.kind == "substantive" and
+        assignment.position_id in ^ids and assignment.employee_id in ^holder_ids and
+          assignment.kind == "substantive" and
           assignment.effective_from <= ^day and
           (is_nil(assignment.effective_to) or assignment.effective_to >= ^day),
       select: assignment.position_id
