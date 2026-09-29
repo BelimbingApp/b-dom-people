@@ -5,10 +5,22 @@
   required: false,
   otp_app: :bilimbi_people_attendance,
   namespace: Bilimbi.People.Attendance,
-  dependencies: [],
-  migrations: nil,
-  web: nil,
+  dependencies: [
+    "base/authz",
+    "base/database",
+    "base/datetime",
+    "base/module_registry",
+    "base/settings",
+    "base/tenancy",
+    "base/ui",
+    "core/company",
+    "core/user",
+    "people/workforce"
+  ],
+  migrations: "priv/repo/migrations",
+  migration_dispositions: %{20_260_930_100_301 => :bilimbi_only},
+  web: "priv/web_routes.exs",
   schema_contract: nil,
-  contribution_provider: nil,
+  contribution_provider: Bilimbi.People.Attendance.Contributions,
   dev_seed: nil
 ]
