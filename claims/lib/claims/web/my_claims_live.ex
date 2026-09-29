@@ -32,6 +32,7 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
      |> assign(:company_id, company_id)
      |> assign(:employee, employee)
      |> assign(:possible_duplicate?, false)
+     |> assign(:claim, %{})
      |> load()}
   end
 
@@ -51,18 +52,18 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
           {:noreply,
            socket
            |> assign(:possible_duplicate?, false)
+           |> assign(:claim, %{})
            |> load()
            |> clear_flash(:error)
            |> put_flash(:info, "Claim submitted.")}
 
-        {:error, :possible_duplicate} ->
+        {:error, reason} ->
           {:noreply,
            socket
-           |> assign(:possible_duplicate?, true)
-           |> put_flash(:error, refusal(:possible_duplicate))}
-
-        {:error, reason} ->
-          {:noreply, put_flash(socket, :error, refusal(reason))}
+           |> assign(:possible_duplicate?, reason == :possible_duplicate)
+           |> assign(:claim, attrs)
+           |> clear_flash(:info)
+           |> put_flash(:error, refusal(reason))}
       end
     else
       {:noreply, socket}
@@ -191,17 +192,25 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
                 aria-label="Claim type"
                 class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
               >
-                <option :for={type <- @open_types} value={type.id}>{type.name}</option>
+                <option
+                  :for={type <- @open_types}
+                  value={type.id}
+                  selected={@claim["claim_type_id"] == to_string(type.id)}
+                >
+                  {type.name}
+                </option>
               </select>
               <input
                 type="date"
                 name="claim[incurred_on]"
+                value={@claim["incurred_on"]}
                 aria-label="Expense date"
                 required
                 class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
               />
               <input
                 name="claim[amount]"
+                value={@claim["amount"]}
                 inputmode="decimal"
                 aria-label="Amount"
                 placeholder="Amount"
@@ -216,12 +225,14 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
                 <option
                   :for={currency <- @open_types |> Enum.map(& &1.policy.currency) |> Enum.uniq()}
                   value={currency}
+                  selected={@claim["currency"] == currency}
                 >
                   {currency}
                 </option>
               </select>
               <input
                 name="claim[receipt_number]"
+                value={@claim["receipt_number"]}
                 aria-label="Receipt number"
                 placeholder="Receipt number"
                 maxlength="100"
@@ -229,6 +240,7 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
               />
               <input
                 name="claim[description]"
+                value={@claim["description"]}
                 aria-label="Description"
                 placeholder="Description"
                 maxlength="500"

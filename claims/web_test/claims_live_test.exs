@@ -97,9 +97,19 @@ defmodule BilimbiWeb.ClaimsLiveTest do
 
       assert has_element?(mine, "#my-claims-table", "R-1")
 
-      assert mine
-             |> form("#my-claims-form", claim: Map.put(claim, :receipt_number, "R-2"))
-             |> render_submit() =~ "Confirm it is a separate expense"
+      assert render(mine) =~ "Claim submitted."
+
+      duplicate_prompt =
+        mine
+        |> form("#my-claims-form", claim: Map.put(claim, :receipt_number, "R-2"))
+        |> render_submit()
+
+      assert duplicate_prompt =~ "Confirm it is a separate expense"
+      refute duplicate_prompt =~ "Claim submitted."
+      assert has_element?(mine, "#my-claims-form input[name='claim[incurred_on]'][value='2026-03-10']")
+      assert has_element?(mine, "#my-claims-form input[name='claim[amount]'][value='40']")
+      assert has_element?(mine, "#my-claims-form input[name='claim[receipt_number]'][value='R-2']")
+      assert has_element?(mine, "#my-claims-form option[value='AAA'][selected]")
 
       mine
       |> form("#my-claims-form",
