@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
 
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.ReadResult
 
   @capability "people.workforce.settings.manage"
 
@@ -63,19 +64,39 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   def handle_event("save", _params, socket), do: {:noreply, socket}
 
   defp select_company(%{assigns: %{companies: []}} = socket, _company_id),
-    do: assign(socket, company: nil, working_statuses: [])
+    do: assign(socket, company: nil, working_statuses: [], freshness_notice: nil)
 
   defp select_company(%{assigns: %{companies: [first | _] = companies}} = socket, company_id) do
     company = Enum.find(companies, first, &(Integer.to_string(&1.id) == company_id))
 
     case Workforce.working_statuses(socket.assigns.current_scope.scope, company.id) do
-      {:ok, statuses} ->
-        assign(socket, company: company, working_statuses: statuses)
+      {:ok, %ReadResult{value: statuses, freshness: freshness}} ->
+        assign(socket,
+          company: company,
+          working_statuses: statuses || [],
+          freshness_notice: freshness_notice(freshness)
+        )
 
       {:error, :not_found} ->
-        assign(socket, company: nil, working_statuses: [])
+        assign(socket, company: nil, working_statuses: [], freshness_notice: nil)
     end
   end
+
+  @doc """
+  Operator-facing notice for a working-status read that is not current, or
+  `nil` when it is current.
+  """
+  @spec freshness_notice(ReadResult.freshness()) :: String.t() | nil
+  def freshness_notice(:current), do: nil
+
+  def freshness_notice({:stale, %DateTime{} = last_confirmed_at}),
+    do:
+      "These working statuses were last confirmed at " <>
+        Calendar.strftime(last_confirmed_at, "%Y-%m-%d %H:%M %Z") <>
+        " and may be out of date."
+
+  def freshness_notice({:unavailable, _reason}),
+    do: "The current working statuses are unavailable. Saving replaces them with your selection."
 
   @impl true
   def render(assigns) do
@@ -113,6 +134,15 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
             </option>
           </select>
         </form>
+
+        <p
+          :if={@company && @freshness_notice}
+          id="workforce-settings-freshness"
+          role="status"
+          class="mt-5 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+        >
+          {@freshness_notice}
+        </p>
 
         <form :if={@company} id="workforce-settings-form" phx-submit="save" class="mt-5 space-y-5">
           <fieldset class="rounded-xl border border-line bg-surface p-4">
