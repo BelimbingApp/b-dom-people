@@ -51,6 +51,24 @@ defmodule Bilimbi.People.ReferenceDataTest do
     assert {:ok, [_]} = ReferenceData.list_calendar_exceptions(scope, 73)
   end
 
+  test "allows an alias label once per kind within a company", %{first_scope: scope} do
+    assert {:ok, first} = ReferenceData.create_entry(scope, 73, entry_attrs())
+
+    assert {:ok, same_kind} =
+             ReferenceData.create_entry(scope, 73, %{entry_attrs() | code: "two"})
+
+    assert {:ok, other_kind} =
+             ReferenceData.create_entry(scope, 73, %{entry_attrs() | kind: "grade"})
+
+    assert {:ok, _alias} = ReferenceData.add_alias(scope, 73, first.id, %{label: "Other"})
+
+    assert {:error, %Ecto.Changeset{errors: [company_id: _]}} =
+             ReferenceData.add_alias(scope, 73, same_kind.id, %{label: "Other"})
+
+    assert {:ok, _alias} = ReferenceData.add_alias(scope, 73, other_kind.id, %{label: "Other"})
+    assert {:ok, [%{label: "Other"}]} = ReferenceData.list_aliases(scope, 73, other_kind.id)
+  end
+
   defp entry_attrs, do: %{kind: "category", code: "one", label: "First value"}
 
   defp create_reference_tables! do
@@ -76,9 +94,9 @@ defmodule Bilimbi.People.ReferenceDataTest do
       """
       CREATE TEMPORARY TABLE people_reference_aliases (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        entry_id bigint NOT NULL, label varchar(200) NOT NULL,
+        entry_id bigint NOT NULL, kind varchar(80) NOT NULL, label varchar(200) NOT NULL,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_reference_aliases_company_label_unique UNIQUE (company_id, label)
+        CONSTRAINT people_reference_aliases_company_kind_label_unique UNIQUE (company_id, kind, label)
       ) ON COMMIT PRESERVE ROWS
       """,
       []

@@ -32,11 +32,13 @@ defmodule Bilimbi.People.ReferenceData.SchemaContract do
           common_columns("people_reference_aliases")
           |> Map.merge(%{
             "entry_id" => column(:bigint, false),
+            "kind" => column({:varchar, 80}, false),
             "label" => column({:varchar, 200}, false)
           }),
         indexes: %{
           "people_reference_aliases_pkey" => index(["id"], true),
-          "people_reference_aliases_company_label_unique" => index(["company_id", "label"], true),
+          "people_reference_aliases_company_kind_label_unique" =>
+            index(["company_id", "kind", "label"], true),
           "people_reference_aliases_tenant_id_company_id_entry_id_index" =>
             index(["tenant_id", "company_id", "entry_id"])
         },

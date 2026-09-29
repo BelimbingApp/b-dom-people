@@ -30,13 +30,14 @@ defmodule Bilimbi.People.ReferenceData.Migrations.CreateReferenceData do
         null: false
       )
 
+      add(:kind, :string, size: 80, null: false)
       add(:label, :string, size: 200, null: false)
       timestamps(type: :naive_datetime)
     end
 
     create(
-      unique_index(:people_reference_aliases, [:company_id, :label],
-        name: :people_reference_aliases_company_label_unique
+      unique_index(:people_reference_aliases, [:company_id, :kind, :label],
+        name: :people_reference_aliases_company_kind_label_unique
       )
     )
 

@@ -6,7 +6,8 @@ This module owns three fresh Bilimbi-only tables: reference entries, aliases,
 and calendar exceptions. Call `Bilimbi.People.ReferenceData` with a validated
 `Bilimbi.Base.Tenancy.Scope` and explicit company ID. The facade checks that
 company through Core Company before reading or writing; callers do not query
-its schemas. New installations have no reference values or calendar exceptions.
+its schemas. An alias label is unique per reference kind within a company.
+New installations have no reference values or calendar exceptions.
 
 The operator route `/people/companies/:company_id/references` requires
 `people.references.manage` and shows an empty state for a company without

@@ -32,8 +32,13 @@ defmodule Bilimbi.People.ReferenceData do
 
   def add_alias(%Scope{} = scope, company_id, entry_id, attributes) when is_map(attributes) do
     with :ok <- validate_company(scope, company_id),
-         %Entry{} <- entry_in_company(scope, company_id, entry_id) do
-      %Alias{tenant_id: Scope.tenant_id(scope), company_id: company_id, entry_id: entry_id}
+         %Entry{kind: kind} <- entry_in_company(scope, company_id, entry_id) do
+      %Alias{
+        tenant_id: Scope.tenant_id(scope),
+        company_id: company_id,
+        entry_id: entry_id,
+        kind: kind
+      }
       |> Alias.changeset(attributes)
       |> Repo.insert()
       |> public_result(&alias_view/1)
