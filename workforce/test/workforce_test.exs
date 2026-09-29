@@ -1,19 +1,35 @@
 defmodule Bilimbi.People.WorkforceTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
+  alias Bilimbi.Base.Settings.ContributionValidator
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
   alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.People.Workforce
-  alias Bilimbi.People.Workforce.Snapshot
+  alias Bilimbi.People.Workforce.Contributions
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
+    settings =
+      ContributionValidator.validate_contributions!([
+        %{descriptor: %{id: "people/workforce"}, payload: Contributions.contributions().settings}
+      ])
+
+    ContributionRegistry.put_snapshot_for_test!(%{
+      graph_fingerprint: "people-workforce-test",
+      consumers: %{settings: settings}
+    })
+
+    on_exit(&ContributionRegistry.clear_for_test!/0)
+
     EmployeeFixtures.create_employee_tables!()
+    SettingsFixtures.create_settings_table!()
 
     CompanyFixtures.insert_tenant!(%{id: 41, name: "Tenant A"})
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Tenant B", is_platform_operator: false})
@@ -40,11 +56,7 @@ defmodule Bilimbi.People.WorkforceTest do
     scope: scope
   } do
     assert Workforce.source_id() == "people/native"
-    assert {:ok, snapshot} = Workforce.company(scope, 73)
-    assert {:ok, company} = Snapshot.require_current(snapshot)
-    assert snapshot.source_id == "people/native"
-    assert snapshot.status == :current
-    assert %DateTime{} = snapshot.observed_at
+    assert {:ok, company} = Workforce.company(scope, 73)
     assert company.platform_company_id == 73
     assert company.workforce_company_id == 73
     assert company.reference.source_id == "people/native"
@@ -82,16 +94,14 @@ defmodule Bilimbi.People.WorkforceTest do
                status: "inactive"
              })
 
-    assert {:ok, listing} = Workforce.employees(scope, 73)
-    assert {:ok, [value]} = Snapshot.require_current(listing)
+    assert {:ok, [value]} = Workforce.employees(scope, 73)
     assert value.reference.stable_id == Integer.to_string(employee_a.id)
     assert value.company_reference.stable_id == "73"
     assert value.platform_company_id == 73
     assert value.workforce_company_id == 73
     refute Map.has_key?(value, :user_id)
 
-    assert {:ok, one} = Workforce.employee(scope, 73, employee_a.id)
-    assert {:ok, ^value} = Snapshot.require_current(one)
+    assert {:ok, ^value} = Workforce.employee(scope, 73, employee_a.id)
     assert {:error, :not_found} = Workforce.employee(scope, 73, employee_b.id)
     assert {:error, :not_found} = Workforce.employee(other_scope, 73, employee_a.id)
   end
@@ -103,7 +113,8 @@ defmodule Bilimbi.People.WorkforceTest do
     for id <- [0, 75, 76, 999] do
       assert {:error, :not_found} = Workforce.company(scope, id)
       assert {:error, :not_found} = Workforce.employees(scope, id)
-      assert {:error, :not_found} = Workforce.positions(scope, id)
+      assert {:error, :not_found} = Workforce.working_statuses(scope, id)
+      assert {:error, :not_found} = Workforce.put_working_statuses(scope, id, ["active"])
     end
 
     assert {:error, :not_found} = Workforce.company(other_scope, 73)
@@ -126,26 +137,72 @@ defmodule Bilimbi.People.WorkforceTest do
                supervisor_id: agent.id
              })
 
-    assert {:ok, snapshot} = Workforce.employee(scope, 73, employee.id)
-    assert {:ok, value} = Snapshot.require_current(snapshot)
+    assert {:ok, value} = Workforce.employee(scope, 73, employee.id)
     assert value.supervisor_reference == nil
 
-    assert {:ok, listing} = Workforce.employees(scope, 73)
-    assert {:ok, [listed]} = Snapshot.require_current(listing)
+    assert {:ok, [listed]} = Workforce.employees(scope, 73)
     assert listed.supervisor_reference == nil
   end
 
-  test "position and stale sources fail closed", %{scope: scope} do
-    assert {:error, :unavailable} = Workforce.positions(scope, 73)
+  test "probation and active employees are working staff by default; terminated are not", %{
+    scope: scope
+  } do
+    probation = create_employee!(scope, 73, "P-1", "probation")
+    active = create_employee!(scope, 73, "A-1", "active", probation.id)
+    terminated = create_employee!(scope, 73, "T-1", "terminated")
+    supervised = create_employee!(scope, 73, "S-1", "active", terminated.id)
 
-    stale = %Snapshot{
-      source_id: "people/native",
-      status: :stale,
-      observed_at: ~U[2026-01-01 00:00:00Z],
-      value: [:old]
-    }
+    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
 
-    assert {:error, :stale} = Snapshot.require_current(stale)
-    assert {:error, :unavailable} = Snapshot.require_current(%{stale | status: :unavailable})
+    assert {:ok, listing} = Workforce.employees(scope, 73)
+
+    assert Enum.map(listing, & &1.reference.stable_id) |> Enum.sort() ==
+             Enum.map([probation, active, supervised], &Integer.to_string(&1.id)) |> Enum.sort()
+
+    assert {:ok, _} = Workforce.employee(scope, 73, probation.id)
+    assert {:ok, active_value} = Workforce.employee(scope, 73, active.id)
+    assert active_value.supervisor_reference.stable_id == Integer.to_string(probation.id)
+    assert {:error, :not_found} = Workforce.employee(scope, 73, terminated.id)
+    assert {:ok, supervised_value} = Workforce.employee(scope, 73, supervised.id)
+    assert supervised_value.supervisor_reference == nil
+  end
+
+  test "working statuses are a per-company setting", %{scope: scope} do
+    probation = create_employee!(scope, 73, "P-2", "probation")
+    active = create_employee!(scope, 73, "A-2", "active", probation.id)
+    other_probation = create_employee!(scope, 74, "P-3", "probation")
+
+    assert {:ok, ["active"]} = Workforce.put_working_statuses(scope, 73, ["active"])
+    assert {:ok, ["active"]} = Workforce.working_statuses(scope, 73)
+    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 74)
+
+    assert {:ok, [only]} = Workforce.employees(scope, 73)
+    assert only.reference.stable_id == Integer.to_string(active.id)
+    assert only.supervisor_reference == nil
+    assert {:error, :not_found} = Workforce.employee(scope, 73, probation.id)
+    assert {:ok, _} = Workforce.employee(scope, 74, other_probation.id)
+
+    assert {:ok, ["probation", "active", "terminated"]} =
+             Workforce.put_working_statuses(scope, 73, ["terminated", "active", "probation"])
+  end
+
+  test "working statuses reject empty and unknown values", %{scope: scope} do
+    for statuses <- [[], ["retired"], ["active", 1], "active", nil] do
+      assert {:error, :invalid_statuses} = Workforce.put_working_statuses(scope, 73, statuses)
+    end
+
+    assert {:ok, ["probation", "active"]} = Workforce.working_statuses(scope, 73)
+  end
+
+  defp create_employee!(scope, company_id, number, status, supervisor_id \\ nil) do
+    {:ok, employee} =
+      Employee.create_employee(scope, company_id, %{
+        employee_number: number,
+        full_name: "Employee " <> number,
+        status: status,
+        supervisor_id: supervisor_id
+      })
+
+    employee
   end
 end

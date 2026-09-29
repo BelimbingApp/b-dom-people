@@ -5,10 +5,18 @@
   required: false,
   otp_app: :bilimbi_people_workforce,
   namespace: Bilimbi.People.Workforce,
-  dependencies: ["base/tenancy", "core/company", "core/employee"],
+  dependencies: [
+    "base/authz",
+    "base/module_registry",
+    "base/settings",
+    "base/tenancy",
+    "base/ui",
+    "core/company",
+    "core/employee"
+  ],
   migrations: nil,
-  web: nil,
+  web: "priv/web_routes.exs",
   schema_contract: nil,
-  contribution_provider: nil,
+  contribution_provider: Bilimbi.People.Workforce.Contributions,
   dev_seed: nil
 ]
