@@ -7,16 +7,17 @@ tables, a company-scoped operator route, and an API. The workforce module
 exposes a scoped native read seam and a per-company operator settings page.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
+Attendance owns clock facts, day projections, company rules and self view.
 Other modules remain empty; no sample rows are installed.
 
 | Module ID | Future ownership |
 | --- | --- |
-| `people/settings` | Hidden People navigation anchor |
+| `people/settings` | People navigation anchor and shared menu groups |
 | `people/reference_data` | Company-scoped People references and calendar exceptions |
 | `people/workforce` | Scoped native company and employee reads with per-company working statuses |
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Positions and assignments |
-| `people/attendance` | Time and attendance |
+| `people/attendance` | Clock events, day facts, policy settings and self view |
 | `people/leave` | Leave policy and balances |
 | `people/claims` | Claims and reimbursement |
 | `people/skills` | Skills and development |
@@ -61,6 +62,11 @@ actor's validated company. Employee detail shows Core Employee facts read-only
 alongside People-owned work profile, portal eligibility, and profile change
 requests. Review decisions record history but do not modify Core Employee
 identity. Saved views belong to one login actor and company.
+
+Attendance contributes **My attendance** under My work and **Attendance rules**
+under Settings for per-company attendance policy. See
+`attendance/docs/README.md` for the rules, their defaults, the data contract,
+and the deployment inventory step.
 
 ## License
 
