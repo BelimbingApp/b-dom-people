@@ -6,7 +6,7 @@ defmodule Bilimbi.People.ReferenceData.Contributions do
   def contributions do
     %{
       authz: %{
-        domains: %{"people" => "People domain capabilities"},
+        domains: %{"people" => "People domain modules"},
         capabilities: ["people.references.manage"]
       }
     }
