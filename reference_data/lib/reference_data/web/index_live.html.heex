@@ -1,0 +1,56 @@
+<Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people">
+  <.page id="people-references" variant={:list}>
+    <.header>
+      People references
+      <:subtitle :if={@company}>{@company.name} · Reference values and calendar exceptions</:subtitle>
+    </.header>
+
+    <p :if={is_nil(@company)} class="rounded-xl border border-line bg-surface p-5 text-sm text-ink-muted">
+      This company is unavailable in your tenant.
+    </p>
+
+    <div :if={@company} class="mt-5 grid gap-5 lg:grid-cols-2">
+      <section class="rounded-xl border border-line bg-surface p-5">
+        <h2 class="text-base font-semibold text-ink">Reference entries</h2>
+        <p :if={@entries == []} class="mt-3 text-sm text-ink-muted">No references have been added for this company.</p>
+        <ul :if={@entries != []} class="mt-3 divide-y divide-line text-sm">
+          <li :for={entry <- @entries} class="py-2">
+            <span class="font-medium">{entry.label}</span>
+            <span class="ml-2 text-ink-muted">{entry.kind} · {entry.code}</span>
+            <span :if={!entry.active} class="ml-2 text-ink-muted">Inactive</span>
+            <span :for={alias_record <- Map.get(@aliases, entry.id, [])} class="ml-2 text-ink-muted">{alias_record.label}</span>
+          </li>
+        </ul>
+        <form phx-submit="create_entry" class="mt-4 grid gap-2 sm:grid-cols-3">
+          <input name="entry[kind]" aria-label="Reference kind" placeholder="Kind" required maxlength="80" class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <input name="entry[code]" aria-label="Reference code" placeholder="Code" required maxlength="100" class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <input name="entry[label]" aria-label="Reference label" placeholder="Label" required maxlength="200" class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <button type="submit" class="rounded-md bg-action px-3 py-2 text-sm text-action-ink">Add reference</button>
+        </form>
+        <form :if={@entries != []} phx-submit="add_alias" class="mt-4 flex flex-wrap gap-2">
+          <select name="alias[entry_id]" aria-label="Reference for alias" class="rounded-md border border-line bg-surface px-3 py-2 text-sm">
+            <option :for={entry <- @entries} value={entry.id}>{entry.label}</option>
+          </select>
+          <input name="alias[label]" aria-label="Alias label" placeholder="Alias" required maxlength="200" class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <button type="submit" class="rounded-md bg-action px-3 py-2 text-sm text-action-ink">Add alias</button>
+        </form>
+      </section>
+
+      <section class="rounded-xl border border-line bg-surface p-5">
+        <h2 class="text-base font-semibold text-ink">Calendar exceptions</h2>
+        <p :if={@exceptions == []} class="mt-3 text-sm text-ink-muted">No calendar exceptions have been added for this company.</p>
+        <ul :if={@exceptions != []} class="mt-3 divide-y divide-line text-sm">
+          <li :for={exception <- @exceptions} class="py-2">
+            <span class="font-medium tabular-nums">{exception.on_date}</span>
+            <span class="ml-2">{exception.label}</span>
+          </li>
+        </ul>
+        <form phx-submit="create_exception" class="mt-4 flex flex-wrap gap-2">
+          <input type="date" name="exception[on_date]" aria-label="Exception date" required class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <input name="exception[label]" aria-label="Exception label" placeholder="Label" required maxlength="200" class="rounded-md border border-line bg-surface px-3 py-2 text-sm" />
+          <button type="submit" class="rounded-md bg-action px-3 py-2 text-sm text-action-ink">Add exception</button>
+        </form>
+      </section>
+    </div>
+  </.page>
+</Layouts.app>

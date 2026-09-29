@@ -2,14 +2,15 @@
 
 This repository is the optional People Domain. It mounts in a Bilimbi checkout
 at `apps/domains/people`. The thirteen module packages reserve ownership
-boundaries. The workforce module exposes a scoped native read seam and a
-per-company operator settings page; there are no People business tables, menu
-entries, or sample rows yet.
+boundaries. The reference module owns fresh People reference and calendar
+tables, a company-scoped operator route, and an API. The workforce module
+exposes a scoped native read seam and a per-company operator settings page.
+Other modules remain empty; there are no People menu entries or sample rows yet.
 
 | Module ID | Future ownership |
 | --- | --- |
-| `people/settings` | People operator settings and navigation anchor |
-| `people/reference_data` | People references and calendar exceptions |
+| `people/settings` | Hidden People navigation anchor |
+| `people/reference_data` | Company-scoped People references and calendar exceptions |
 | `people/workforce` | Scoped native company and employee reads with per-company working statuses |
 | `people/employee_workspace` | People-specific employee work |
 | `people/organisation` | Positions and assignments |
@@ -46,6 +47,12 @@ This is fresh Bilimbi schema work. Future module migrations must have globally
 unique versions and declare `:bilimbi_only`; no source People tables or data are
 adopted. Add a visible menu leaf only with an implemented route, capability,
 scoped behavior, and meaningful empty state. Training remains work in progress.
+
+After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
+operator can open `/people/companies/:company_id/references` for an accessible
+company. This route creates reference entries, aliases, and calendar exceptions
+without seeding company-specific values. The menu leaf remains hidden pending
+the mounted browser check.
 
 ## License
 
