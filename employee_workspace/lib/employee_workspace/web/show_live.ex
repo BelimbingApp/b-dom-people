@@ -30,8 +30,8 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
       |> assign(:page_title, "Employee workbench")
       |> assign(:company_id, company_id)
       |> assign(:employee_id, employee_id)
-      |> assign(:can_manage, Authz.can(actor, @manage).allowed)
-      |> assign(:can_review, Authz.can(actor, @review).allowed)
+      |> assign(:can_manage?, Authz.can(actor, @manage).allowed)
+      |> assign(:can_review?, Authz.can(actor, @review).allowed)
 
     case result do
       {:ok, employee} ->
@@ -49,7 +49,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
 
   @impl true
   def handle_event("save_profile", %{"profile" => attrs}, socket) do
-    if socket.assigns.employee && socket.assigns.can_manage do
+    if socket.assigns.employee && socket.assigns.can_manage? do
       case EmployeeWorkspace.put_work_profile(
              scope(socket),
              company_id(socket),
@@ -65,7 +65,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
   end
 
   def handle_event("save_access", %{"access" => attrs}, socket) do
-    if socket.assigns.employee && socket.assigns.can_manage do
+    if socket.assigns.employee && socket.assigns.can_manage? do
       case EmployeeWorkspace.put_access(
              scope(socket),
              company_id(socket),
@@ -81,7 +81,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
   end
 
   def handle_event("request_change", %{"request" => attrs}, socket) do
-    if socket.assigns.employee && socket.assigns.can_manage do
+    if socket.assigns.employee && socket.assigns.can_manage? do
       case EmployeeWorkspace.request_change(
              scope(socket),
              company_id(socket),
@@ -101,7 +101,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
   end
 
   def handle_event("review_change", %{"id" => raw_id, "decision" => decision}, socket) do
-    if socket.assigns.employee && socket.assigns.can_review do
+    if socket.assigns.employee && socket.assigns.can_review? do
       case EmployeeWorkspace.review_change(
              scope(socket),
              company_id(socket),

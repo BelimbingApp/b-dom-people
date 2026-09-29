@@ -7,6 +7,10 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
 
   @capability "people.employees.view"
 
+  # Saved views are self-service: each one belongs to the signed-in actor and
+  # the facade scopes every write to that actor's own views.
+  @write_guard_opt_out ~w(save_view delete_view)
+
   @impl true
   def mount(_params, _session, socket) do
     actor = socket.assigns.current_scope.actor
