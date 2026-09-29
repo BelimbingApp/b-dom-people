@@ -148,40 +148,56 @@ defmodule Bilimbi.People.Attendance do
   defp local_date(_, _), do: {:error, :invalid_timezone}
 
   defp write_event(scope, company_id, employee_id, event) do
-    existing =
-      Repo.one(
-        from(e in Tenancy.scope_query(ClockEvent, scope),
-          where:
-            e.company_id == ^company_id and e.source == ^event.source and
-              e.event_key == ^event.event_key
-        )
+    case find_event(scope, company_id, event) do
+      nil ->
+        day = get_or_create_day(scope, company_id, employee_id, event.on_date)
+
+        case find_event(scope, company_id, event) do
+          nil -> insert_event(scope, day, event)
+          existing -> replay_event(existing, employee_id, event)
+        end
+
+      existing ->
+        replay_event(existing, employee_id, event)
+    end
+  end
+
+  defp find_event(scope, company_id, event) do
+    Repo.one(
+      from(e in Tenancy.scope_query(ClockEvent, scope),
+        where:
+          e.company_id == ^company_id and e.source == ^event.source and
+            e.event_key == ^event.event_key
       )
+    )
+  end
 
-    if existing do
-      if existing.employee_id == employee_id and existing.event_type == event.event_type and
-           existing.occurred_at == event.occurred_at and
-           existing.actor_user_id == event.actor_user_id,
-         do: event_view(existing),
-         else: Repo.rollback(:event_key_conflict)
-    else
-      day = get_or_create_day(scope, company_id, employee_id, event.on_date)
+  defp replay_event(existing, employee_id, event) do
+    if existing.employee_id == employee_id and existing.event_type == event.event_type and
+         existing.occurred_at == event.occurred_at and
+         existing.actor_user_id == event.actor_user_id,
+       do: event_view(existing),
+       else: Repo.rollback(:event_key_conflict)
+  end
 
-      %ClockEvent{
-        tenant_id: Scope.tenant_id(scope),
-        company_id: company_id,
-        employee_id: employee_id,
-        day_id: day.id
-      }
-      |> ClockEvent.changeset(Map.delete(event, :on_date))
-      |> Repo.insert()
-      |> case do
-        {:ok, saved} ->
-          project_day(scope, day)
-          event_view(saved)
+  defp insert_event(scope, day, event) do
+    %ClockEvent{
+      tenant_id: Scope.tenant_id(scope),
+      company_id: day.company_id,
+      employee_id: day.employee_id,
+      day_id: day.id
+    }
+    |> ClockEvent.changeset(Map.delete(event, :on_date))
+    |> Repo.insert()
+    |> case do
+      {:ok, saved} ->
+        project_day(scope, day)
+        event_view(saved)
 
-        {:error, _changeset} ->
-          Repo.rollback(:event_key_conflict)
-      end
+      {:error, changeset} ->
+        if Enum.any?(changeset.errors, fn {_, {_, opts}} -> opts[:constraint] == :unique end),
+          do: Repo.rollback(:event_key_conflict),
+          else: Repo.rollback(:invalid_event)
     end
   end
 
