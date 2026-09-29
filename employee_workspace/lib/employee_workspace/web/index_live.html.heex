@@ -3,7 +3,7 @@
     <.header>Employees<:subtitle :if={@company}>{@company.name} · People workbench</:subtitle></.header>
     <p :if={is_nil(@company)} class="mt-4 text-sm text-ink-muted">This company is unavailable.</p>
     <div :if={@company} class="mt-5">
-      <form phx-change="filter" class="mb-3 flex flex-wrap items-center gap-2">
+      <form id="people-employee-filter" phx-change="filter" class="mb-3 flex flex-wrap items-center gap-2">
         <input name="search" value={@search} aria-label="Search employees" placeholder="Search name or number" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm" />
         <select name="status" aria-label="Filter status" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
           <option value="">All statuses</option>

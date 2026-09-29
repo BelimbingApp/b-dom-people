@@ -4,12 +4,12 @@ defmodule Bilimbi.People.EmployeeWorkspace.SavedView do
   import Ecto.Changeset
 
   schema "people_employee_saved_views" do
-    field :tenant_id, :integer
-    field :company_id, :integer
-    field :actor_id, :integer
-    field :name, :string
-    field :search, :string
-    field :status, :string
+    field(:tenant_id, :integer)
+    field(:company_id, :integer)
+    field(:actor_id, :integer)
+    field(:name, :string)
+    field(:search, :string)
+    field(:status, :string)
     timestamps(type: :naive_datetime)
   end
 

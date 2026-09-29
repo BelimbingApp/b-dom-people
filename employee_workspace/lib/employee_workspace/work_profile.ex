@@ -4,12 +4,12 @@ defmodule Bilimbi.People.EmployeeWorkspace.WorkProfile do
   import Ecto.Changeset
 
   schema "people_employee_work_profiles" do
-    field :tenant_id, :integer
-    field :company_id, :integer
-    field :employee_id, :integer
-    field :work_location, :string
-    field :work_arrangement, :string
-    field :notes, :string
+    field(:tenant_id, :integer)
+    field(:company_id, :integer)
+    field(:employee_id, :integer)
+    field(:work_location, :string)
+    field(:work_arrangement, :string)
+    field(:notes, :string)
     timestamps(type: :naive_datetime)
   end
 

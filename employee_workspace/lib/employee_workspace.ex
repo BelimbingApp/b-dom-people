@@ -39,8 +39,11 @@ defmodule Bilimbi.People.EmployeeWorkspace do
         scoped(WorkProfile, scope, company_id)
         |> where([p], p.employee_id == ^employee_id)
         |> Repo.one() ||
-          %WorkProfile{tenant_id: Scope.tenant_id(scope), company_id: company_id,
-            employee_id: employee_id}
+          %WorkProfile{
+            tenant_id: Scope.tenant_id(scope),
+            company_id: company_id,
+            employee_id: employee_id
+          }
 
       record
       |> WorkProfile.changeset(attrs)
@@ -65,8 +68,11 @@ defmodule Bilimbi.People.EmployeeWorkspace do
         scoped(Access, scope, company_id)
         |> where([a], a.employee_id == ^employee_id)
         |> Repo.one() ||
-          %Access{tenant_id: Scope.tenant_id(scope), company_id: company_id,
-            employee_id: employee_id}
+          %Access{
+            tenant_id: Scope.tenant_id(scope),
+            company_id: company_id,
+            employee_id: employee_id
+          }
 
       record
       |> Access.changeset(attrs)
@@ -89,8 +95,12 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   def request_change(%Scope{} = scope, company_id, employee_id, actor_id, attrs)
       when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
     with_employee_lock(scope, company_id, employee_id, fn ->
-      %ChangeRequest{tenant_id: Scope.tenant_id(scope), company_id: company_id,
-        employee_id: employee_id, requested_by_actor_id: actor_id}
+      %ChangeRequest{
+        tenant_id: Scope.tenant_id(scope),
+        company_id: company_id,
+        employee_id: employee_id,
+        requested_by_actor_id: actor_id
+      }
       |> ChangeRequest.changeset(attrs)
       |> Repo.insert()
       |> map_result(&public_record(&1, request_fields()))
@@ -114,8 +124,11 @@ defmodule Bilimbi.People.EmployeeWorkspace do
           |> Repo.update()
           |> map_result(&public_record(&1, request_fields()))
 
-        %ChangeRequest{} -> {:error, :already_reviewed}
-        nil -> {:error, :not_found}
+        %ChangeRequest{} ->
+          {:error, :already_reviewed}
+
+        nil ->
+          {:error, :not_found}
       end
     end)
   end
@@ -137,8 +150,7 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   def save_view(%Scope{} = scope, company_id, actor_id, attrs)
       when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
     with :ok <- company_exists(scope, company_id) do
-      %SavedView{tenant_id: Scope.tenant_id(scope), company_id: company_id,
-        actor_id: actor_id}
+      %SavedView{tenant_id: Scope.tenant_id(scope), company_id: company_id, actor_id: actor_id}
       |> SavedView.changeset(attrs)
       |> Repo.insert()
       |> map_result(&public_record(&1, [:id, :name, :search, :status]))
@@ -160,8 +172,17 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   end
 
   defp request_fields,
-    do: [:id, :field, :proposed_value, :reason, :status, :requested_by_actor_id,
-      :reviewed_by_actor_id, :reviewed_at, :inserted_at]
+    do: [
+      :id,
+      :field,
+      :proposed_value,
+      :reason,
+      :status,
+      :requested_by_actor_id,
+      :reviewed_by_actor_id,
+      :reviewed_at,
+      :inserted_at
+    ]
 
   defp scoped(schema, scope, company_id),
     do: from(row in Tenancy.scope_query(schema, scope), where: row.company_id == ^company_id)
@@ -174,6 +195,7 @@ defmodule Bilimbi.People.EmployeeWorkspace do
 
   defp save(changeset, %{__meta__: %Ecto.Schema.Metadata{state: :loaded}}),
     do: Repo.update(changeset)
+
   defp save(changeset, _record), do: Repo.insert(changeset)
 
   defp company_exists(scope, company_id) do
@@ -201,7 +223,8 @@ defmodule Bilimbi.People.EmployeeWorkspace do
                  {:error, reason} -> Repo.rollback(reason)
                end
 
-             _ -> Repo.rollback(:not_found)
+             _ ->
+               Repo.rollback(:not_found)
            end
          end) do
       {:ok, value} -> {:ok, value}

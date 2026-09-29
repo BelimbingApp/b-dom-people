@@ -10,6 +10,7 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
 
   setup do
     EmployeeFixtures.create_employee_tables!()
+    :ok = Employee.ensure_system_types()
     WorkspaceFixtures.create_workspace_tables!()
     CompanyFixtures.insert_tenant!()
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Second tenant", is_platform_operator: false})
@@ -19,33 +20,41 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
 
     {:ok, first} = Tenancy.scope(41)
     {:ok, second} = Tenancy.scope(42)
+
     {:ok, employee} =
       Employee.create_employee(first, 73, %{
-        employee_number: "EMP-01", full_name: "First Employee",
-        employee_type: "full_time", status: "active"
+        employee_number: "EMP-01",
+        full_name: "First Employee",
+        employee_type: "full_time",
+        status: "active"
       })
 
     %{first: first, second: second, employee: employee}
   end
 
   test "keeps Core Employee master separate and refuses other company axes", %{
-    first: first, second: second, employee: employee
+    first: first,
+    second: second,
+    employee: employee
   } do
     assert {:ok, [%{id: id}]} = EmployeeWorkspace.employees(first, 73)
     assert id == employee.id
     assert {:error, :not_found} = EmployeeWorkspace.work_profile(first, 74, employee.id)
     assert {:error, :not_found} = EmployeeWorkspace.work_profile(second, 73, employee.id)
+
     assert {:error, :not_found} =
-      EmployeeWorkspace.put_work_profile(first, 74, employee.id, %{work_location: "Other"})
+             EmployeeWorkspace.put_work_profile(first, 74, employee.id, %{work_location: "Other"})
 
     assert {:ok, profile} =
-      EmployeeWorkspace.put_work_profile(first, 73, employee.id, %{
-        work_location: "Office", work_arrangement: "Flexible"
-      })
+             EmployeeWorkspace.put_work_profile(first, 73, employee.id, %{
+               work_location: "Office",
+               work_arrangement: "Flexible"
+             })
 
     assert profile.work_location == "Office"
+
     assert {:ok, %{work_location: "Office"}} =
-      EmployeeWorkspace.work_profile(first, 73, employee.id)
+             EmployeeWorkspace.work_profile(first, 73, employee.id)
 
     assert {:ok, core} = Employee.get_employee(first, 73, employee.id)
     assert core.full_name == "First Employee"
@@ -53,27 +62,34 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
   end
 
   test "access is only an eligibility fact and change review is one-time", %{
-    first: scope, employee: employee
+    first: scope,
+    employee: employee
   } do
     assert {:ok, nil} = EmployeeWorkspace.access(scope, 73, employee.id)
+
     assert {:ok, %{portal_enabled: true}} =
-      EmployeeWorkspace.put_access(scope, 73, employee.id, %{
-        portal_enabled: true, reason: "Operator decision"
-      })
+             EmployeeWorkspace.put_access(scope, 73, employee.id, %{
+               portal_enabled: true,
+               reason: "Operator decision"
+             })
 
     assert {:ok, request} =
-      EmployeeWorkspace.request_change(scope, 73, employee.id, 91, %{
-        field: "full_name", proposed_value: "Updated Name", reason: "Correction"
-      })
+             EmployeeWorkspace.request_change(scope, 73, employee.id, 91, %{
+               field: "full_name",
+               proposed_value: "Updated Name",
+               reason: "Correction"
+             })
 
     assert request.status == "pending"
+
     assert {:ok, reviewed} =
-      EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 92, "approved")
+             EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 92, "approved")
 
     assert reviewed.status == "approved"
     assert reviewed.reviewed_by_actor_id == 92
+
     assert {:error, :already_reviewed} =
-      EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 93, "rejected")
+             EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 93, "rejected")
 
     assert {:ok, core} = Employee.get_employee(scope, 73, employee.id)
     assert core.full_name == "First Employee"
@@ -81,9 +97,11 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
 
   test "saved views are private to actor and company", %{first: scope} do
     assert {:ok, view} =
-      EmployeeWorkspace.save_view(scope, 73, 91, %{
-        name: "Current", search: "first", status: "active"
-      })
+             EmployeeWorkspace.save_view(scope, 73, 91, %{
+               name: "Current",
+               search: "first",
+               status: "active"
+             })
 
     assert {:ok, [%{name: "Current"}]} = EmployeeWorkspace.saved_views(scope, 73, 91)
     assert {:ok, []} = EmployeeWorkspace.saved_views(scope, 73, 92)

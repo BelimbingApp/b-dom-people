@@ -4,11 +4,11 @@ defmodule Bilimbi.People.EmployeeWorkspace.Access do
   import Ecto.Changeset
 
   schema "people_employee_accesses" do
-    field :tenant_id, :integer
-    field :company_id, :integer
-    field :employee_id, :integer
-    field :portal_enabled, :boolean, default: false
-    field :reason, :string
+    field(:tenant_id, :integer)
+    field(:company_id, :integer)
+    field(:employee_id, :integer)
+    field(:portal_enabled, :boolean, default: false)
+    field(:reason, :string)
     timestamps(type: :naive_datetime)
   end
 

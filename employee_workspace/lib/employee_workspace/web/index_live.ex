@@ -38,15 +38,21 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
 
   @impl true
   def handle_event("filter", %{"search" => search, "status" => status}, socket) do
-    {:noreply, socket |> assign(:search, String.slice(search, 0, 200))
-     |> assign(:status, status) |> load()}
+    {:noreply,
+     socket |> assign(:search, String.slice(search, 0, 200)) |> assign(:status, status) |> load()}
   end
 
   def handle_event("save_view", %{"view" => attrs}, socket) do
     if socket.assigns.company do
-      attrs = Map.merge(attrs, %{"search" => socket.assigns.search, "status" => socket.assigns.status})
+      attrs =
+        Map.merge(attrs, %{"search" => socket.assigns.search, "status" => socket.assigns.status})
 
-      case EmployeeWorkspace.save_view(scope(socket), socket.assigns.company_id, actor_id(socket), attrs) do
+      case EmployeeWorkspace.save_view(
+             scope(socket),
+             socket.assigns.company_id,
+             actor_id(socket),
+             attrs
+           ) do
         {:ok, _} -> {:noreply, socket |> load() |> put_flash(:info, "View saved.")}
         _ -> {:noreply, put_flash(socket, :error, "Use a unique view name.")}
       end
@@ -59,20 +65,31 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
     case Integer.parse(raw_id) do
       {id, ""} ->
         case Enum.find(socket.assigns.views, &(&1.id == id)) do
-          nil -> {:noreply, socket}
+          nil ->
+            {:noreply, socket}
+
           view ->
             {:noreply,
-             socket |> assign(:search, view.search || "")
-             |> assign(:status, view.status || "") |> load()}
+             socket
+             |> assign(:search, view.search || "")
+             |> assign(:status, view.status || "")
+             |> load()}
         end
 
-      _ -> {:noreply, socket}
+      _ ->
+        {:noreply, socket}
     end
   end
 
   def handle_event("delete_view", %{"id" => raw_id}, socket) do
     with {id, ""} <- Integer.parse(raw_id),
-         {:ok, :deleted} <- EmployeeWorkspace.delete_view(scope(socket), socket.assigns.company_id, actor_id(socket), id) do
+         {:ok, :deleted} <-
+           EmployeeWorkspace.delete_view(
+             scope(socket),
+             socket.assigns.company_id,
+             actor_id(socket),
+             id
+           ) do
       {:noreply, socket |> load() |> put_flash(:info, "View deleted.")}
     else
       _ -> {:noreply, put_flash(socket, :error, "View unavailable.")}
@@ -81,15 +98,19 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
 
   defp load(socket) do
     {:ok, employees} = EmployeeWorkspace.employees(scope(socket), socket.assigns.company_id)
-    {:ok, views} = EmployeeWorkspace.saved_views(scope(socket), socket.assigns.company_id, actor_id(socket))
+
+    {:ok, views} =
+      EmployeeWorkspace.saved_views(scope(socket), socket.assigns.company_id, actor_id(socket))
+
     search = String.downcase(socket.assigns.search)
     status = socket.assigns.status
 
-    visible = Enum.filter(employees, fn employee ->
-      (search == "" or String.contains?(String.downcase(employee.full_name), search) or
-         String.contains?(String.downcase(employee.employee_number), search)) and
-        (status == "" or employee.status == status)
-    end)
+    visible =
+      Enum.filter(employees, fn employee ->
+        (search == "" or String.contains?(String.downcase(employee.full_name), search) or
+           String.contains?(String.downcase(employee.employee_number), search)) and
+          (status == "" or employee.status == status)
+      end)
 
     socket |> assign(:employees, visible) |> assign(:views, views)
   end

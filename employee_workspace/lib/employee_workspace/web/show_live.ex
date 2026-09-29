@@ -34,16 +34,28 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
       |> assign(:can_review, Authz.can(actor, @review).allowed)
 
     case result do
-      {:ok, employee} -> {:ok, socket |> assign(:employee, employee) |> load_facts()}
-      _ -> {:ok, socket |> assign(:employee, nil) |> assign(:profile, nil)
-             |> assign(:access, nil) |> assign(:requests, [])}
+      {:ok, employee} ->
+        {:ok, socket |> assign(:employee, employee) |> load_facts()}
+
+      _ ->
+        {:ok,
+         socket
+         |> assign(:employee, nil)
+         |> assign(:profile, nil)
+         |> assign(:access, nil)
+         |> assign(:requests, [])}
     end
   end
 
   @impl true
   def handle_event("save_profile", %{"profile" => attrs}, socket) do
     if socket.assigns.employee && socket.assigns.can_manage do
-      case EmployeeWorkspace.put_work_profile(scope(socket), company_id(socket), employee_id(socket), attrs) do
+      case EmployeeWorkspace.put_work_profile(
+             scope(socket),
+             company_id(socket),
+             employee_id(socket),
+             attrs
+           ) do
         {:ok, _} -> {:noreply, socket |> load_facts() |> put_flash(:info, "Work profile saved.")}
         _ -> {:noreply, put_flash(socket, :error, "Check the work profile values.")}
       end
@@ -54,7 +66,12 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
 
   def handle_event("save_access", %{"access" => attrs}, socket) do
     if socket.assigns.employee && socket.assigns.can_manage do
-      case EmployeeWorkspace.put_access(scope(socket), company_id(socket), employee_id(socket), attrs) do
+      case EmployeeWorkspace.put_access(
+             scope(socket),
+             company_id(socket),
+             employee_id(socket),
+             attrs
+           ) do
         {:ok, _} -> {:noreply, socket |> load_facts() |> put_flash(:info, "Portal access saved.")}
         _ -> {:noreply, put_flash(socket, :error, "Check the access values.")}
       end
@@ -65,9 +82,18 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
 
   def handle_event("request_change", %{"request" => attrs}, socket) do
     if socket.assigns.employee && socket.assigns.can_manage do
-      case EmployeeWorkspace.request_change(scope(socket), company_id(socket), employee_id(socket), actor_id(socket), attrs) do
-        {:ok, _} -> {:noreply, socket |> load_facts() |> put_flash(:info, "Change request recorded.")}
-        _ -> {:noreply, put_flash(socket, :error, "Check the proposed change.")}
+      case EmployeeWorkspace.request_change(
+             scope(socket),
+             company_id(socket),
+             employee_id(socket),
+             actor_id(socket),
+             attrs
+           ) do
+        {:ok, _} ->
+          {:noreply, socket |> load_facts() |> put_flash(:info, "Change request recorded.")}
+
+        _ ->
+          {:noreply, put_flash(socket, :error, "Check the proposed change.")}
       end
     else
       {:noreply, socket}
@@ -76,9 +102,22 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
 
   def handle_event("review_change", %{"id" => raw_id, "decision" => decision}, socket) do
     if socket.assigns.employee && socket.assigns.can_review do
-      case EmployeeWorkspace.review_change(scope(socket), company_id(socket), employee_id(socket), positive_id(raw_id), actor_id(socket), decision) do
-        {:ok, _} -> {:noreply, socket |> load_facts() |> put_flash(:info, "Request reviewed. Core employee details are unchanged.")}
-        _ -> {:noreply, put_flash(socket, :error, "Request cannot be reviewed.")}
+      case EmployeeWorkspace.review_change(
+             scope(socket),
+             company_id(socket),
+             employee_id(socket),
+             positive_id(raw_id),
+             actor_id(socket),
+             decision
+           ) do
+        {:ok, _} ->
+          {:noreply,
+           socket
+           |> load_facts()
+           |> put_flash(:info, "Request reviewed. Core employee details are unchanged.")}
+
+        _ ->
+          {:noreply, put_flash(socket, :error, "Request cannot be reviewed.")}
       end
     else
       {:noreply, socket}
@@ -93,7 +132,9 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
     {:ok, access} = EmployeeWorkspace.access(scope, company_id, employee_id)
     {:ok, requests} = EmployeeWorkspace.change_requests(scope, company_id, employee_id)
 
-    socket |> assign(:profile, profile) |> assign(:access, access)
+    socket
+    |> assign(:profile, profile)
+    |> assign(:access, access)
     |> assign(:requests, requests)
   end
 

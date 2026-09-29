@@ -6,16 +6,16 @@ defmodule Bilimbi.People.EmployeeWorkspace.ChangeRequest do
   @fields ~w(full_name short_name email mobile_number)a
 
   schema "people_employee_change_requests" do
-    field :tenant_id, :integer
-    field :company_id, :integer
-    field :employee_id, :integer
-    field :field, :string
-    field :proposed_value, :string
-    field :reason, :string
-    field :status, :string, default: "pending"
-    field :requested_by_actor_id, :integer
-    field :reviewed_by_actor_id, :integer
-    field :reviewed_at, :naive_datetime
+    field(:tenant_id, :integer)
+    field(:company_id, :integer)
+    field(:employee_id, :integer)
+    field(:field, :string)
+    field(:proposed_value, :string)
+    field(:reason, :string)
+    field(:status, :string, default: "pending")
+    field(:requested_by_actor_id, :integer)
+    field(:reviewed_by_actor_id, :integer)
+    field(:reviewed_at, :naive_datetime)
     timestamps(type: :naive_datetime)
   end
 
@@ -31,7 +31,10 @@ defmodule Bilimbi.People.EmployeeWorkspace.ChangeRequest do
   end
 
   def review_changeset(record, status, actor_id) when status in ["approved", "rejected"] do
-    change(record, status: status, reviewed_by_actor_id: actor_id,
-      reviewed_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second))
+    change(record,
+      status: status,
+      reviewed_by_actor_id: actor_id,
+      reviewed_at: NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+    )
   end
 end

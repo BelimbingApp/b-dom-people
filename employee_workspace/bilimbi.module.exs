@@ -18,7 +18,9 @@
   migrations: "priv/repo/migrations",
   migration_dispositions: %{20_260_930_120_101 => :bilimbi_only},
   web: "priv/web_routes.exs",
-  schema_contract: Bilimbi.People.EmployeeWorkspace.SchemaContract,
+  # Compatibility verification precedes pending Bilimbi-only migrations.
+  # Registering fresh tables here would require them before migration runs.
+  schema_contract: nil,
   contribution_provider: Bilimbi.People.EmployeeWorkspace.Contributions,
   dev_seed: nil
 ]
