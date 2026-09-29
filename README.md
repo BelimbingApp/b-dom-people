@@ -2,14 +2,15 @@
 
 This repository is the optional People Domain. It mounts in a Bilimbi checkout
 at `apps/domains/people`. The thirteen module packages reserve ownership
-boundaries; this scaffold contains no business tables, routes, menu entries,
-sample rows, or operational capability.
+boundaries. The workforce module exposes a scoped native read seam and a
+per-company operator settings page; there are no People business tables, menu
+entries, or sample rows yet.
 
 | Module ID | Future ownership |
 | --- | --- |
 | `people/settings` | People operator settings and navigation anchor |
 | `people/reference_data` | People references and calendar exceptions |
-| `people/workforce` | Public workforce identity and read contracts |
+| `people/workforce` | Scoped native company and employee reads with per-company working statuses |
 | `people/employee_workspace` | People-specific employee work |
 | `people/organisation` | Positions and assignments |
 | `people/attendance` | Time and attendance |
