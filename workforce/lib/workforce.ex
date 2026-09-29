@@ -16,6 +16,7 @@ defmodule Bilimbi.People.Workforce do
   alias Bilimbi.Core.Employee
   alias Bilimbi.People.Workforce.Company, as: WorkforceCompany
   alias Bilimbi.People.Workforce.Employee, as: WorkforceEmployee
+  alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Reference
 
   @source_id "people/native"
@@ -28,10 +29,11 @@ defmodule Bilimbi.People.Workforce do
   @spec employee_statuses() :: [String.t()]
   def employee_statuses, do: @employee_statuses
 
-  @spec working_statuses(Scope.t(), term()) :: {:ok, [String.t()]} | {:error, :not_found}
+  @spec working_statuses(Scope.t(), term()) ::
+          {:ok, ReadResult.t()} | {:error, :not_found}
   def working_statuses(%Scope{} = scope, platform_company_id) do
     with {:ok, core_company} <- live_company(scope, platform_company_id) do
-      {:ok, company_working_statuses(core_company)}
+      {:ok, ReadResult.current(company_working_statuses(core_company))}
     end
   end
 
@@ -45,21 +47,21 @@ defmodule Bilimbi.People.Workforce do
     end
   end
 
-  @spec company(Scope.t(), term()) :: {:ok, WorkforceCompany.t()} | {:error, :not_found}
+  @spec company(Scope.t(), term()) :: {:ok, ReadResult.t()} | {:error, :not_found}
   def company(%Scope{} = scope, platform_company_id) do
     with {:ok, core_company} <- live_company(scope, platform_company_id) do
       {:ok,
-       %WorkforceCompany{
+       ReadResult.current(%WorkforceCompany{
          reference: reference(:company, core_company.id),
          platform_company_id: core_company.id,
          workforce_company_id: core_company.id,
          name: core_company.name,
          code: core_company.code
-       }}
+       })}
     end
   end
 
-  @spec employees(Scope.t(), term()) :: {:ok, [WorkforceEmployee.t()]} | {:error, :not_found}
+  @spec employees(Scope.t(), term()) :: {:ok, ReadResult.t()} | {:error, :not_found}
   def employees(%Scope{} = scope, platform_company_id) do
     with {:ok, core_company} <- live_company(scope, platform_company_id),
          {:ok, employees} <- Employee.list_employees(scope, core_company.id) do
@@ -77,7 +79,7 @@ defmodule Bilimbi.People.Workforce do
           project_employee(employee, supervisor_reference)
         end)
 
-      {:ok, values}
+      {:ok, ReadResult.current(values)}
     else
       {:error, :company_not_found} -> {:error, :not_found}
       other -> other
@@ -85,7 +87,7 @@ defmodule Bilimbi.People.Workforce do
   end
 
   @spec employee(Scope.t(), term(), term()) ::
-          {:ok, WorkforceEmployee.t()} | {:error, :not_found}
+          {:ok, ReadResult.t()} | {:error, :not_found}
   def employee(%Scope{} = scope, platform_company_id, employee_id)
       when is_integer(employee_id) and employee_id > 0 do
     with {:ok, core_company} <- live_company(scope, platform_company_id),
@@ -100,7 +102,7 @@ defmodule Bilimbi.People.Workforce do
           statuses
         )
 
-      {:ok, project_employee(core_employee, supervisor_reference)}
+      {:ok, ReadResult.current(project_employee(core_employee, supervisor_reference))}
     else
       _ -> {:error, :not_found}
     end

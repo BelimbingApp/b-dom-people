@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
 
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.ReadResult
 
   @capability "people.workforce.settings.manage"
 
@@ -69,7 +70,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
     company = Enum.find(companies, first, &(Integer.to_string(&1.id) == company_id))
 
     case Workforce.working_statuses(socket.assigns.current_scope.scope, company.id) do
-      {:ok, statuses} ->
+      {:ok, %ReadResult{value: statuses, freshness: :current}} ->
         assign(socket, company: company, working_statuses: statuses)
 
       {:error, :not_found} ->

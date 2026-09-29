@@ -31,3 +31,5 @@ composition-lock commands.
 - Keep the shared composition lock in Bilimbi's ignored
   `.scratchpad/composition-lock/`; never commit a lock here. CI is
   `.github/workflows/ci.yml` and pins Bilimbi via `.github/bilimbi-revision`.
+- Use `workforce/docs/README.md` and `Bilimbi.People.Workforce.ReadResult` for
+  workforce freshness; consumers should not invent their own status wrapper.
