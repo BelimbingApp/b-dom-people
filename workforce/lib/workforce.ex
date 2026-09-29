@@ -19,12 +19,38 @@ defmodule Bilimbi.People.Workforce do
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Reference
 
+  @position_reader_key {__MODULE__, :position_reader}
+
   @source_id "people/native"
   @working_statuses_key "people.workforce.working_statuses"
   @employee_statuses ~w(pending probation active inactive terminated)
 
   @spec source_id() :: String.t()
   def source_id, do: @source_id
+
+  @doc "Registers the mounted position owner at application startup."
+  def register_position_reader(module) when is_atom(module) do
+    :persistent_term.put(@position_reader_key, module)
+    :ok
+  end
+
+  @doc "Removes a position owner when its application stops."
+  def unregister_position_reader(module) do
+    if :persistent_term.get(@position_reader_key, nil) == module,
+      do: :persistent_term.erase(@position_reader_key)
+
+    :ok
+  end
+
+  @doc "Reads a bounded page of native positions when Organisation is mounted."
+  def positions(%Scope{} = scope, platform_company_id, as_of \\ Date.utc_today(), options \\ []) do
+    with {:ok, _company} <- live_company(scope, platform_company_id) do
+      case :persistent_term.get(@position_reader_key, nil) do
+        nil -> {:error, :unavailable}
+        reader -> reader.positions(scope, platform_company_id, as_of, options)
+      end
+    end
+  end
 
   @spec employee_statuses() :: [String.t()]
   def employee_statuses, do: @employee_statuses

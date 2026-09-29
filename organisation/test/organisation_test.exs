@@ -1,0 +1,215 @@
+defmodule Bilimbi.People.OrganisationTest do
+  use ExUnit.Case, async: false
+
+  alias Bilimbi.Base.Repo
+  alias Bilimbi.Base.Tenancy
+  alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
+  alias Bilimbi.Core.Employee
+  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.People.Organisation
+  alias Bilimbi.People.Organisation.TestFixtures
+  alias Bilimbi.People.Workforce
+
+  setup do
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
+
+    EmployeeFixtures.create_employee_tables!()
+    TestFixtures.create_position_tables!()
+    CompanyFixtures.insert_tenant!(%{id: 41})
+    CompanyFixtures.insert_tenant!(%{id: 42, is_platform_operator: false})
+    CompanyFixtures.insert_company!(%{id: 73, tenant_id: 41, name: "Company A", code: "a"})
+    CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, name: "Company B", code: "b"})
+    CompanyFixtures.insert_company!(%{id: 75, tenant_id: 42, name: "Company C", code: "c"})
+    :ok = Employee.ensure_system_types()
+
+    {:ok, scope} = Tenancy.scope(41)
+    {:ok, other_scope} = Tenancy.scope(42)
+
+    %{scope: scope, other_scope: other_scope}
+  end
+
+  test "versions and assignments have independent clocks; vacancy keeps the title", %{
+    scope: scope
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-1"})
+
+    {:ok, holder} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-1", full_name: "Employee One"})
+
+    assert {:ok, _} =
+             Organisation.record_version(scope, 73, position.id, %{
+               version: 1,
+               title: "Position Alpha",
+               effective_from: ~D[2026-01-01],
+               effective_to: ~D[2026-06-30]
+             })
+
+    assert {:ok, _} =
+             Organisation.record_version(scope, 73, position.id, %{
+               version: 2,
+               title: "Position Beta",
+               effective_from: ~D[2026-07-01]
+             })
+
+    assert {:ok, [past]} = Organisation.positions(scope, 73, ~D[2026-03-01])
+    assert past.title == "Position Alpha"
+    assert past.vacant?
+
+    assert {:ok, _} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: holder.id,
+               kind: "substantive",
+               effective_from: ~D[2026-04-01],
+               effective_to: ~D[2026-08-31]
+             })
+
+    assert {:ok, [occupied]} = Workforce.positions(scope, 73, ~D[2026-07-15])
+    assert occupied.title == "Position Beta"
+    refute occupied.vacant?
+    assert [%{kind: "substantive", employee_reference: reference}] = occupied.assignments
+    assert reference.stable_id == Integer.to_string(holder.id)
+
+    assert {:ok, [vacant]} = Workforce.positions(scope, 73, ~D[2026-09-01])
+    assert vacant.title == "Position Beta"
+    assert vacant.vacant?
+  end
+
+  test "overlapping versions and substantive holders are refused but acting cover is allowed", %{
+    scope: scope
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-2"})
+
+    {:ok, first} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-2", full_name: "Employee Two"})
+
+    {:ok, second} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-3", full_name: "Employee Three"})
+
+    assert {:ok, _} =
+             Organisation.record_version(scope, 73, position.id, %{
+               version: 1,
+               title: "Title One",
+               effective_from: ~D[2026-01-01],
+               effective_to: ~D[2026-12-31]
+             })
+
+    assert {:error, changeset} =
+             Organisation.record_version(scope, 73, position.id, %{
+               version: 2,
+               title: "Title Two",
+               effective_from: ~D[2026-12-31]
+             })
+
+    assert changeset.errors[:effective_from]
+
+    assert {:ok, _} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: first.id,
+               kind: "substantive",
+               effective_from: ~D[2026-01-01]
+             })
+
+    assert {:error, changeset} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: second.id,
+               kind: "substantive",
+               effective_from: ~D[2026-02-01]
+             })
+
+    assert changeset.errors[:effective_from]
+
+    assert {:ok, _} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: second.id,
+               kind: "acting",
+               effective_from: ~D[2026-02-01]
+             })
+  end
+
+  test "scope, company and cycles are refused", %{scope: scope, other_scope: other_scope} do
+    {:ok, root} = Organisation.create_position(scope, 73, %{code: "ROOT"})
+    {:ok, child} = Organisation.create_position(scope, 73, %{code: "CHILD", parent_id: root.id})
+    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "FOREIGN"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 74, %{employee_number: "E-4", full_name: "Employee Four"})
+
+    assert {:error, :cycle} = Organisation.set_parent(scope, 73, root.id, child.id)
+    assert {:error, :not_found} = Organisation.set_parent(scope, 73, root.id, foreign.id)
+    assert {:error, :not_found} = Organisation.positions(other_scope, 73)
+    assert {:error, :not_found} = Organisation.positions(scope, 75)
+
+    assert {:error, :employee_not_found} =
+             Organisation.assign(scope, 73, root.id, %{
+               employee_id: employee.id,
+               kind: "acting",
+               effective_from: ~D[2026-01-01]
+             })
+
+    assert {:error, :not_found} =
+             Organisation.record_version(scope, 73, foreign.id, %{
+               version: 1,
+               title: "Wrong",
+               effective_from: ~D[2026-01-01]
+             })
+  end
+
+  test "the explorer page is bounded", %{scope: scope} do
+    for number <- 1..3 do
+      {:ok, _} = Organisation.create_position(scope, 73, %{code: "P-#{number}"})
+    end
+
+    assert {:ok, first} =
+             Organisation.positions(scope, 73, Date.utc_today(), page: 1, page_size: 2)
+
+    assert length(first) == 2
+
+    assert {:ok, second} =
+             Organisation.positions(scope, 73, Date.utc_today(), page: 2, page_size: 2)
+
+    assert length(second) == 1
+
+    assert {:error, :invalid_options} =
+             Organisation.positions(scope, 73, Date.utc_today(), page_size: 101)
+  end
+
+  test "workforce position reads report unavailable when Organisation is absent", %{scope: scope} do
+    :ok = Workforce.unregister_position_reader(Organisation)
+    on_exit(fn -> Workforce.register_position_reader(Organisation) end)
+
+    assert {:error, :unavailable} = Workforce.positions(scope, 73)
+    assert {:error, :not_found} = Workforce.positions(scope, 75)
+  end
+
+  test "many acting placements stay bounded without hiding a substantive holder", %{scope: scope} do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-LARGE"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 73, %{
+        employee_number: "E-LARGE",
+        full_name: "Employee Large"
+      })
+
+    for _ <- 1..501 do
+      assert {:ok, _} =
+               Organisation.assign(scope, 73, position.id, %{
+                 employee_id: employee.id,
+                 kind: "acting",
+                 effective_from: ~D[2026-01-01]
+               })
+    end
+
+    assert {:ok, _} =
+             Organisation.assign(scope, 73, position.id, %{
+               employee_id: employee.id,
+               kind: "substantive",
+               effective_from: ~D[2026-01-01]
+             })
+
+    assert {:ok, [projected]} = Organisation.positions(scope, 73, ~D[2026-09-30])
+    assert length(projected.assignments) == 500
+    assert projected.assignments_incomplete?
+    refute projected.vacant?
+  end
+end
