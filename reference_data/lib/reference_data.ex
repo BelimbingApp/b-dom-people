@@ -4,6 +4,7 @@ defmodule Bilimbi.People.ReferenceData do
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
+  alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
   alias Bilimbi.People.ReferenceData.{Alias, CalendarException, Entry}
@@ -12,8 +13,8 @@ defmodule Bilimbi.People.ReferenceData do
     with :ok <- validate_company(scope, company_id) do
       {:ok,
        Repo.all(
-         from(e in Entry,
-           where: e.tenant_id == ^Scope.tenant_id(scope) and e.company_id == ^company_id,
+         from(e in Tenancy.scope_query(Entry, scope),
+           where: e.company_id == ^company_id,
            order_by: [asc: e.kind, asc: e.label, asc: e.id]
          )
        )
@@ -52,8 +53,8 @@ defmodule Bilimbi.People.ReferenceData do
     with :ok <- validate_company(scope, company_id) do
       {:ok,
        Repo.all(
-         from(a in Alias,
-           where: a.tenant_id == ^Scope.tenant_id(scope) and a.company_id == ^company_id,
+         from(a in Tenancy.scope_query(Alias, scope),
+           where: a.company_id == ^company_id,
            order_by: [asc: a.entry_id, asc: a.label]
          )
        )
@@ -65,8 +66,8 @@ defmodule Bilimbi.People.ReferenceData do
     with :ok <- validate_company(scope, company_id) do
       {:ok,
        Repo.all(
-         from(e in CalendarException,
-           where: e.tenant_id == ^Scope.tenant_id(scope) and e.company_id == ^company_id,
+         from(e in Tenancy.scope_query(CalendarException, scope),
+           where: e.company_id == ^company_id,
            order_by: [asc: e.on_date, asc: e.id]
          )
        )
@@ -86,10 +87,8 @@ defmodule Bilimbi.People.ReferenceData do
 
   defp entry_in_company(scope, company_id, entry_id) when is_integer(entry_id) do
     Repo.one(
-      from(e in Entry,
-        where:
-          e.id == ^entry_id and e.tenant_id == ^Scope.tenant_id(scope) and
-            e.company_id == ^company_id
+      from(e in Tenancy.scope_query(Entry, scope),
+        where: e.id == ^entry_id and e.company_id == ^company_id
       )
     )
   end
