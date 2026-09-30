@@ -28,9 +28,26 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       {:ok, employee} =
         Employee.create_employee(scope, 73, %{employee_number: "E-1", full_name: "Employee One"})
 
+      {:ok, approver} =
+        Employee.create_employee(scope, 73, %{employee_number: "E-2", full_name: "Approver Two"})
+
       UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
-      grant_capabilities!(["people.attendance.self.view", "people.attendance.rules.manage"])
-      :ok
+
+      UserFixtures.insert_user!(%{
+        id: 92,
+        company_id: 73,
+        employee_id: approver.id,
+        email: "approver@example.com"
+      })
+
+      grant_capabilities!([
+        "people.attendance.self.view",
+        "people.attendance.rules.manage",
+        "people.attendance.roster.manage"
+      ])
+
+      grant_capabilities!(["people.attendance.adjustments.approve"], user_id: 92)
+      %{scope: scope, employee: employee}
     end
 
     test "shows empty self view and a disabled clock until policy enables it", %{conn: conn} do
@@ -64,6 +81,131 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       render_click(view, "clock", %{"type" => "in"})
       assert render(view) =~ "Clock event recorded."
       assert render(view) =~ "in progress"
+    end
+
+    test "operators manage shift templates and clocking locations", %{conn: conn} do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/rules/shifts")
+      assert has_element?(view, "#attendance-shifts-empty")
+
+      view
+      |> form("#attendance-shift-form",
+        shift: %{code: "day", name: "Day", starts_at: "09:00", ends_at: "17:00", break_minutes: "60"}
+      )
+      |> render_submit()
+
+      assert render(view) =~ "Shift template added."
+      assert render(view) =~ "09:00–17:00"
+
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/rules/locations")
+      assert has_element?(view, "#attendance-locations-empty")
+
+      view
+      |> form("#attendance-location-form",
+        location: %{code: "hq", name: "Head office", latitude: "1.5", longitude: "103.7", radius_meters: "150"}
+      )
+      |> render_submit()
+
+      assert render(view) =~ "Clocking location added."
+      assert has_element?(view, "#attendance-rules-tabs a[aria-current=page]", "Clocking locations")
+    end
+
+    test "planners draft and publish a week that the employee then sees", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      {:ok, day} =
+        Attendance.create_shift_template(scope, 73, %{
+          "code" => "day",
+          "name" => "Day",
+          "starts_at" => "09:00",
+          "ends_at" => "17:00"
+        })
+
+      today = Date.utc_today() |> Date.to_iso8601()
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/rosters?company_id=73")
+      assert render(view) =~ "No unpublished changes this week."
+      refute has_element?(view, "#attendance-roster-publish")
+
+      view
+      |> element("#roster-cell-#{employee.id}-#{today}")
+      |> render_change(%{"employee_id" => "#{employee.id}", "on_date" => today, "value" => "shift:#{day.id}"})
+
+      assert render(view) =~ "1 unpublished change this week."
+      {:ok, mine, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      assert has_element?(mine, "#my-attendance-shifts-empty")
+
+      view |> element("#attendance-roster-publish") |> render_click()
+      assert render(view) =~ "Published 1 roster change."
+
+      {:ok, mine, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      refute has_element?(mine, "#my-attendance-shifts-empty")
+      assert render(mine) =~ "Day (day) 09:00–17:00"
+    end
+
+    test "an employee request is approved by another account", %{conn: conn} do
+      {:ok, mine, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      assert has_element?(mine, "#my-attendance-requests-empty")
+
+      local_at =
+        DateTime.utc_now()
+        |> DateTime.add(-3600)
+        |> Calendar.strftime("%Y-%m-%dT%H:%M")
+
+      mine
+      |> form("#my-attendance-adjustment-form",
+        adjustment: %{event_type: "in", local_at: local_at, reason: "Forgot"}
+      )
+      |> render_submit()
+
+      assert render(mine) =~ "Adjustment request submitted."
+      assert render(mine) =~ "pending"
+
+      approver = log_in_as(conn, session_user(%{"user_id" => 92}))
+      {:ok, queue, _} = live(approver, "/people/attendance/approvals")
+      assert render(queue) =~ "Employee One (E-1)"
+
+      queue
+      |> element("form[id^=adjustment-decision-]")
+      |> render_submit(%{"decision" => "reject", "note" => ""})
+
+      assert render(queue) =~ "Add a note explaining the rejection."
+
+      queue
+      |> element("form[id^=adjustment-decision-]")
+      |> render_submit(%{"decision" => "approve", "note" => ""})
+
+      assert render(queue) =~ "Request approved."
+      assert has_element?(queue, "#attendance-approvals-empty")
+
+      {:ok, mine, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      assert render(mine) =~ "approved"
+      assert render(mine) =~ "in progress"
+    end
+
+    test "a required location hides web clocking", %{conn: conn, scope: scope} do
+      assert {:ok, _} =
+               Attendance.put_rules(scope, 73, %{self_clock_enabled: true, location_required: true})
+
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      assert has_element?(view, "#my-attendance-location-required")
+      refute has_element?(view, "button[phx-click='clock']")
+    end
+
+    test "new pages require their own capability", %{conn: conn} do
+      for path <- ["/people/attendance/approvals"] do
+        assert {:error, {:redirect, _}} = conn |> log_in_as() |> live(path)
+      end
+
+      approver = log_in_as(conn, session_user(%{"user_id" => 92}))
+
+      for path <- [
+            "/people/attendance/rosters",
+            "/people/attendance/rules/shifts",
+            "/people/attendance/rules/locations"
+          ] do
+        assert {:error, {:redirect, _}} = live(approver, path)
+      end
     end
   end
 end
