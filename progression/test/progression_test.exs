@@ -19,7 +19,7 @@ defmodule Bilimbi.People.ProgressionTest do
     assert {:ok, published} = Progression.publish(actor(ctx, :manager), 73, draft.id)
     assert published.published_by_user_id == 101
     assert {:error, :already_published} = Progression.publish(actor(ctx, :manager), 73, draft.id)
-    assert {:ok, result} = Progression.explain(actor(ctx, :employee), 73)
+    assert {:ok, %{explanations: [result]}} = Progression.explain(actor(ctx, :employee), 73)
     assert result.status == :unknown
     assert hd(result.rules).observed_level == nil
     future = Date.add(Date.utc_today(), 1)
@@ -32,7 +32,7 @@ defmodule Bilimbi.People.ProgressionTest do
              )
 
     assert {:ok, _} = Progression.publish(actor(ctx, :manager), 73, next.id)
-    assert {:ok, result} = Progression.explain(actor(ctx, :employee), 73)
+    assert {:ok, %{explanations: [result]}} = Progression.explain(actor(ctx, :employee), 73)
     assert result.policy.id == draft.id
 
     assert_raise Postgrex.Error, fn ->
@@ -91,11 +91,20 @@ defmodule Bilimbi.People.ProgressionTest do
 
     {:ok, p} = Progression.draft(manager, 73, attrs(ctx, %{rules: performance_rules()}))
     {:ok, _} = Progression.publish(manager, 73, p.id)
-    assert {:ok, %{status: :unknown}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert {:ok, %{explanations: [%{status: :unknown}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
     {:ok, _} = Performance.release_review(actor(ctx, :reviewer), 73, review.id)
-    assert {:ok, %{status: :met, rules: [rule]}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert {:ok, %{explanations: [%{status: :met, rules: [rule]}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
     assert rule.review_id == review.id
-    assert {:ok, %{status: :unknown}} = Progression.explain(actor(ctx, :peer), 73)
+
+    assert {:ok, %{explanations: [%{status: :unknown}]}} =
+             Progression.explain(actor(ctx, :peer), 73)
+
     assert {:error, :unauthorized} = Progression.explain(actor(ctx, :employee), 74)
   end
 
@@ -108,7 +117,9 @@ defmodule Bilimbi.People.ProgressionTest do
       )
 
     {:ok, _} = Progression.publish(actor(ctx, :manager), 73, p.id)
-    assert {:ok, %{status: :not_met}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert {:ok, %{explanations: [%{status: :not_met}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
   end
 
   test "skill results use finalized current evidence from the pinned profile", %{ctx: ctx} do
@@ -148,13 +159,135 @@ defmodule Bilimbi.People.ProgressionTest do
     end
 
     first = submit.("first-assessment", 0, nil)
-    assert {:ok, %{status: :not_met}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert {:ok, %{explanations: [%{status: :not_met}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
     submit.("corrected-assessment", 1, first.id)
-    assert {:ok, %{status: :met, rules: [rule]}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert {:ok, %{explanations: [%{status: :met, rules: [rule]}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
     assert rule.observed_level == 1
     {:ok, employee_actor} = Bilimbi.Base.Authz.scope_actor(actor(ctx, :employee))
     assert {:ok, %{scores: [score]}} = Skills.standing(employee_actor, 73)
     assert score.assessment_profile_id == ctx.profile.id
     assert score.assessment_profile_version == 1
+  end
+
+  test "publication refuses a backdate per code and allows a same-day correction", %{ctx: ctx} do
+    manager = actor(ctx, :manager)
+    today = Date.utc_today()
+    {:ok, first} = Progression.draft(manager, 73, attrs(ctx))
+    {:ok, _} = Progression.publish(manager, 73, first.id)
+
+    {:ok, backdated} =
+      Progression.draft(
+        manager,
+        73,
+        attrs(ctx, %{version: 2, effective_from: Date.add(today, -1)})
+      )
+
+    assert {:error, :effective_order} = Progression.publish(manager, 73, backdated.id)
+
+    {:ok, correction} =
+      Progression.draft(manager, 73, attrs(ctx, %{version: 3, name: "Corrected policy"}))
+
+    assert {:ok, _} = Progression.publish(manager, 73, correction.id)
+
+    assert {:ok, %{explanations: [%{policy: policy}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
+    assert policy.id == correction.id
+  end
+
+  test "different policy codes are selected independently", %{ctx: ctx} do
+    manager = actor(ctx, :manager)
+    today = Date.utc_today()
+
+    {:ok, older} =
+      Progression.draft(
+        manager,
+        73,
+        attrs(ctx, %{code: "policy-a", effective_from: Date.add(today, -5)})
+      )
+
+    {:ok, _} = Progression.publish(manager, 73, older.id)
+    {:ok, newer} = Progression.draft(manager, 73, attrs(ctx, %{code: "policy-b"}))
+    {:ok, _} = Progression.publish(manager, 73, newer.id)
+    {:ok, same_day} = Progression.draft(manager, 73, attrs(ctx, %{code: "policy-c"}))
+    assert {:ok, _} = Progression.publish(manager, 73, same_day.id)
+
+    {:ok, a_backdate} =
+      Progression.draft(
+        manager,
+        73,
+        attrs(ctx, %{code: "policy-a", version: 2, effective_from: Date.add(today, -6)})
+      )
+
+    assert {:error, :effective_order} = Progression.publish(manager, 73, a_backdate.id)
+
+    assert {:ok, %{explanations: explanations}} = Progression.explain(actor(ctx, :employee), 73)
+
+    assert Enum.map(explanations, & &1.policy.id) == [older.id, newer.id, same_day.id]
+  end
+
+  test "performance evidence uses the chronologically latest released period", %{ctx: ctx} do
+    alias Bilimbi.People.Performance.WorkflowFixtures, as: PF
+    ctx = PF.ready!(ctx)
+    manager = actor(ctx, :manager)
+    reviewer = actor(ctx, :reviewer)
+
+    release = fn first, last, outcome ->
+      {:ok, t} =
+        Performance.propose_target(
+          manager,
+          73,
+          Map.merge(PF.target_attrs(ctx, ctx.definition), %{
+            period_start: first,
+            period_end: last,
+            effective_from: first
+          })
+        )
+
+      {:ok, _} = Performance.review_target(reviewer, 73, t.id, "Target checked")
+      {:ok, t} = Performance.publish_target(reviewer, 73, t.id)
+
+      {:ok, o} =
+        Performance.record_observation(manager, 73, %{
+          employee_id: ctx.people.employee.id,
+          window_start: first,
+          window_end: last,
+          evidence: "Verified units recorded",
+          source_reference: "measurement-#{first}",
+          source_version: "1"
+        })
+
+      {:ok, review} =
+        Performance.draft_review(
+          manager,
+          73,
+          Map.merge(PF.review_attrs(ctx), %{
+            period_start: first,
+            period_end: last,
+            outcome: outcome,
+            observation_ids: [o.id],
+            target_ids: [t.id]
+          })
+        )
+
+      {:ok, _} = Performance.release_review(reviewer, 73, review.id)
+      review
+    end
+
+    release.(~D[2026-01-01], ~D[2026-01-31], "Outcome not accepted")
+    later = release.(~D[2026-02-01], ~D[2026-09-30], "Agreed outcome")
+    {:ok, p} = Progression.draft(manager, 73, attrs(ctx, %{rules: performance_rules()}))
+    {:ok, _} = Progression.publish(manager, 73, p.id)
+
+    assert {:ok, %{explanations: [%{status: :met, rules: [rule]}]}} =
+             Progression.explain(actor(ctx, :employee), 73)
+
+    assert rule.review_id == later.id
   end
 end

@@ -26,12 +26,7 @@ defmodule Bilimbi.People.Progression.SchemaContract do
         indexes: %{
           "people_progression_policy_versions_pkey" => index(["id"], true),
           "people_progression_policy_identity" => index(["company_id", "code", "version"], true),
-          "people_progression_policy_scope" => index(["tenant_id", "company_id"], false),
-          "people_progression_policy_effective" => %{
-            columns: ["company_id", "effective_from"],
-            unique: true,
-            where: "(status = 'published'::text)"
-          }
+          "people_progression_policy_scope" => index(["tenant_id", "company_id"], false)
         },
         foreign_keys: %{},
         checks: %{

@@ -103,6 +103,17 @@ defmodule Bilimbi.People.Progression do
         :version_order
       )
 
+      require!(
+        !Repo.exists?(
+          from(p in scoped(scope, company_id),
+            where:
+              p.status == "published" and p.code == ^row.code and
+                p.effective_from > ^row.effective_from
+          )
+        ),
+        :effective_order
+      )
+
       row
       |> change(
         status: "published",
@@ -115,7 +126,7 @@ defmodule Bilimbi.People.Progression do
     end)
   end
 
-  @doc "Explain the currently effective policy for this actor's own working employee."
+  @doc "Explain each policy code's currently effective version for this actor's own working employee."
   def explain(%Scope{} = scope, company_id) do
     with {:ok, actor} <- authorize(scope, company_id, "people.progression.self.view"),
          {:ok, user} <- User.get_user(scope, company_id, actor.id),
@@ -124,33 +135,46 @@ defmodule Bilimbi.People.Progression do
          {:ok, _} <- ReadResult.require_current(read) do
       today = Date.utc_today()
 
-      policy =
+      policies =
         scoped(scope, company_id)
         |> where([p], p.status == "published" and p.effective_from <= ^today)
-        |> order_by([p], desc: p.effective_from)
-        |> limit(1)
-        |> Repo.one()
+        |> distinct([p], p.code)
+        |> order_by([p], asc: p.code, desc: p.effective_from, desc: p.version)
+        |> Repo.all()
 
-      if policy do
-        with {:ok, competence} <- competence(actor, company_id, policy.rules["competence"]),
-             {:ok, performance} <- performance(scope, company_id, policy.rules["performance"]) do
-          rules = competence ++ performance
-
-          status =
-            cond do
-              Enum.any?(rules, &(&1.status == :not_met)) -> :not_met
-              Enum.any?(rules, &(&1.status == :unknown)) -> :unknown
-              true -> :met
-            end
-
-          {:ok, %{employee_id: id, policy: view(policy), rules: rules, status: status}}
-        end
-      else
+      if policies == [] do
         {:error, :no_published_policy}
+      else
+        Enum.reduce_while(policies, {:ok, []}, fn policy, {:ok, acc} ->
+          case explain_policy(scope, actor, company_id, policy) do
+            {:ok, explanation} -> {:cont, {:ok, acc ++ [explanation]}}
+            error -> {:halt, error}
+          end
+        end)
+        |> case do
+          {:ok, explanations} -> {:ok, %{employee_id: id, explanations: explanations}}
+          error -> error
+        end
       end
     else
       nil -> {:error, :employee_unavailable}
       error -> error
+    end
+  end
+
+  defp explain_policy(scope, actor, company_id, policy) do
+    with {:ok, competence} <- competence(actor, company_id, policy.rules["competence"]),
+         {:ok, performance} <- performance(scope, company_id, policy.rules["performance"]) do
+      rules = competence ++ performance
+
+      status =
+        cond do
+          Enum.any?(rules, &(&1.status == :not_met)) -> :not_met
+          Enum.any?(rules, &(&1.status == :unknown)) -> :unknown
+          true -> :met
+        end
+
+      {:ok, %{policy: view(policy), rules: rules, status: status}}
     end
   end
 
@@ -189,7 +213,12 @@ defmodule Bilimbi.People.Progression do
 
   defp performance(scope, company_id, rule) do
     with {:ok, reviews} <- eligible_reviews(scope, company_id, rule, 1, []) do
-      latest = Enum.max_by(reviews, &{&1.period_end, &1.version, &1.id}, fn -> nil end)
+      latest =
+        Enum.max_by(
+          reviews,
+          &{Date.to_gregorian_days(&1.period_end), &1.version, &1.id},
+          fn -> nil end
+        )
 
       status =
         cond do

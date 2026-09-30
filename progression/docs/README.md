@@ -14,11 +14,14 @@ not application constants. A policy must contain at least one criterion.
 Drafts are immutable; correcting a draft or publication means a new version.
 
 The company lock serializes drafting/publication with company lifecycle changes.
-A code/version is unique in a company; only one publication can take effect on
-a particular date. Publication requires a higher version than earlier published
-versions of the same code. All prior publications remain readable; the latest
-published effective date on or before today governs the company. A future
-publication does not remove the currently effective policy. PostgreSQL refuses
+A code/version is unique in a company. Publication requires a higher version
+than earlier published versions of the same code, and refuses an effective date
+earlier than the latest published effective date for that code. An equal date
+is a same-day correction: the higher version governs that date. All prior
+publications remain readable. Each code is selected independently: its
+published version with the latest effective date on or before today, ties
+broken by the highest version, governs. A future publication does not remove
+the currently effective version. PostgreSQL refuses
 changes to published rows and deletion or content edits of any version.
 Publication stores the actual login actor and time, and Base Audit captures the
 mutation. Writes during impersonation are refused.
@@ -43,8 +46,8 @@ explicitly require reevaluation. Draft reviews never count. Missing performance
 evidence follows the policy's `unknown` or `not_met` choice. An omitted
 performance criterion produces no performance result.
 
-The explanation returns individual met/not-met/unknown results and a combined
-status: a failed criterion is not met, otherwise any missing criterion is
+The explanation returns, for each governing policy code, individual
+met/not-met/unknown results and a combined status: a failed criterion is not met, otherwise any missing criterion is
 unknown, otherwise the declared criteria are met. This result is computed on
 read and makes no promotion or pay decision. Employee pages expose meaningful
 no-policy, employee-unavailable and permission/freshness states.

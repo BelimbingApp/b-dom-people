@@ -29,8 +29,12 @@ defmodule Bilimbi.People.Progression.Web.Support do
   def message(:version_order),
     do: "Publish a version higher than the existing versions for this policy code."
 
+  def message(:effective_order),
+    do:
+      "Choose an effective date on or after the latest published effective date for this policy code."
+
   def message(:invariant_refused),
-    do: "This policy conflicts with immutable history or an existing version or effective date."
+    do: "This policy conflicts with immutable history or an existing version."
 
   def message(:already_published), do: "This policy version has already been published."
   def message(:impersonation_refused), do: "End impersonation before recording a policy."

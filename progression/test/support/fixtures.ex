@@ -85,12 +85,6 @@ defmodule Bilimbi.People.Progression.Fixtures do
 
     Ecto.Adapters.SQL.query!(
       Repo,
-      "CREATE UNIQUE INDEX people_progression_policy_effective ON people_progression_policy_versions(company_id,effective_from) WHERE status = 'published'",
-      []
-    )
-
-    Ecto.Adapters.SQL.query!(
-      Repo,
       "CREATE INDEX people_progression_policy_scope ON people_progression_policy_versions(tenant_id,company_id)",
       []
     )

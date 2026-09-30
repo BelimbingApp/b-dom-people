@@ -24,13 +24,6 @@ defmodule Bilimbi.People.Progression.Migrations.CreateProgression do
     )
 
     create(
-      unique_index(:people_progression_policy_versions, [:company_id, :effective_from],
-        where: "status = 'published'",
-        name: :people_progression_policy_effective
-      )
-    )
-
-    create(
       index(:people_progression_policy_versions, [:tenant_id, :company_id],
         name: :people_progression_policy_scope
       )
