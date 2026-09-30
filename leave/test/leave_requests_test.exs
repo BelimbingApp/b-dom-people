@@ -554,28 +554,32 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       older = year - 2
 
       assert {:ok,
-              [
-                %{from_year: ^year, reason: :previous_year_open, blocking_year: ^older},
-                %{from_year: from_year, reason: :previous_year_open, blocking_year: ^older}
-              ]} = Leave.carry_forward_skipped(scope, 73)
+              %{
+                total: 2,
+                skips: [
+                  %{from_year: from_year, reason: :previous_year_open, blocking_year: ^older},
+                  %{from_year: ^year, reason: :previous_year_open, blocking_year: ^older}
+                ]
+              }} = Leave.carry_forward_skipped(scope, 73)
 
       assert from_year == year - 1
 
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 2, 92)
+      assert {:ok, %{skips: [], total: 0}} = Leave.carry_forward_skipped(scope, 73)
       assert Decimal.equal?(balance(scope, employee, year - 1).carried_forward, 4)
 
       assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
                Leave.carry_forward(scope, 73, year, 92)
 
-      assert {:ok, [%{from_year: ^year, blocking_year: blocking_year}, _]} =
+      assert {:ok, %{skips: [%{from_year: ^year, blocking_year: blocking_year}]}} =
                Leave.carry_forward_skipped(scope, 73)
 
       assert blocking_year == year - 1
 
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, [%{from_year: ^year}]} = Leave.carry_forward_skipped(scope, 73)
+      assert {:ok, %{skips: [], total: 0}} = Leave.carry_forward_skipped(scope, 73)
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73)
+      assert {:ok, %{skips: []}} = Leave.carry_forward_skipped(scope, 73)
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
@@ -697,7 +701,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
   end
 
   defp skipped(scope, from_year) do
-    {:ok, rows} = Leave.carry_forward_skipped(scope, 73)
+    {:ok, %{skips: rows}} = Leave.carry_forward_skipped(scope, 73)
     {:ok, Enum.filter(rows, &(&1.from_year == from_year))}
   end
 

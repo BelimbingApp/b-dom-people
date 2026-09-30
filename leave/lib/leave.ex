@@ -430,7 +430,8 @@ defmodule Bilimbi.People.Leave do
 
   @doc """
   Employees and types that carry-forward runs left open, newest leave year
-  first, with the reason and the leave year to resolve.
+  first, with the reason and the leave year to resolve: at most a bounded
+  number of `skips` and the `total` count.
   """
   defdelegate carry_forward_skipped(scope, company_id),
     to: CarryForward,

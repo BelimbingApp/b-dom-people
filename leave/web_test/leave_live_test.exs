@@ -10,6 +10,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Leave
   alias Bilimbi.Base.Repo
+  alias Bilimbi.People.Leave.CarryForwardSkip
   alias Bilimbi.People.Leave.CarryForwardWorker
   alias Bilimbi.People.Leave.TestFixtures, as: LeaveFixtures
   alias Bilimbi.People.ReferenceData.TestFixtures, as: ReferenceFixtures
@@ -229,6 +230,49 @@ defmodule BilimbiWeb.LeaveLiveTest do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
       assert has_element?(view, "#leave-carried-count", "2 balances")
       refute has_element?(view, "#leave-carry-skipped")
+    end
+
+    test "the skip report lists the oldest leave year first and notes truncation", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, type} =
+        Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
+
+      now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+      row = fn from_year, employee_id, reason ->
+        %{
+          tenant_id: 41,
+          company_id: 73,
+          from_year: from_year,
+          employee_id: employee_id,
+          employee_label: "Employee #{employee_id}",
+          leave_type_id: type.id,
+          reason: reason,
+          blocking_year: 2020,
+          inserted_at: now
+        }
+      end
+
+      Repo.insert_all(
+        CarryForwardSkip,
+        [row.(2020, 1, "pending") | Enum.map(1..200, &row.(2022, &1, "previous_year_open"))]
+      )
+
+      assert {:ok, %{total: 201, skips: [%{from_year: 2020, reason: :pending} | _] = skips}} =
+               Leave.carry_forward_skipped(scope, 73)
+
+      assert length(skips) == 200
+
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
+      assert has_element?(view, "#leave-carry-skipped-truncated", "Showing 200 of 201")
+
+      assert has_element?(
+               view,
+               "#leave-carry-skipped-2020",
+               "has a pending request in leave year 2020"
+             )
     end
   end
 end

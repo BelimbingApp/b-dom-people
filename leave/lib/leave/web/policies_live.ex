@@ -225,7 +225,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         policies: policies,
         current_year: current_year,
         carried_count: carried,
-        carry_skipped: Enum.chunk_by(skipped, & &1.from_year)
+        carry_skipped: Enum.chunk_by(skipped.skips, & &1.from_year),
+        carry_skipped_shown: length(skipped.skips),
+        carry_skipped_total: skipped.total
       )
     else
       _ -> assign(socket, empty_assigns())
@@ -240,7 +242,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
       policies: [],
       current_year: nil,
       carried_count: 0,
-      carry_skipped: []
+      carry_skipped: [],
+      carry_skipped_shown: 0,
+      carry_skipped_total: 0
     ]
 
   defp type_name(types, id), do: Enum.find_value(types, "Leave", &(&1.id == id && &1.name))
@@ -341,6 +345,11 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
               {@carried_count} balances from leave year {@current_year - 1} have been carried forward.
             </p>
             <div :if={@carry_skipped != []} id="leave-carry-skipped" class="mt-2 space-y-2">
+              <p :if={@carry_skipped_shown < @carry_skipped_total} id="leave-carry-skipped-truncated"
+                class="text-sm text-ink-muted">
+                Showing {@carry_skipped_shown} of {@carry_skipped_total} skipped balances, oldest
+                leave year first.
+              </p>
               <div :for={[%{from_year: year} | _] = skips <- @carry_skipped}
                 id={"leave-carry-skipped-#{year}"}>
                 <h3 class="text-sm font-medium text-ink">Skipped from leave year {year}</h3>

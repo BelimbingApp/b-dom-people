@@ -134,35 +134,42 @@ defmodule Bilimbi.People.Leave.CarryForward do
   def run(%Scope{}, _, _, _), do: {:error, :invalid_year}
 
   @doc """
-  The employees and types that carry-forward runs left open, newest leave
-  year first and at most #{@skip_limit} rows: each latest run of a year
-  replaces that year's rows, and closing an employee and type clears their
-  rows of that year and earlier. `blocking_year` is the leave year to resolve:
-  the year itself for `:pending` requests, or the earliest earlier year not
+  The employees and types that carry-forward runs left open, oldest leave
+  year first, as `skips` of at most #{@skip_limit} rows and the `total` count:
+  each latest run of a year replaces that year's rows, and closing an
+  employee and type through a year clears their rows of that year and earlier
+  and those it resolves. `blocking_year` is the leave year to resolve: the
+  year itself for `:pending` requests, or the earliest earlier year not
   carried forward yet for `:previous_year_open`.
   """
   def skipped(%Scope{} = scope, company_id) do
     with {:ok, _rules} <- Leave.rules(scope, company_id) do
-      {:ok,
-       Repo.all(
-         from(s in Tenancy.scope_query(CarryForwardSkip, scope),
-           join: t in LeaveType,
-           on: t.id == s.leave_type_id,
-           where: s.company_id == ^company_id,
-           order_by: [desc: s.from_year, asc: s.employee_label, asc: t.name],
-           limit: @skip_limit,
-           select: %{
-             from_year: s.from_year,
-             employee_id: s.employee_id,
-             employee_name: s.employee_label,
-             leave_type_id: s.leave_type_id,
-             leave_type_name: t.name,
-             reason: s.reason,
-             blocking_year: s.blocking_year
-           }
-         )
-       )
-       |> Enum.map(&Map.update!(&1, :reason, fn reason -> String.to_existing_atom(reason) end))}
+      rows =
+        from(s in Tenancy.scope_query(CarryForwardSkip, scope),
+          where: s.company_id == ^company_id
+        )
+
+      skips =
+        Repo.all(
+          from(s in rows,
+            join: t in LeaveType,
+            on: t.id == s.leave_type_id,
+            order_by: [asc: s.from_year, asc: s.employee_label, asc: t.name],
+            limit: @skip_limit,
+            select: %{
+              from_year: s.from_year,
+              employee_id: s.employee_id,
+              employee_name: s.employee_label,
+              leave_type_id: s.leave_type_id,
+              leave_type_name: t.name,
+              reason: s.reason,
+              blocking_year: s.blocking_year
+            }
+          )
+        )
+        |> Enum.map(&Map.update!(&1, :reason, fn reason -> String.to_existing_atom(reason) end))
+
+      {:ok, %{skips: skips, total: Repo.aggregate(rows, :count)}}
     end
   end
 
@@ -171,7 +178,8 @@ defmodule Bilimbi.People.Leave.CarryForward do
       from(s in Tenancy.scope_query(CarryForwardSkip, scope),
         where:
           s.company_id == ^company_id and s.employee_id == ^employee_id and
-            s.leave_type_id == ^type_id and s.from_year <= ^from_year
+            s.leave_type_id == ^type_id and
+            (s.from_year <= ^from_year or s.blocking_year <= ^from_year)
       )
     )
   end
