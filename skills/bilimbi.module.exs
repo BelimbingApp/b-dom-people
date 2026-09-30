@@ -5,10 +5,22 @@
   required: false,
   otp_app: :bilimbi_people_skills,
   namespace: Bilimbi.People.Skills,
-  dependencies: [],
-  migrations: nil,
-  web: nil,
+  dependencies: [
+    "base/authz",
+    "base/database",
+    "base/module_registry",
+    "base/tenancy",
+    "base/ui",
+    "core/company",
+    "people/settings",
+    "people/workforce"
+  ],
+  migrations: "priv/repo/migrations",
+  migration_dispositions: %{20_260_930_181_101 => :bilimbi_only},
+  web: "priv/web_routes.exs",
+  # Compatibility verification precedes pending Bilimbi-only migrations.
+  # Registering fresh tables here would require them before migration runs.
   schema_contract: nil,
-  contribution_provider: nil,
+  contribution_provider: Bilimbi.People.Skills.Contributions,
   dev_seed: nil
 ]
