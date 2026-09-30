@@ -8,7 +8,7 @@ defmodule Bilimbi.People.LeaveTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Leave
   alias Bilimbi.People.Leave.Contributions
   alias Bilimbi.People.Leave.TestFixtures
@@ -33,7 +33,7 @@ defmodule Bilimbi.People.LeaveTest do
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
-    EmployeeFixtures.create_employee_tables!()
+    UserFixtures.create_user_tables!()
     SettingsFixtures.create_settings_table!()
     TestFixtures.create_leave_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "First tenant"})
@@ -356,6 +356,13 @@ defmodule Bilimbi.People.LeaveTest do
     assert %{scopes: [:company], default: 1} =
              contributions.settings.definitions["people.leave.year_start_month"]
 
-    assert Enum.map(contributions.menu, & &1.parent) == ["people.my_work", "people.settings"]
+    assert %{scopes: [:company], default: [1, 2, 3, 4, 5]} =
+             contributions.settings.definitions["people.leave.working_weekdays"]
+
+    assert %{scopes: [:company], default: 30} =
+             contributions.settings.definitions["people.leave.request_backdate_days"]
+
+    assert Enum.map(contributions.menu, & &1.parent) ==
+             ["people.my_work", "people.team", "people.settings"]
   end
 end
