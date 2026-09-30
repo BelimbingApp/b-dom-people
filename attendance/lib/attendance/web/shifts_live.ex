@@ -66,8 +66,11 @@ defmodule Bilimbi.People.Attendance.Web.ShiftsLive do
       Keyword.has_key?(changeset.errors, :ends_at) ->
         "The shift must end at a different time than it starts."
 
-      Keyword.has_key?(changeset.errors, :break_minutes) ->
+      changeset.errors[:break_minutes] == {"must be shorter than the shift", []} ->
         "The break must be shorter than the shift."
+
+      Keyword.has_key?(changeset.errors, :break_minutes) ->
+        "Enter break minutes of 0 or more."
 
       true ->
         "Enter a code, a name, and start and end times."
