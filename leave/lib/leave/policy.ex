@@ -11,13 +11,14 @@ defmodule Bilimbi.People.Leave.Policy do
     field(:effective_from, :date)
     field(:effective_to, :date)
     field(:entitlement, :decimal)
+    field(:carry_forward_cap, :decimal)
     field(:actor_user_id, :integer)
     timestamps(type: :naive_datetime)
   end
 
   def changeset(policy, attrs) do
     policy
-    |> cast(attrs, [:effective_from, :entitlement, :actor_user_id])
+    |> cast(attrs, [:effective_from, :entitlement, :carry_forward_cap, :actor_user_id])
     |> validate_required([
       :tenant_id,
       :company_id,
@@ -27,6 +28,10 @@ defmodule Bilimbi.People.Leave.Policy do
       :entitlement
     ])
     |> validate_number(:entitlement,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: Decimal.new("9999.99")
+    )
+    |> validate_number(:carry_forward_cap,
       greater_than_or_equal_to: 0,
       less_than_or_equal_to: Decimal.new("9999.99")
     )

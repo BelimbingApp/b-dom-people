@@ -5,10 +5,16 @@ for path <- [
       "base/settings/test/support/test_fixtures.ex",
       "core/geonames/test/support/test_fixtures.ex",
       "core/company/test/support/test_fixtures.ex",
-      "core/employee/test/support/test_fixtures.ex"
+      "core/employee/test/support/test_fixtures.ex",
+      "core/user/test/support/test_fixtures.ex"
     ] do
   Code.require_file(Path.join(workspace_apps, path))
 end
+
+# Requests count leave days around the public calendar exceptions of
+# people/reference_data, so tests create that module's table through its own
+# fixture rather than restating its schema here.
+Code.require_file(Path.expand("../../reference_data/test/support/test_fixtures.ex", __DIR__))
 
 Code.require_file(Path.expand("support/test_fixtures.ex", __DIR__))
 ExUnit.start()

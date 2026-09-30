@@ -1,28 +1,39 @@
 defmodule Bilimbi.People.Leave do
   @moduledoc """
-  Company-scoped leave types, effective-dated entitlement policies and an
-  append-only balance ledger.
+  Company-scoped leave types, effective-dated entitlement policies, an
+  append-only balance ledger, leave requests with approval, and year-end
+  carry-forward.
 
   Every operation takes a validated tenant scope and an explicit platform
   company ID. Company and employee identity come from `people/workforce` and
   must be current. Callers never query the schemas directly.
   """
   import Ecto.Query
+  import Bilimbi.People.Leave.Input, only: [field: 2, parse_date: 1, parse_quantity: 1]
 
   alias Bilimbi.Base.DateTime, as: BaseDateTime
+  alias Bilimbi.Base.Queue
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.User
-  alias Bilimbi.People.Leave.{LedgerEntry, LeaveType, Policy}
+
+  alias Bilimbi.People.Leave.{
+    CarryForward,
+    CarryForwardWorker,
+    LedgerEntry,
+    LeaveType,
+    Policy,
+    Requests
+  }
+
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
   @year_start_key "people.leave.year_start_month"
   @grant_source "policy"
-  @max_quantity Decimal.new("9999.99")
 
   ## Company leave year
 
@@ -86,7 +97,7 @@ defmodule Bilimbi.People.Leave do
       |> LeaveType.changeset(
         attrs
         |> Map.new(fn {key, value} -> {to_string(key), value} end)
-        |> Map.take(~w(code name unit paid))
+        |> Map.take(~w(code name unit paid balance_required))
         |> Map.put("status", "active")
       )
       |> Repo.insert()
@@ -129,14 +140,17 @@ defmodule Bilimbi.People.Leave do
   Adds the next policy version for an active type. It must start after the
   latest version, which it closes the day before, and after every entitlement
   already granted for that type, so no grant is left under a policy that no
-  longer covers it.
+  longer covers it. An optional `carry_forward_cap` is the most of a closing
+  balance that carry-forward moves into the next leave year; without one the
+  type does not carry forward.
   """
   def add_policy(%Scope{} = scope, company_id, type_id, attrs, actor_user_id \\ nil)
       when is_map(attrs) do
     with {:ok, _company} <- current_company(scope, company_id),
          {:ok, effective_from} <- parse_date(field(attrs, :effective_from)),
          {:ok, entitlement} <- parse_quantity(field(attrs, :entitlement)),
-         true <- Decimal.compare(entitlement, 0) != :lt || {:error, :invalid_policy} do
+         true <- Decimal.compare(entitlement, 0) != :lt || {:error, :invalid_policy},
+         {:ok, cap} <- parse_cap(field(attrs, :carry_forward_cap)) do
       Repo.transaction(fn ->
         type = lock_active_type(scope, company_id, type_id) || Repo.rollback(:not_found)
         latest = latest_policy(scope, type.id)
@@ -164,6 +178,7 @@ defmodule Bilimbi.People.Leave do
             |> Policy.changeset(%{
               effective_from: effective_from,
               entitlement: entitlement,
+              carry_forward_cap: cap,
               actor_user_id: actor_user_id
             })
             |> Repo.insert()
@@ -249,7 +264,8 @@ defmodule Bilimbi.People.Leave do
 
   @doc """
   Records an opening balance or adjustment. Idempotent by company, source and
-  key; a replay with different facts is refused.
+  key; a replay with different facts is refused, and so is a new entry in a
+  leave year already carried forward for that employee and type.
   """
   def record_entry(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
     with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
@@ -267,6 +283,9 @@ defmodule Bilimbi.People.Leave do
 
         case find_entry(scope, company_id, entry.source, entry.entry_key) do
           nil ->
+            if CarryForward.closed?(scope, company_id, employee_id, type.id, attrs.leave_year),
+              do: Repo.rollback(:year_closed)
+
             %LedgerEntry{
               tenant_id: Scope.tenant_id(scope),
               company_id: company_id,
@@ -290,7 +309,11 @@ defmodule Bilimbi.People.Leave do
     end
   end
 
-  @doc "Per-type totals for one employee and leave year, derived from the ledger."
+  @doc """
+  Per-type totals for one employee and leave year, derived from the ledger.
+  `pending` is the quantity held by pending requests; `available` is the
+  balance less that reservation.
+  """
   def balances(%Scope{} = scope, company_id, employee_id, leave_year)
       when is_integer(leave_year) do
     with {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
@@ -306,10 +329,14 @@ defmodule Bilimbi.People.Leave do
         )
         |> Enum.group_by(&elem(&1, 0), fn {_, type, sum} -> {type, sum} end)
 
+      pending = Requests.pending_totals(scope, company_id, employee_id, leave_year)
+
       {:ok,
        company_types(scope, company_id)
        |> Enum.filter(&(&1.status == "active" or Map.has_key?(totals, &1.id)))
-       |> Enum.map(&balance_view(&1, Map.new(Map.get(totals, &1.id, []))))}
+       |> Enum.map(
+         &balance_view(&1, Map.new(Map.get(totals, &1.id, [])), Map.get(pending, &1.id))
+       )}
     end
   end
 
@@ -328,6 +355,84 @@ defmodule Bilimbi.People.Leave do
        |> Enum.map(&entry_view/1)}
     end
   end
+
+  ## Requests and approval
+
+  @doc """
+  The company's request rules: `working_weekdays` (ISO weekday numbers
+  counted as leave days) and `backdate_days` (how many days before today a
+  request may start). Calendar exceptions from `people/reference_data` are
+  never counted.
+  """
+  defdelegate request_rules(scope, company_id), to: Requests
+
+  @doc "Saves `working_weekdays` (non-empty, 1..7) and `backdate_days` (0..366)."
+  defdelegate put_request_rules(scope, company_id, attrs), to: Requests
+
+  @doc """
+  Submits a request for the actor's linked working employee. `day_part` is
+  `full` over the range, `am` or `pm` for half of one day, or `hours` with
+  `hours` for an hour-unit type on one day. Idempotent by `request_key`.
+
+  Refusals include `:invalid_request`, `:not_found`, `:spans_leave_years`,
+  `:too_far_back`, `:year_closed`, `:no_working_days`, `:overlapping_request`,
+  `:insufficient_balance`, `:request_key_conflict` and `:unavailable`.
+  """
+  defdelegate submit_request(scope, company_id, actor, attrs), to: Requests, as: :submit
+
+  @doc "The actor's own latest requests, newest start first."
+  defdelegate self_requests(scope, company_id, actor), to: Requests
+
+  @doc """
+  Cancels the actor's own request: pending at any time, approved only before
+  its start date, which writes a `cancelled` entry returning the quantity.
+  """
+  defdelegate cancel_request(scope, company_id, actor, request_id), to: Requests, as: :cancel
+
+  @doc "A company's pending requests, earliest start first, with employee names."
+  defdelegate pending_requests(scope, company_id), to: Requests, as: :pending
+
+  @doc """
+  Approves (`:approve`) or rejects (`:reject`, note required) a pending
+  request. Refuses the requester and the employee (`:self_approval`), a
+  request no longer pending (`:not_pending`), a closed year and a balance
+  that no longer covers it. Approval writes the `taken` entry.
+  """
+  defdelegate decide_request(scope, company_id, actor, request_id, decision, note),
+    to: Requests,
+    as: :decide
+
+  ## Carry-forward
+
+  @doc """
+  Carries each current employee's closing balance of `from_year`, up to the
+  cap of the policy in force on its last day, into the next leave year and
+  expires the excess. Refused until that year has ended. Employees with
+  pending requests in that year are skipped; a repeated run changes nothing.
+  Returns counts of `carried`, `existing` and `pending` balances.
+  """
+  defdelegate carry_forward(scope, company_id, from_year, actor_user_id \\ nil),
+    to: CarryForward,
+    as: :run
+
+  @doc "How many balances of `from_year` have been carried forward."
+  defdelegate carried_forward_count(scope, company_id, from_year),
+    to: CarryForward,
+    as: :closed_count
+
+  @doc "Queues `carry_forward/4` to run as the signed-in operator."
+  def enqueue_carry_forward(%Scope{} = scope, company_id, from_year)
+      when is_integer(company_id) and is_integer(from_year) do
+    case Queue.enqueue_for(scope, CarryForwardWorker, %{
+           "company_id" => company_id,
+           "from_year" => from_year
+         }) do
+      {:ok, _job} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def enqueue_carry_forward(%Scope{}, _, _), do: {:error, :invalid_carry_forward}
 
   @doc """
   Balances and entries of the logged-in actor's linked employee for the leave
@@ -529,45 +634,27 @@ defmodule Bilimbi.People.Leave do
     end
   end
 
-  defp field(attrs, key), do: Map.get(attrs, key, Map.get(attrs, Atom.to_string(key)))
+  defp parse_cap(nil), do: {:ok, nil}
 
-  defp parse_date(%Date{} = date), do: {:ok, date}
-
-  defp parse_date(value) when is_binary(value) do
-    case Date.from_iso8601(String.trim(value)) do
-      {:ok, date} -> {:ok, date}
-      _ -> {:error, :invalid_date}
+  defp parse_cap(value) do
+    case if(is_binary(value), do: String.trim(value), else: value) do
+      "" -> {:ok, nil}
+      value -> non_negative_cap(parse_quantity(value))
     end
   end
 
-  defp parse_date(_), do: {:error, :invalid_date}
-
-  defp parse_quantity(%Decimal{} = value), do: bounded_quantity(value)
-  defp parse_quantity(value) when is_integer(value), do: bounded_quantity(Decimal.new(value))
-
-  defp parse_quantity(value) when is_binary(value) do
-    case Decimal.parse(String.trim(value)) do
-      {decimal, ""} -> bounded_quantity(decimal)
-      _ -> {:error, :invalid_quantity}
+  defp non_negative_cap(result) do
+    case result do
+      {:ok, cap} -> if Decimal.negative?(cap), do: {:error, :invalid_policy}, else: {:ok, cap}
+      error -> error
     end
-  end
-
-  defp parse_quantity(_), do: {:error, :invalid_quantity}
-
-  # Quantities are hundredths of the type's unit; finer values are refused
-  # rather than rounded.
-  defp bounded_quantity(decimal) do
-    if Decimal.inf?(decimal) or Decimal.nan?(decimal) or
-         Decimal.gt?(Decimal.abs(decimal), @max_quantity) or
-         not Decimal.eq?(Decimal.round(decimal, 2), decimal),
-       do: {:error, :invalid_quantity},
-       else: {:ok, Decimal.round(decimal, 2)}
   end
 
   defp view_result({:ok, value}, view), do: {:ok, view.(value)}
   defp view_result(error, _view), do: error
 
-  defp type_view(type), do: Map.take(type, [:id, :code, :name, :unit, :paid, :status])
+  defp type_view(type),
+    do: Map.take(type, [:id, :code, :name, :unit, :paid, :balance_required, :status])
 
   defp policy_view(policy),
     do:
@@ -577,7 +664,8 @@ defmodule Bilimbi.People.Leave do
         :version,
         :effective_from,
         :effective_to,
-        :entitlement
+        :entitlement,
+        :carry_forward_cap
       ])
 
   defp entry_view(entry),
@@ -596,18 +684,24 @@ defmodule Bilimbi.People.Leave do
         :note
       ])
 
-  defp balance_view(type, sums) do
+  defp balance_view(type, sums, pending) do
     zero = Decimal.new("0.00")
-    entitlement = Map.get(sums, "entitlement", zero)
-    opening = Map.get(sums, "opening", zero)
-    adjustment = Map.get(sums, "adjustment", zero)
+    sum = fn types -> Enum.reduce(types, zero, &Decimal.add(Map.get(sums, &1, zero), &2)) end
+    balance = Enum.reduce(Map.values(sums), zero, &Decimal.add/2)
+    pending = pending || zero
 
     %{
       leave_type: type_view(type),
-      entitlement: entitlement,
-      opening: opening,
-      adjustment: adjustment,
-      balance: Enum.reduce(Map.values(sums), zero, &Decimal.add/2)
+      entitlement: sum.(["entitlement"]),
+      opening: sum.(["opening"]),
+      adjustment: sum.(["adjustment"]),
+      carried_forward: sum.(["carried_forward"]),
+      # Taken leave net of cancelled approvals, as a positive quantity.
+      taken: Decimal.sub(zero, sum.(["taken", "cancelled"])),
+      expired: Decimal.sub(zero, sum.(["expired"])),
+      balance: balance,
+      pending: pending,
+      available: Decimal.sub(balance, pending)
     }
   end
 end
