@@ -124,14 +124,14 @@ defmodule BilimbiWeb.AttendanceLiveTest do
 
       today = Date.utc_today() |> Date.to_iso8601()
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/rosters?company_id=73")
-      assert render(view) =~ "No unpublished changes this week."
+      assert render(view) =~ "No unpublished changes this week for this company."
       refute has_element?(view, "#attendance-roster-publish")
 
       view
       |> element("#roster-cell-#{employee.id}-#{today}")
       |> render_change(%{"employee_id" => "#{employee.id}", "on_date" => today, "value" => "shift:#{day.id}"})
 
-      assert render(view) =~ "1 unpublished change this week."
+      assert render(view) =~ "1 unpublished change this week across the company."
       {:ok, mine, _} = conn |> log_in_as() |> live("/people/attendance/my")
       assert has_element?(mine, "#my-attendance-shifts-empty")
 

@@ -20,7 +20,10 @@ defmodule Bilimbi.People.Attendance.ShiftTemplate do
 
   def changeset(template, attrs) do
     template
-    |> cast(attrs, [:code, :name, :starts_at, :ends_at, :break_minutes])
+    # Ecto replaces an empty param with the field default, so a cleared break
+    # would silently become 0; cast it without empty values to reject it.
+    |> cast(attrs, [:break_minutes], empty_values: [])
+    |> cast(attrs, [:code, :name, :starts_at, :ends_at], empty_values: empty_values())
     |> update_change(:code, &String.trim/1)
     |> update_change(:name, &String.trim/1)
     |> validate_required([
