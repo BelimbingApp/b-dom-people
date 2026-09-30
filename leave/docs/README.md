@@ -89,9 +89,9 @@ the last day. A negative balance carries nothing.
 
 Each processed employee and type gets one `carried_forward` entry, even of
 zero, keyed by type, employee and year. That entry closes the year and every
-earlier year for them: a repeated run changes nothing, and grants, new
-requests, approvals, cancellations and `record_entry/4` entries in those years
-are refused with `:year_closed`, so no quantity is spent twice. Carried balances do not expire later in this slice.
+earlier year for them: a repeated run changes nothing, grants skip them, and
+new requests, approvals, cancellations and `record_entry/4` entries in those
+years are refused with `:year_closed`, so no quantity is spent twice. Carried balances do not expire later in this slice.
 
 Years close in order per employee and type, so no year is stranded. A run
 skips an employee and type with pending requests in the year (`pending`), or
