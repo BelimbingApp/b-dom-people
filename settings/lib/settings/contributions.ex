@@ -35,7 +35,6 @@ defmodule Bilimbi.People.Settings.Contributions do
         %{
           id: "people.time_and_expenses",
           label: "Time and expenses",
-          icon: "clock",
           parent: "people",
           route: nil,
           capability: nil,
