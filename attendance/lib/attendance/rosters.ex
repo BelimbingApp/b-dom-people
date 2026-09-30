@@ -95,7 +95,12 @@ defmodule Bilimbi.People.Attendance.Rosters do
          truncated?: length(matching) > @max_employees,
          templates: templates,
          entries: entries,
-         pending: scope |> period_entries(company_id, from, to) |> pending_entries() |> length()
+         pending:
+           scope
+           |> period_entries(company_id, from, to)
+           |> RosterEntry.where_pending()
+           |> exclude(:order_by)
+           |> Repo.aggregate(:count)
        }}
     end
   end
@@ -171,8 +176,9 @@ defmodule Bilimbi.People.Attendance.Rosters do
         pending =
           scope
           |> period_entries(company_id, from, to)
+          |> RosterEntry.where_pending()
           |> lock("FOR UPDATE")
-          |> pending_entries()
+          |> Repo.all()
 
         Enum.each(pending, &publish_entry(&1, actor, now))
 
@@ -200,8 +206,6 @@ defmodule Bilimbi.People.Attendance.Rosters do
       order_by: [asc: e.id]
     )
   end
-
-  defp pending_entries(query), do: query |> Repo.all() |> Enum.filter(&RosterEntry.pending?/1)
 
   @doc "The actor's own published roster for up to #{@max_days} days from `from`."
   def self_roster(%Scope{} = scope, company_id, actor, %Date{} = from, days)

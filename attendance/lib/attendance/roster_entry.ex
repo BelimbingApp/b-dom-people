@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.Attendance.RosterEntry do
   @moduledoc false
   use Ecto.Schema
+  import Ecto.Query
 
   # `kind` and `shift_template_id` hold the planner's working value;
   # `published_*` hold what employees see. `none` is a planned removal that
@@ -25,4 +26,19 @@ defmodule Bilimbi.People.Attendance.RosterEntry do
     do:
       entry.kind != (entry.published_kind || "none") or
         entry.shift_template_id != entry.published_shift_template_id
+
+  @doc "Narrows `query` to entries for which `pending?/1` holds."
+  def where_pending(query) do
+    where(
+      query,
+      [e],
+      fragment(
+        "? <> COALESCE(?, 'none') OR ? IS DISTINCT FROM ?",
+        e.kind,
+        e.published_kind,
+        e.shift_template_id,
+        e.published_shift_template_id
+      )
+    )
+  end
 end
