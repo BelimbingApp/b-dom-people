@@ -1,1 +1,1 @@
-[inputs: ["*.{ex,exs}", "{lib,test}/**/*.{ex,exs}"]]
+[inputs: ["*.{ex,exs}", "{lib,test,web_test,priv}/**/*.{ex,exs}"]]

@@ -202,13 +202,30 @@ defmodule Bilimbi.People.Skills.Standing do
       end
 
     today = Date.utc_today()
+    assessment_ids = Enum.map(rows, & &1.assessment_id)
+
+    provenance =
+      from(a in Tenancy.scope_query(Bilimbi.People.Skills.Assessment, scope),
+        join: p in Bilimbi.People.Skills.Profile,
+        on: p.id == a.profile_id and p.tenant_id == a.tenant_id and p.company_id == a.company_id,
+        where: a.company_id == ^company_id and a.id in ^assessment_ids,
+        select:
+          {a.id, %{profile_id: a.profile_id, profile_version: p.version, scale_id: a.scale_id}}
+      )
+      |> Repo.all()
+      |> Map.new()
 
     Enum.map(rows, fn row ->
       skill = Map.get(skills, row.skill_id)
 
+      assessment = Map.get(provenance, row.assessment_id)
+
       row
       |> Map.take(@score_fields)
       |> Map.merge(%{
+        assessment_profile_id: assessment && assessment.profile_id,
+        assessment_profile_version: assessment && assessment.profile_version,
+        assessment_scale_id: assessment && assessment.scale_id,
         employee_name: Map.get(names, row.employee_id, "Employee ##{row.employee_id}"),
         skill_code: skill && skill.code,
         skill_name: skill && skill.name,

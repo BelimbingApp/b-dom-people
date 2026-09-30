@@ -27,7 +27,8 @@ individual targets, attributable observations, independently released reviews
 and employee responses.
 Training owns a company-scoped course catalog, delivery events and a session
 calendar with explicit capacity and IANA time zones.
-Other modules remain empty;
+Progression owns published policy versions and an employee eligibility
+explanation. Other modules remain empty;
 no sample rows are installed.
 
 | Module ID | Ownership |
@@ -43,7 +44,7 @@ no sample rows are installed.
 | `people/skills` | Skill catalog, requirement profiles, assessments, reassessment, development actions and reminders |
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
-| `people/progression` | Progression policy |
+| `people/progression` | Immutable policy publication and employee eligibility explanations |
 | `people/payroll` | Payroll periods, catalog versions, mappings, attendance allowance mappings and frozen setup |
 
 ## Mount and validate
@@ -132,6 +133,12 @@ company/month filters and list/calendar views. Operators supply courses,
 events, capacities and delivery time zones; empty companies have no sample
 training data. Later Training workflows remain hidden. See
 `training/docs/README.md`.
+
+Progression is available by direct authorized routes at `/people/progression`
+for policy operators and `/people/progression/my` for the linked employee.
+Policy criteria are governed company data; missing evidence remains explicit.
+Progression navigation stays hidden pending rollout acceptance. See
+`progression/docs/README.md`.
 
 ## License
 
