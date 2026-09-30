@@ -26,6 +26,7 @@ defmodule Bilimbi.People.Leave do
     LedgerEntry,
     LeaveType,
     Policy,
+    Request,
     Requests
   }
 
@@ -89,6 +90,22 @@ defmodule Bilimbi.People.Leave do
          )
        )
        |> Enum.map(&type_view/1)}
+    end
+  end
+
+  @doc "IDs of leave types with a pending or approved request overlapping `from`..`to`."
+  def requested_type_ids(%Scope{} = scope, company_id, %Date{} = from, %Date{} = to) do
+    with {:ok, _company} <- current_company(scope, company_id) do
+      {:ok,
+       Repo.all(
+         from(r in Tenancy.scope_query(Request, scope),
+           where:
+             r.company_id == ^company_id and r.status in ["pending", "approved"] and
+               r.starts_on <= ^to and r.ends_on >= ^from,
+           distinct: true,
+           select: r.leave_type_id
+         )
+       )}
     end
   end
 

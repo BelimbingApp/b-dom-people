@@ -161,6 +161,22 @@ defmodule Bilimbi.People.Claims do
     end
   end
 
+  @doc "IDs of claim types with a claim incurred in `from`..`to` that is not withdrawn or rejected."
+  def requested_claim_type_ids(%Scope{} = scope, company_id, %Date{} = from, %Date{} = to) do
+    with {:ok, _company} <- company(scope, company_id) do
+      {:ok,
+       scoped(Request, scope, company_id)
+       |> where(
+         [r],
+         r.status not in ^@dead_statuses and r.incurred_on >= ^from and
+           r.incurred_on <= ^to
+       )
+       |> distinct(true)
+       |> select([r], r.claim_type_id)
+       |> Repo.all()}
+    end
+  end
+
   def create_claim_type(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
     with {:ok, _company} <- company(scope, company_id),
          %Category{} = category <-

@@ -88,6 +88,9 @@ cells that a spreadsheet would read as a formula. `reimburse_batch/5` marks the
 batch's still-approved claims reimbursed. Nothing here assumes a currency,
 account code, or payment format; downstream posting belongs to Payroll or a
 finance integration that reads the batch through this facade.
+`requested_claim_type_ids/4` returns the claim types with a claim incurred in a
+date range that is not withdrawn or rejected, for Payroll's unmapped-source
+report.
 
 ## Pages and menu
 

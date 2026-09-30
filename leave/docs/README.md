@@ -132,7 +132,9 @@ operator. When it runs, the operator's company reach and
 All pages have unavailable and empty states. New installations have no types,
 policies, entries or requests, and no country, statutory or customer
 defaults. Service-length bands wait for a workforce hire-date contract;
-encashment and payroll handoff belong to later slices.
+encashment and payroll handoff belong to later slices. `requested_type_ids/4`
+returns the leave types with a pending or approved request overlapping a date
+range, for Payroll's unmapped-source report.
 
 The migration versions `20260930160101`, `20260930190101` and
 `20260930200101` are
