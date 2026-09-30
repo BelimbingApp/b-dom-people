@@ -14,12 +14,25 @@ defmodule Bilimbi.People.Attendance.ClockEvent do
     field(:occurred_at, :utc_datetime)
     field(:timezone, :string)
     field(:actor_user_id, :integer)
+    field(:latitude, :decimal)
+    field(:longitude, :decimal)
+    field(:clocking_location_id, :integer)
     timestamps(type: :naive_datetime)
   end
 
   def changeset(event, attrs) do
     event
-    |> cast(attrs, [:event_key, :event_type, :source, :occurred_at, :timezone, :actor_user_id])
+    |> cast(attrs, [
+      :event_key,
+      :event_type,
+      :source,
+      :occurred_at,
+      :timezone,
+      :actor_user_id,
+      :latitude,
+      :longitude,
+      :clocking_location_id
+    ])
     |> validate_required([
       :tenant_id,
       :company_id,

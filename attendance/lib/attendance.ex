@@ -1,65 +1,134 @@
 defmodule Bilimbi.People.Attendance do
-  @moduledoc "Company-scoped clock facts and day projections."
+  @moduledoc """
+  Company-scoped clock facts, day projections, rosters, clocking locations and
+  attendance adjustments.
+
+  Every function takes a validated `Bilimbi.Base.Tenancy.Scope` and an explicit
+  platform company ID; employees are read through `people/workforce`.
+  """
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.DateTime, as: BaseDateTime
   alias Bilimbi.Base.Settings
-  alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
-  alias Bilimbi.Core.User
-  alias Bilimbi.People.Attendance.{ClockEvent, Day}
-  alias Bilimbi.People.Workforce
-  alias Bilimbi.People.Workforce.ReadResult
+  alias Bilimbi.People.Attendance.{Access, Adjustments, ClockEvent, Day, Locations, Rosters}
 
   @timezone_key "people.attendance.timezone"
   @self_clock_key "people.attendance.self_clock_enabled"
   @max_shift_key "people.attendance.max_shift_hours"
+  @location_key "people.attendance.location_required"
+  @adjustment_window_key "people.attendance.adjustment_window_days"
+
+  @rule_keys %{
+    timezone: @timezone_key,
+    self_clock_enabled: @self_clock_key,
+    max_shift_hours: @max_shift_key,
+    location_required: @location_key,
+    adjustment_window_days: @adjustment_window_key
+  }
 
   def rules(%Scope{} = scope, company_id) do
-    with {:ok, company} <- current_company(scope, company_id) do
-      settings_scope = SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
-
-      {:ok,
-       %{
-         timezone: Settings.get(@timezone_key, settings_scope),
-         self_clock_enabled: Settings.get(@self_clock_key, settings_scope),
-         max_shift_hours: Settings.get(@max_shift_key, settings_scope)
-       }}
+    with {:ok, company} <- Access.current_company(scope, company_id) do
+      settings_scope = Access.settings_scope(scope, company)
+      {:ok, Map.new(@rule_keys, fn {name, key} -> {name, Settings.get(key, settings_scope)} end)}
     end
   end
 
-  def put_rules(%Scope{} = scope, company_id, timezone, enabled, max_shift_hours)
-      when is_binary(timezone) and is_boolean(enabled) and max_shift_hours in 1..24 do
-    with {:ok, company} <- current_company(scope, company_id),
-         {:ok, _} <- local_date(DateTime.utc_now(), timezone) do
-      settings_scope = SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
+  def put_rules(%Scope{} = scope, company_id, timezone, enabled, max_shift_hours),
+    do:
+      put_rules(scope, company_id, %{
+        timezone: timezone,
+        self_clock_enabled: enabled,
+        max_shift_hours: max_shift_hours
+      })
 
-      with {:ok, _} <- Settings.put(@timezone_key, timezone, settings_scope),
-           {:ok, _} <- Settings.put(@self_clock_key, enabled, settings_scope),
-           {:ok, _} <- Settings.put(@max_shift_key, max_shift_hours, settings_scope) do
-        rules(scope, company_id)
+  @doc "Stores the given company rules; omitted rules keep their current value."
+  def put_rules(%Scope{} = scope, company_id, %{} = changes) do
+    with :ok <- validate_rules(changes),
+         {:ok, company} <- Access.current_company(scope, company_id) do
+      settings_scope = Access.settings_scope(scope, company)
+
+      changes
+      |> Enum.reduce_while(:ok, fn {name, value}, :ok ->
+        case Settings.put(Map.fetch!(@rule_keys, name), value, settings_scope) do
+          {:ok, _} -> {:cont, :ok}
+          error -> {:halt, error}
+        end
+      end)
+      |> case do
+        :ok -> rules(scope, company_id)
+        error -> error
       end
     end
   end
 
-  def put_rules(%Scope{}, _, _, _, _), do: {:error, :invalid_rules}
+  def put_rules(%Scope{}, _, _), do: {:error, :invalid_rules}
+
+  defp validate_rules(changes) do
+    if Enum.all?(changes, fn {name, value} -> valid_rule?(name, value) end),
+      do: :ok,
+      else: {:error, :invalid_rules}
+  end
+
+  defp valid_rule?(:timezone, value),
+    do: is_binary(value) and match?({:ok, _}, local_date(DateTime.utc_now(), value))
+
+  defp valid_rule?(:self_clock_enabled, value), do: is_boolean(value)
+  defp valid_rule?(:location_required, value), do: is_boolean(value)
+  defp valid_rule?(:max_shift_hours, value), do: value in 1..24
+  defp valid_rule?(:adjustment_window_days, value), do: value in 1..366
+  defp valid_rule?(_, _), do: false
 
   @doc "Idempotent by company, source and key; conflicting replays are refused."
   def record_clock(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
-    with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
+    with {:ok, _employee} <- Access.current_employee(scope, company_id, employee_id),
          {:ok, rules} <- rules(scope, company_id),
-         {:ok, event} <- normalize_event(attrs, rules.timezone) do
+         {:ok, event} <- normalize_event(attrs, rules.timezone),
+         {:ok, event} <- place_event(scope, company_id, event, rules.location_required) do
       Repo.transaction(fn ->
         write_event(scope, company_id, employee_id, event, rules.max_shift_hours)
       end)
     end
   end
 
+  @doc false
+  # Adjustments call this inside their own transaction after an approver's
+  # decision; the approval, not a location, is the event's evidence.
+  def record_approved_adjustment(%Scope{} = scope, company_id, employee_id, attrs) do
+    with {:ok, rules} <- rules(scope, company_id),
+         {:ok, event} <- normalize_event(attrs, rules.timezone) do
+      event = Map.merge(event, %{latitude: nil, longitude: nil, clocking_location_id: nil})
+
+      Repo.transaction(fn ->
+        write_event(scope, company_id, employee_id, event, rules.max_shift_hours)
+      end)
+    end
+  end
+
+  defp place_event(_scope, _company_id, %{latitude: nil} = event, location_required) do
+    if location_required,
+      do: {:error, :location_required},
+      else: {:ok, Map.put(event, :clocking_location_id, nil)}
+  end
+
+  defp place_event(scope, company_id, event, location_required) do
+    case Locations.locate(scope, company_id, event.latitude, event.longitude) do
+      {:ok, location} ->
+        {:ok, Map.put(event, :clocking_location_id, location.id)}
+
+      :none when location_required ->
+        {:error, :outside_clocking_location}
+
+      :none ->
+        {:ok, Map.put(event, :clocking_location_id, nil)}
+    end
+  end
+
   def self_clock(%Scope{} = scope, company_id, actor, type, key)
       when type in ["in", "out"] and is_binary(key) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor),
+    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor),
          {:ok, %{self_clock_enabled: true}} <- rules(scope, company_id) do
       record_clock(scope, company_id, employee_id, %{
         event_key: key,
@@ -76,13 +145,13 @@ defmodule Bilimbi.People.Attendance do
   def self_clock(%Scope{}, _, _, _, _), do: {:error, :invalid_event}
 
   def self_days(%Scope{} = scope, company_id, actor) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor) do
+    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor) do
       list_days(scope, company_id, employee_id)
     end
   end
 
   def list_days(%Scope{} = scope, company_id, employee_id) do
-    with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
+    with {:ok, _employee} <- Access.current_employee(scope, company_id, employee_id),
          {:ok, %{max_shift_hours: max_shift_hours}} <- rules(scope, company_id) do
       now = DateTime.utc_now()
 
@@ -98,38 +167,20 @@ defmodule Bilimbi.People.Attendance do
     end
   end
 
-  defp self_employee(scope, company_id, actor) do
-    with true <- actor.type == :user and actor.company_id == company_id,
-         {:ok, user} <- User.get_user(scope, company_id, actor.id),
-         employee_id when is_integer(employee_id) <- user.employee_id,
-         {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
-      {:ok, employee_id}
-    else
-      _ -> {:error, :unavailable}
-    end
-  end
-
-  defp current_company(scope, company_id) do
-    with {:ok, read} <- Workforce.company(scope, company_id),
-         do: ReadResult.require_current(read)
-  end
-
-  defp current_employee(scope, company_id, employee_id) do
-    with {:ok, read} <- Workforce.employee(scope, company_id, employee_id),
-         do: ReadResult.require_current(read)
-  end
-
   defp normalize_event(attrs, timezone) do
     key = Map.get(attrs, :event_key) || Map.get(attrs, "event_key")
     type = Map.get(attrs, :event_type) || Map.get(attrs, "event_type")
     source = Map.get(attrs, :source) || Map.get(attrs, "source")
     occurred_at = Map.get(attrs, :occurred_at) || Map.get(attrs, "occurred_at")
     actor_user_id = Map.get(attrs, :actor_user_id) || Map.get(attrs, "actor_user_id")
+    latitude = Map.get(attrs, :latitude) || Map.get(attrs, "latitude")
+    longitude = Map.get(attrs, :longitude) || Map.get(attrs, "longitude")
 
     with true <- is_binary(key) and byte_size(key) in 1..160,
          true <- type in ~w(in out break_in break_out),
          true <- is_binary(source) and byte_size(source) in 1..32,
          true <- match?(%DateTime{}, occurred_at),
+         {:ok, point} <- point(latitude, longitude),
          {:ok, date} <- local_date(occurred_at, timezone) do
       {:ok,
        %{
@@ -139,6 +190,8 @@ defmodule Bilimbi.People.Attendance do
          occurred_at: DateTime.truncate(occurred_at, :second),
          timezone: timezone,
          actor_user_id: actor_user_id,
+         latitude: elem(point, 0),
+         longitude: elem(point, 1),
          on_date: date
        }}
     else
@@ -146,14 +199,34 @@ defmodule Bilimbi.People.Attendance do
     end
   end
 
-  defp local_date(at, timezone) when is_binary(timezone) do
+  defp point(nil, nil), do: {:ok, {nil, nil}}
+
+  defp point(latitude, longitude) do
+    with {:ok, lat} <- coordinate(latitude, 90),
+         {:ok, lon} <- coordinate(longitude, 180),
+         do: {:ok, {lat, lon}}
+  end
+
+  defp coordinate(value, bound) when is_number(value),
+    do: coordinate(Decimal.from_float(value * 1.0), bound)
+
+  defp coordinate(%Decimal{} = value, bound) do
+    if Decimal.compare(Decimal.abs(value), bound) == :gt,
+      do: :error,
+      else: {:ok, Decimal.round(value, 6)}
+  end
+
+  defp coordinate(_, _), do: :error
+
+  @doc false
+  def local_date(at, timezone) when is_binary(timezone) do
     case BaseDateTime.shift(at, timezone) do
       {:ok, local} -> {:ok, DateTime.to_date(local)}
       _ -> {:error, :invalid_timezone}
     end
   end
 
-  defp local_date(_, _), do: {:error, :invalid_timezone}
+  def local_date(_, _), do: {:error, :invalid_timezone}
 
   defp write_event(scope, company_id, employee_id, event, max_shift_hours) do
     case find_event(scope, company_id, event) do
@@ -321,4 +394,29 @@ defmodule Bilimbi.People.Attendance do
 
   defp event_view(event),
     do: Map.take(event, [:id, :event_type, :occurred_at, :timezone, :source])
+
+  # Shift templates, clocking locations, rosters and adjustments. See
+  # `docs/README.md` for their workflow and refusals.
+  defdelegate list_shift_templates(scope, company_id), to: Rosters
+  defdelegate create_shift_template(scope, company_id, attrs), to: Rosters
+  defdelegate set_shift_template_status(scope, company_id, template_id, status), to: Rosters
+  defdelegate roster(scope, company_id, from, days, options \\ []), to: Rosters
+
+  defdelegate plan_roster_entry(scope, company_id, actor, employee_id, on_date, value),
+    to: Rosters
+
+  defdelegate publish_roster(scope, company_id, actor, from, to), to: Rosters
+  defdelegate self_roster(scope, company_id, actor, from, days), to: Rosters
+
+  defdelegate list_clocking_locations(scope, company_id), to: Locations
+  defdelegate create_clocking_location(scope, company_id, attrs), to: Locations
+  defdelegate set_clocking_location_status(scope, company_id, location_id, status), to: Locations
+
+  defdelegate submit_adjustment(scope, company_id, actor, attrs), to: Adjustments
+  defdelegate self_adjustments(scope, company_id, actor), to: Adjustments
+  defdelegate cancel_adjustment(scope, company_id, actor, request_id), to: Adjustments
+  defdelegate pending_adjustments(scope, company_id), to: Adjustments
+
+  defdelegate decide_adjustment(scope, company_id, actor, request_id, decision, note),
+    to: Adjustments
 end
