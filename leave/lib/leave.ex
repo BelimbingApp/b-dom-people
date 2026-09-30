@@ -34,19 +34,23 @@ defmodule Bilimbi.People.Leave do
 
   @doc "Refused once the company has ledger entries, which carry their leave year."
   def put_rules(%Scope{} = scope, company_id, month) when month in 1..12 do
-    with {:ok, company} <- current_company(scope, company_id),
-         {:ok, %{year_start_month: current}} <- rules(scope, company_id) do
-      cond do
-        current == month ->
-          {:ok, %{year_start_month: month}}
+    with {:ok, company} <- current_company(scope, company_id) do
+      Repo.transaction(fn ->
+        lock_types(scope, company_id)
+        %{year_start_month: current} = unwrap(rules(scope, company_id))
 
-        ledger_in_use?(scope, company_id) ->
-          {:error, :year_in_use}
+        cond do
+          current == month ->
+            %{year_start_month: month}
 
-        true ->
-          with {:ok, _} <- Settings.put(@year_start_key, month, settings_scope(scope, company)),
-               do: rules(scope, company_id)
-      end
+          ledger_in_use?(scope, company_id) ->
+            Repo.rollback(:year_in_use)
+
+          true ->
+            unwrap(Settings.put(@year_start_key, month, settings_scope(scope, company)))
+            unwrap(rules(scope, company_id))
+        end
+      end)
     end
   end
 
@@ -192,52 +196,51 @@ defmodule Bilimbi.People.Leave do
 
   def grant_entitlements(%Scope{} = scope, company_id, leave_year, actor_user_id)
       when is_integer(leave_year) and leave_year in 1900..9998 do
-    with {:ok, rules} <- rules(scope, company_id),
-         {:ok, read} <- Workforce.employees(scope, company_id),
+    with {:ok, read} <- Workforce.employees(scope, company_id),
          {:ok, employees} <- ReadResult.require_current(read) do
-      {first_day, _} = year_range(rules, leave_year)
+      Repo.transaction(fn ->
+        types = scope |> lock_types(company_id) |> Enum.filter(&(&1.status == "active"))
+        {first_day, _} = year_range(unwrap(rules(scope, company_id)), leave_year)
 
-      grants =
-        for %LeaveType{status: "active"} = type <- company_types(scope, company_id),
+        for type <- types,
             policy = effective_policy(scope, company_id, type.id, first_day),
             policy != nil,
-            employee <- employees do
-          employee_id = String.to_integer(employee.reference.stable_id)
+            employee <- employees,
+            reduce: %{granted: 0, existing: 0} do
+          counts ->
+            employee_id = String.to_integer(employee.reference.stable_id)
+            key = "entitlement:#{type.id}:#{employee_id}:#{leave_year}"
 
-          %LedgerEntry{
-            tenant_id: Scope.tenant_id(scope),
-            company_id: company_id,
-            employee_id: employee_id,
-            leave_type_id: type.id
-          }
-          |> LedgerEntry.changeset(%{
-            leave_year: leave_year,
-            entry_type: "entitlement",
-            quantity: policy.entitlement,
-            unit: type.unit,
-            policy_id: policy.id,
-            policy_version: policy.version,
-            occurred_on: first_day,
-            source: @grant_source,
-            entry_key: "entitlement:#{type.id}:#{employee_id}:#{leave_year}",
-            actor_user_id: actor_user_id
-          })
+            changeset =
+              %LedgerEntry{
+                tenant_id: Scope.tenant_id(scope),
+                company_id: company_id,
+                employee_id: employee_id,
+                leave_type_id: type.id
+              }
+              |> LedgerEntry.changeset(%{
+                leave_year: leave_year,
+                entry_type: "entitlement",
+                quantity: policy.entitlement,
+                unit: type.unit,
+                policy_id: policy.id,
+                policy_version: policy.version,
+                occurred_on: first_day,
+                source: @grant_source,
+                entry_key: key,
+                actor_user_id: actor_user_id
+              })
+
+            # Checking first keeps a repeated grant from issuing a no-op insert;
+            # the savepoint absorbs a concurrent run that wins the unique key.
+            with nil <- find_entry(scope, company_id, @grant_source, key),
+                 {:ok, _entry} <- Repo.insert(changeset, mode: :savepoint) do
+              Map.update!(counts, :granted, &(&1 + 1))
+            else
+              %LedgerEntry{} -> Map.update!(counts, :existing, &(&1 + 1))
+              {:error, changeset} -> replayed_grant(scope, company_id, key, changeset, counts)
+            end
         end
-
-      Repo.transaction(fn ->
-        Enum.reduce(grants, %{granted: 0, existing: 0}, fn changeset, counts ->
-          key = Ecto.Changeset.get_field(changeset, :entry_key)
-
-          # Checking first keeps a repeated grant from issuing a no-op insert;
-          # the savepoint absorbs a concurrent run that wins the unique key.
-          with nil <- find_entry(scope, company_id, @grant_source, key),
-               {:ok, _entry} <- Repo.insert(changeset, mode: :savepoint) do
-            Map.update!(counts, :granted, &(&1 + 1))
-          else
-            %LedgerEntry{} -> Map.update!(counts, :existing, &(&1 + 1))
-            {:error, changeset} -> replayed_grant(scope, company_id, key, changeset, counts)
-          end
-        end)
       end)
     end
   end
@@ -250,16 +253,18 @@ defmodule Bilimbi.People.Leave do
   """
   def record_entry(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
     with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
-         {:ok, rules} <- rules(scope, company_id),
-         {:ok, entry} <- normalize_entry(attrs),
-         %LeaveType{status: "active"} = type <-
-           get_type(scope, company_id, entry.leave_type_id) || {:error, :not_found} do
-      attrs =
-        entry
-        |> Map.delete(:leave_type_id)
-        |> Map.merge(%{leave_year: leave_year(rules, entry.occurred_on), unit: type.unit})
-
+         {:ok, entry} <- normalize_entry(attrs) do
       Repo.transaction(fn ->
+        type =
+          lock_active_type(scope, company_id, entry.leave_type_id) || Repo.rollback(:not_found)
+
+        rules = unwrap(rules(scope, company_id))
+
+        attrs =
+          entry
+          |> Map.delete(:leave_type_id)
+          |> Map.merge(%{leave_year: leave_year(rules, entry.occurred_on), unit: type.unit})
+
         case find_entry(scope, company_id, entry.source, entry.entry_key) do
           nil ->
             %LedgerEntry{
@@ -282,9 +287,6 @@ defmodule Bilimbi.People.Leave do
             replay_entry(existing, employee_id, type.id, attrs)
         end
       end)
-    else
-      %LeaveType{} -> {:error, :not_found}
-      error -> error
     end
   end
 
@@ -347,19 +349,21 @@ defmodule Bilimbi.People.Leave do
     end
   end
 
+  @doc "Today's date in the company time zone."
+  def today(%Scope{} = scope, company_id) do
+    with {:ok, company} <- current_company(scope, company_id),
+         timezone = BaseDateTime.company_timezone(settings_scope(scope, company)),
+         {:ok, local} <- BaseDateTime.shift(DateTime.utc_now(), timezone),
+         do: {:ok, DateTime.to_date(local)}
+  end
+
   ## Private
 
   defp settings_scope(scope, company),
     do: SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
 
   defp summary_date(_scope, _company_id, %Date{} = on), do: {:ok, on}
-
-  defp summary_date(scope, company_id, nil) do
-    with {:ok, company} <- current_company(scope, company_id),
-         timezone = BaseDateTime.company_timezone(settings_scope(scope, company)),
-         {:ok, local} <- BaseDateTime.shift(DateTime.utc_now(), timezone),
-         do: {:ok, DateTime.to_date(local)}
-  end
+  defp summary_date(scope, company_id, nil), do: today(scope, company_id)
 
   defp current_company(scope, company_id) do
     with {:ok, read} <- Workforce.company(scope, company_id),
@@ -417,6 +421,19 @@ defmodule Bilimbi.People.Leave do
       )
 
   defp lock_active_type(_, _, _), do: nil
+
+  defp lock_types(scope, company_id),
+    do:
+      Repo.all(
+        from(t in Tenancy.scope_query(LeaveType, scope),
+          where: t.company_id == ^company_id,
+          order_by: [asc: t.id],
+          lock: "FOR UPDATE"
+        )
+      )
+
+  defp unwrap({:ok, value}), do: value
+  defp unwrap({:error, reason}), do: Repo.rollback(reason)
 
   defp latest_policy(scope, type_id),
     do:

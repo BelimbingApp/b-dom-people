@@ -167,12 +167,13 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
 
     with {:ok, rules} <- Leave.rules(scope(socket), company_id),
          {:ok, types} <- Leave.list_types(scope(socket), company_id),
-         {:ok, policies} <- Leave.list_policies(scope(socket), company_id) do
+         {:ok, policies} <- Leave.list_policies(scope(socket), company_id),
+         {:ok, today} <- Leave.today(scope(socket), company_id) do
       assign(socket,
         rules: rules,
         types: types,
         policies: policies,
-        current_year: Leave.leave_year(rules, Date.utc_today())
+        current_year: Leave.leave_year(rules, today)
       )
     else
       _ -> assign(socket, rules: nil, types: [], policies: [], current_year: nil)
