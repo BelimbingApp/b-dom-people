@@ -155,6 +155,8 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
     company_id = socket.assigns.company.id
     can? = &Access.allowed?(actor, company_id, &1)
     can_propose? = can?.("people.skills.actions.manage")
+    can_progress? = can_propose? or can?.("people.skills.actions.update")
+    linked = Access.linked_employee_id(actor.scope, company_id, actor)
 
     with {:ok, actions} <- Skills.list_actions(actor, company_id, socket.assigns.group),
          {:ok, types} <- Skills.list_action_types(actor.scope, company_id) do
@@ -162,7 +164,14 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
         available?: true,
         can_propose?: can_propose?,
         can_approve?: can?.("people.skills.actions.approve"),
-        can_progress?: can_propose? or can?.("people.skills.actions.update"),
+        can_progress?: can_progress?,
+        progressable:
+          MapSet.new(
+            for action <- actions,
+                can_progress?,
+                can_propose? or linked == {:ok, action.owner_employee_id},
+                do: action.id
+          ),
         actions: actions,
         types: Enum.filter(types, & &1.active),
         gaps: if(can_propose?, do: optional(Skills.gaps(actor, company_id), []), else: []),
@@ -190,6 +199,7 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
         can_propose?: false,
         can_approve?: false,
         can_progress?: false,
+        progressable: MapSet.new(),
         actions: [],
         types: [],
         gaps: [],
@@ -248,19 +258,19 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
                 <p class="text-ink-muted">Owner {action.owner_name} · coordinator {action.coordinator_name} ·
                   {action.start_on} to {action.due_on} · {action.priority_explanation}</p>
 
-                <div :if={@can_progress? or @can_approve?} class="mt-2 flex flex-wrap items-start gap-3">
+                <div :if={action.id in @progressable or @can_approve?} class="mt-2 flex flex-wrap items-start gap-3">
                   <button :if={@can_approve? and action.status == "proposed"} type="button" class="underline"
                     phx-click="approve_action" phx-value-id={action.id}>Approve</button>
-                  <button :if={@can_progress? and action.status in ~w(not_started scheduled on_hold)}
+                  <button :if={action.id in @progressable and action.status in ~w(not_started scheduled on_hold)}
                     type="button" class="underline" phx-click="start_action" phx-value-id={action.id}>Start</button>
-                  <form :if={@can_progress? and action.status in ~w(not_started scheduled in_progress)}
+                  <form :if={action.id in @progressable and action.status in ~w(not_started scheduled in_progress)}
                     id={"hold-form-#{action.id}"} phx-submit="hold_action" class="flex items-center gap-2">
                     <input type="hidden" name="target" value={action.id} />
                     <input name="reason" required aria-label="Reason for hold" placeholder="Hold reason"
                       maxlength="2000" class={input_class()} />
                     <.button type="submit">Hold</.button>
                   </form>
-                  <form :if={@can_progress? and action.status in ~w(not_started scheduled in_progress on_hold)}
+                  <form :if={action.id in @progressable and action.status in ~w(not_started scheduled in_progress on_hold)}
                     id={"complete-form-#{action.id}"} phx-submit="complete_action"
                     class="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="target" value={action.id} />
@@ -270,7 +280,7 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
                       aria-label="Reassessment due" class={input_class()} />
                     <.button type="submit">Complete intervention</.button>
                   </form>
-                  <form :if={@can_progress? and action.status == "pending_reassessment"}
+                  <form :if={action.id in @progressable and action.status == "pending_reassessment"}
                     id={"link-form-#{action.id}"} phx-submit="link_action_reassessment"
                     class="flex items-center gap-2">
                     <input type="hidden" name="target" value={action.id} />
@@ -281,7 +291,7 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
                     </select>
                     <.button type="submit">Close against reassessment</.button>
                   </form>
-                  <form :if={@can_progress? and action.status not in ~w(completed cancelled)}
+                  <form :if={action.id in @progressable and action.status not in ~w(completed cancelled)}
                     id={"cancel-form-#{action.id}"} phx-submit="cancel_action"
                     class="flex items-center gap-2">
                     <input type="hidden" name="target" value={action.id} />
