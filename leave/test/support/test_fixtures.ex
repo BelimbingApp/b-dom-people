@@ -127,7 +127,8 @@ defmodule Bilimbi.People.Leave.TestFixtures do
             from_year integer NOT NULL, employee_id bigint NOT NULL,
             employee_label varchar(300) NOT NULL,
             leave_type_id bigint NOT NULL REFERENCES people_leave_types(id),
-            reason varchar(24) NOT NULL, inserted_at timestamp(0) NOT NULL,
+            reason varchar(24) NOT NULL, blocking_year integer NOT NULL,
+            inserted_at timestamp(0) NOT NULL,
             CONSTRAINT people_leave_carry_forward_skips_unique
               UNIQUE (company_id, from_year, employee_id, leave_type_id),
             CONSTRAINT people_leave_carry_forward_skips_reason

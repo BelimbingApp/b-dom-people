@@ -428,8 +428,11 @@ defmodule Bilimbi.People.Leave do
     to: CarryForward,
     as: :closed_count
 
-  @doc "Employees and types the latest carry-forward run of `from_year` skipped, with the reason."
-  defdelegate carry_forward_skipped(scope, company_id, from_year),
+  @doc """
+  Employees and types that carry-forward runs left open, newest leave year
+  first, with the reason and the leave year to resolve.
+  """
+  defdelegate carry_forward_skipped(scope, company_id),
     to: CarryForward,
     as: :skipped
 

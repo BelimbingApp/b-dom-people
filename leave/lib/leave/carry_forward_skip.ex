@@ -11,6 +11,7 @@ defmodule Bilimbi.People.Leave.CarryForwardSkip do
     field(:employee_label, :string)
     field(:leave_type_id, :integer)
     field(:reason, :string)
+    field(:blocking_year, :integer)
     field(:inserted_at, :naive_datetime)
   end
 end

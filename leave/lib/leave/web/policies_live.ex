@@ -217,7 +217,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
          {:ok, carried} <-
            Leave.carried_forward_count(scope(socket), company_id, current_year - 1),
          {:ok, skipped} <-
-           Leave.carry_forward_skipped(scope(socket), company_id, current_year - 1) do
+           Leave.carry_forward_skipped(scope(socket), company_id) do
       assign(socket,
         rules: rules,
         request_rules: request_rules,
@@ -225,7 +225,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         policies: policies,
         current_year: current_year,
         carried_count: carried,
-        carry_skipped: skipped
+        carry_skipped: Enum.chunk_by(skipped, & &1.from_year)
       )
     else
       _ -> assign(socket, empty_assigns())
@@ -244,8 +244,12 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
     ]
 
   defp type_name(types, id), do: Enum.find_value(types, "Leave", &(&1.id == id && &1.name))
-  defp skip_reason(:pending), do: "has a pending request in that year"
-  defp skip_reason(:previous_year_open), do: "an earlier leave year is not carried forward yet"
+
+  defp skip_reason(%{reason: :pending, blocking_year: year}),
+    do: "has a pending request in leave year #{year}"
+
+  defp skip_reason(%{reason: :previous_year_open, blocking_year: year}),
+    do: "leave year #{year} is not carried forward yet"
 
   defp unit_label("hour"), do: "hours"
   defp unit_label(_), do: "days"
@@ -336,19 +340,25 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
             <p id="leave-carried-count" class="mt-2 text-sm text-ink-muted">
               {@carried_count} balances from leave year {@current_year - 1} have been carried forward.
             </p>
-            <ul :if={@carry_skipped != []} id="leave-carry-skipped"
-              class="mt-2 space-y-1 text-sm text-ink-muted">
-              <li :for={skip <- @carry_skipped}
-                id={"leave-carry-skipped-#{skip.employee_id}-#{skip.leave_type_id}"}>
-                Skipped: {skip.employee_name} · {skip.leave_type_name} · {skip_reason(skip.reason)}
-              </li>
-            </ul>
+            <div :if={@carry_skipped != []} id="leave-carry-skipped" class="mt-2 space-y-2">
+              <div :for={[%{from_year: year} | _] = skips <- @carry_skipped}
+                id={"leave-carry-skipped-#{year}"}>
+                <h3 class="text-sm font-medium text-ink">Skipped from leave year {year}</h3>
+                <ul class="mt-1 space-y-1 text-sm text-ink-muted">
+                  <li :for={skip <- skips}
+                    id={"leave-carry-skipped-#{year}-#{skip.employee_id}-#{skip.leave_type_id}"}>
+                    {skip.employee_name} · {skip.leave_type_name} · {skip_reason(skip)}
+                  </li>
+                </ul>
+              </div>
+            </div>
             <p class="mt-2 text-sm text-ink-muted">
               For each type whose policy on the year's last day sets a cap, each current employee's
               closing balance up to the cap moves into the next year and the rest expires. The year
-              must have ended, and years are carried in order. The latest run lists the employees it
-              skipped: those with a pending request in the year, or with an earlier year not carried
-              forward yet. Run the year again once that is resolved. A carried year, and every year
+              must have ended, and years are carried in order. Each year's latest run lists the employees
+              it skipped: those with a pending request in the year, or with an earlier year not carried
+              forward yet, naming the year to resolve. Run the years again, oldest first, once that
+              is resolved. A carried year, and every year
               before it, is closed to new requests and entries.
             </p>
           </section>

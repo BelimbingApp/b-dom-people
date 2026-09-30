@@ -26,6 +26,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   alias Bilimbi.People.Workforce.ReadResult
 
   @source "carry_forward"
+  @skip_limit 200
 
   @doc """
   Whether `year` is closed to new requests and entries for the employee and
@@ -108,14 +109,16 @@ defmodule Bilimbi.People.Leave.CarryForward do
                     year
                   )
 
+                  clear_skips(scope, company_id, employee_id, type.id, from_year)
                   {Map.update!(counts, :carried, &(&1 + 1)), skips}
 
-                reason ->
+                {reason, blocking_year} ->
                   skip = %{
                     employee_id: employee_id,
                     employee_label: "#{employee.display_name} (#{employee.employee_number})",
                     leave_type_id: type.id,
-                    reason: Atom.to_string(reason)
+                    reason: Atom.to_string(reason),
+                    blocking_year: blocking_year
                   }
 
                   {Map.update!(counts, reason, &(&1 + 1)), [skip | skips]}
@@ -131,25 +134,31 @@ defmodule Bilimbi.People.Leave.CarryForward do
   def run(%Scope{}, _, _, _), do: {:error, :invalid_year}
 
   @doc """
-  The employees and types the latest carry-forward run of `from_year` left
-  open, with the reason: `:pending` requests in that year, or an earlier
-  year still open (`:previous_year_open`).
+  The employees and types that carry-forward runs left open, newest leave
+  year first and at most #{@skip_limit} rows: each latest run of a year
+  replaces that year's rows, and closing an employee and type clears their
+  rows of that year and earlier. `blocking_year` is the leave year to resolve:
+  the year itself for `:pending` requests, or the earliest earlier year not
+  carried forward yet for `:previous_year_open`.
   """
-  def skipped(%Scope{} = scope, company_id, from_year) when is_integer(from_year) do
+  def skipped(%Scope{} = scope, company_id) do
     with {:ok, _rules} <- Leave.rules(scope, company_id) do
       {:ok,
        Repo.all(
          from(s in Tenancy.scope_query(CarryForwardSkip, scope),
            join: t in LeaveType,
            on: t.id == s.leave_type_id,
-           where: s.company_id == ^company_id and s.from_year == ^from_year,
-           order_by: [asc: s.employee_label, asc: t.name],
+           where: s.company_id == ^company_id,
+           order_by: [desc: s.from_year, asc: s.employee_label, asc: t.name],
+           limit: @skip_limit,
            select: %{
+             from_year: s.from_year,
              employee_id: s.employee_id,
              employee_name: s.employee_label,
              leave_type_id: s.leave_type_id,
              leave_type_name: t.name,
-             reason: s.reason
+             reason: s.reason,
+             blocking_year: s.blocking_year
            }
          )
        )
@@ -157,7 +166,15 @@ defmodule Bilimbi.People.Leave.CarryForward do
     end
   end
 
-  def skipped(%Scope{}, _, _), do: {:error, :invalid_year}
+  defp clear_skips(scope, company_id, employee_id, type_id, from_year) do
+    Repo.delete_all(
+      from(s in Tenancy.scope_query(CarryForwardSkip, scope),
+        where:
+          s.company_id == ^company_id and s.employee_id == ^employee_id and
+            s.leave_type_id == ^type_id and s.from_year <= ^from_year
+      )
+    )
+  end
 
   defp record_skips(scope, company_id, from_year, skips) do
     Repo.delete_all(
@@ -200,10 +217,10 @@ defmodule Bilimbi.People.Leave.CarryForward do
         :closed
 
       Requests.pending_exists?(scope, company_id, type_id, employee_id, year) ->
-        :pending
+        {:pending, year}
 
-      earlier_open?(scope, company_id, employee_id, type_id, year, rules) ->
-        :previous_year_open
+      earliest = earliest_open_year(scope, company_id, employee_id, type_id, year, rules) ->
+        {:previous_year_open, earliest}
 
       true ->
         :open
@@ -213,7 +230,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # An earlier year after the last carried one is open while it has pending
   # requests, or ledger entries under a capped policy. Uncapped years never
   # carry; closing a later year closes them.
-  defp earlier_open?(scope, company_id, employee_id, type_id, year, rules) do
+  defp earliest_open_year(scope, company_id, employee_id, type_id, year, rules) do
     after_year =
       Repo.one(
         from(e in carried_entries(scope, company_id, employee_id, type_id),
@@ -221,17 +238,19 @@ defmodule Bilimbi.People.Leave.CarryForward do
         )
       ) || 0
 
-    pending? =
-      Repo.exists?(
+    pending_years =
+      Repo.all(
         from(r in Tenancy.scope_query(Request, scope),
           where:
             r.company_id == ^company_id and r.employee_id == ^employee_id and
               r.leave_type_id == ^type_id and r.status == "pending" and
-              r.leave_year > ^after_year and r.leave_year < ^year
+              r.leave_year > ^after_year and r.leave_year < ^year,
+          distinct: true,
+          select: r.leave_year
         )
       )
 
-    pending? or
+    entry_years =
       Repo.all(
         from(e in Tenancy.scope_query(LedgerEntry, scope),
           where:
@@ -242,7 +261,9 @@ defmodule Bilimbi.People.Leave.CarryForward do
           select: e.leave_year
         )
       )
-      |> Enum.any?(&capped?(scope, company_id, type_id, rules, &1))
+      |> Enum.filter(&capped?(scope, company_id, type_id, rules, &1))
+
+    Enum.min(pending_years ++ entry_years, fn -> nil end)
   end
 
   defp capped?(scope, company_id, type_id, rules, year) do

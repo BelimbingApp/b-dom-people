@@ -100,10 +100,13 @@ last carried one with pending requests, or with ledger entries under a capped
 policy. Earlier years without entries, such as before a later hire, do not
 hold the run back, and uncapped years never carry; closing the year closes
 them. The run returns a count per reason and replaces its year's rows in
-`people_leave_carry_forward_skips`; `carry_forward_skipped/3` reads that
-report, so the Policies page shows the latest run's skipped employees, types
-and reasons after the queued job. Running the year again once the cause is
-resolved carries them.
+`people_leave_carry_forward_skips`, each naming the leave year to resolve: the
+year itself for a pending request, or the earliest earlier year not carried
+forward yet. Closing an employee and type clears their rows of that year and
+earlier. `carry_forward_skipped/2` reads the stored rows of every year, newest
+first and at most 200, so the Policies page lists each year that still has
+skipped employees after the queued jobs. Running the years again, oldest first,
+once the cause is resolved carries them.
 
 `enqueue_carry_forward/3` queues `Bilimbi.People.Leave.CarryForwardWorker`
 (worker ID `people-leave/carry-forward`) through Base Queue as the signed-in

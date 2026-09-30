@@ -223,7 +223,8 @@ defmodule Bilimbi.People.Leave.SchemaContract do
             "employee_id" => column(:bigint, false),
             "employee_label" => column({:varchar, 300}, false),
             "leave_type_id" => column(:bigint, false),
-            "reason" => column({:varchar, 24}, false)
+            "reason" => column({:varchar, 24}, false),
+            "blocking_year" => column(:integer, false)
           }),
         indexes: %{
           "people_leave_carry_forward_skips_pkey" => index(["id"], true),

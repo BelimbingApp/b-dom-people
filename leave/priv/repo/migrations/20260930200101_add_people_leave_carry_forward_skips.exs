@@ -17,6 +17,7 @@ defmodule Bilimbi.People.Leave.Migrations.AddCarryForwardSkips do
       )
 
       add(:reason, :string, size: 24, null: false)
+      add(:blocking_year, :integer, null: false)
       add(:inserted_at, :naive_datetime, null: false)
     end
 

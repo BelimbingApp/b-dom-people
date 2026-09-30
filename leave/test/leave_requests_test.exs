@@ -518,16 +518,16 @@ defmodule Bilimbi.People.LeaveRequestsTest do
                Leave.carry_forward(scope, 73, year, 92)
 
       assert {:ok, [%{employee_id: employee_id, reason: :previous_year_open}]} =
-               Leave.carry_forward_skipped(scope, 73, year)
+               skipped(scope, year)
 
       assert employee_id == employee.id
 
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
+      assert {:ok, []} = skipped(scope, year - 1)
       assert Decimal.equal?(balance(scope, employee, year).carried_forward, 4)
 
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert {:ok, []} = skipped(scope, year)
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
@@ -548,15 +548,34 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert {:ok, %{carried: 1, previous_year_open: 1}} =
                Leave.carry_forward(scope, 73, year, 92)
 
+      assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
+               Leave.carry_forward(scope, 73, year - 1, 92)
+
+      older = year - 2
+
+      assert {:ok,
+              [
+                %{from_year: ^year, reason: :previous_year_open, blocking_year: ^older},
+                %{from_year: from_year, reason: :previous_year_open, blocking_year: ^older}
+              ]} = Leave.carry_forward_skipped(scope, 73)
+
+      assert from_year == year - 1
+
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 2, 92)
       assert Decimal.equal?(balance(scope, employee, year - 1).carried_forward, 4)
 
       assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
                Leave.carry_forward(scope, 73, year, 92)
 
+      assert {:ok, [%{from_year: ^year, blocking_year: blocking_year}, _]} =
+               Leave.carry_forward_skipped(scope, 73)
+
+      assert blocking_year == year - 1
+
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, [%{from_year: ^year}]} = Leave.carry_forward_skipped(scope, 73)
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73)
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
@@ -587,7 +606,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
       assert {:ok, %{granted: 0, closed: 2}} = Leave.grant_entitlements(scope, 73, year - 1)
       assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
+      assert {:ok, []} = skipped(scope, year - 1)
       assert Decimal.equal?(balance(scope, employee, year - 1).balance, 0)
     end
 
@@ -638,17 +657,17 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       {:ok, %{granted: 4}} = Leave.grant_entitlements(scope, 73, year)
 
       {:ok, pending} = request(scope, requester, type, ctx.last_day, ctx.last_day)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert {:ok, []} = skipped(scope, year)
       assert {:ok, %{carried: 1, pending: 1}} = Leave.carry_forward(scope, 73, year)
 
       assert {:ok, [%{leave_type_id: type_id, reason: :pending}]} =
-               Leave.carry_forward_skipped(scope, 73, year)
+               skipped(scope, year)
 
       assert type_id == type.id
 
       {:ok, _} = Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert {:ok, []} = skipped(scope, year)
       assert Decimal.equal?(balance_for(scope, employee, type, year + 1).carried_forward, 2)
       assert Decimal.equal?(balance_for(scope, employee, uncapped, year + 1).carried_forward, 0)
       assert Decimal.equal?(balance_for(scope, employee, uncapped, year).balance, 3)
@@ -675,6 +694,11 @@ defmodule Bilimbi.People.LeaveRequestsTest do
                  scope: ctx.scope
                })
     end
+  end
+
+  defp skipped(scope, from_year) do
+    {:ok, rows} = Leave.carry_forward_skipped(scope, 73)
+    {:ok, Enum.filter(rows, &(&1.from_year == from_year))}
   end
 
   defp balance_for(scope, employee, type, year) do
