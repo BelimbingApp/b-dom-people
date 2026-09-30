@@ -9,7 +9,8 @@ The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules, shift templates,
 published rosters, clocking locations, adjustment approvals and self view.
-Leave owns types, effective-dated entitlement policies and a balance ledger.
+Leave owns types, effective-dated entitlement policies, a balance ledger,
+requests with approval, and year-end carry-forward.
 The claims module owns the claim catalog, effective-dated claim policies,
 assignments, employee claim requests, approval, reimbursement, and hand-off
 batches.
@@ -27,7 +28,7 @@ no sample rows are installed.
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Versioned positions, assignments, and explorer |
 | `people/attendance` | Clock events, day facts, rules, rosters, clocking locations and adjustments |
-| `people/leave` | Leave types, entitlement policies and balance ledger |
+| `people/leave` | Leave types, policies, balance ledger, requests, approval and carry-forward |
 | `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
 | `people/skills` | Skill catalog, proficiency scales and requirement profiles |
 | `people/training` | Courses, sessions, and learning records |
@@ -78,9 +79,10 @@ template and clocking location tabs) under Settings. See
 `attendance/docs/README.md` for the rules, their defaults, the roster and
 adjustment workflows, the data contract, and the deployment inventory step.
 
-Leave contributes **My leave** under My work and **Leave policies** under
-Settings for each company's leave year, types, policy versions and grants. See
-`leave/docs/README.md`.
+Leave contributes **My leave** under My work for balances, requests and
+cancellation, **Leave approvals** under Team for independent approvers, and
+**Leave policies** under Settings for each company's leave year, request rules,
+types, policy versions, grants and carry-forward. See `leave/docs/README.md`.
 
 People > My work > My claims opens `/people/claims` for the signed-in actor's
 linked working employee. People > Settings > Claim policies opens

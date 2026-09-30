@@ -3,9 +3,9 @@ defmodule Bilimbi.People.Leave.LedgerEntry do
   use Ecto.Schema
   import Ecto.Changeset
 
-  # Later slices add request-driven types (taken, cancelled) and year-end
-  # types (carried forward, expired) with their own writers.
-  @entry_types ~w(entitlement opening adjustment)
+  # Requests write taken and cancelled entries; carry-forward writes
+  # carried_forward into the next year and expired into the closed one.
+  @entry_types ~w(entitlement opening adjustment taken cancelled carried_forward expired)
 
   schema "people_leave_ledger_entries" do
     field(:tenant_id, :integer)
