@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
   @moduledoc "Fresh Bilimbi leave structures."
   @behaviour Bilimbi.Base.Database.SchemaContract
 
-  def migration_version, do: 20_260_930_190_101
+  def migration_version, do: 20_260_930_200_101
 
   @impl true
   def tables do
@@ -212,6 +212,36 @@ defmodule Bilimbi.People.Leave.SchemaContract do
             references: {"people_leave_requests", ["id"]},
             on_delete: :restrict
           }
+        }
+      },
+      %{
+        name: "people_leave_carry_forward_skips",
+        columns:
+          common("people_leave_carry_forward_skips")
+          |> Map.merge(%{
+            "from_year" => column(:integer, false),
+            "employee_id" => column(:bigint, false),
+            "employee_label" => column({:varchar, 300}, false),
+            "leave_type_id" => column(:bigint, false),
+            "reason" => column({:varchar, 24}, false)
+          }),
+        indexes: %{
+          "people_leave_carry_forward_skips_pkey" => index(["id"], true),
+          "people_leave_carry_forward_skips_unique" =>
+            index(["company_id", "from_year", "employee_id", "leave_type_id"], true)
+        },
+        foreign_keys: %{
+          "people_leave_carry_forward_skips_leave_type_id_fkey" => %{
+            columns: ["leave_type_id"],
+            references: {"people_leave_types", ["id"]},
+            on_delete: :restrict
+          }
+        },
+        checks: %{
+          "people_leave_carry_forward_skips_reason" =>
+            check(
+              "(reason)::text = ANY ((ARRAY['pending'::character varying, 'previous_year_open'::character varying, 'next_year_closed'::character varying])::text[])"
+            )
         }
       }
     ]

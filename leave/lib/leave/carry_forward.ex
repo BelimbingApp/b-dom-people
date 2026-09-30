@@ -13,7 +13,8 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # entries into that year are refused, so no quantity is spent twice.
   # Years close in order per employee and type: an employee whose previous
   # year is still open, or whose next year is already closed over a balance,
-  # is skipped and reported by `skipped/3` instead of closed.
+  # is skipped instead of closed. Each run replaces its year's stored skip
+  # report, which `skipped/3` reads.
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
@@ -21,7 +22,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Employee
   alias Bilimbi.People.Leave
-  alias Bilimbi.People.Leave.{LedgerEntry, LeaveType, Policy, Requests}
+  alias Bilimbi.People.Leave.{CarryForwardSkip, LedgerEntry, LeaveType, Policy, Requests}
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
@@ -62,45 +63,57 @@ defmodule Bilimbi.People.Leave.CarryForward do
       Repo.transaction(fn ->
         {types, previous} = carrying(scope, company_id, year)
 
-        for {type, policy} <- types,
-            employee <- employees,
-            reduce: %{
-              carried: 0,
-              existing: 0,
-              pending: 0,
-              previous_year_open: 0,
-              next_year_closed: 0
-            } do
-          counts ->
-            employee_id = String.to_integer(employee.reference.stable_id)
+        {counts, skips} =
+          for {type, policy} <- types,
+              employee <- employees,
+              reduce:
+                {%{
+                   carried: 0,
+                   existing: 0,
+                   pending: 0,
+                   previous_year_open: 0,
+                   next_year_closed: 0
+                 }, []} do
+            {counts, skips} ->
+              employee_id = String.to_integer(employee.reference.stable_id)
 
-            case Employee.lock_affiliation(scope, company_id, employee_id) do
-              {:ok, _proof} -> :ok
-              {:error, reason} -> Repo.rollback(reason)
-            end
+              case Employee.lock_affiliation(scope, company_id, employee_id) do
+                {:ok, _proof} -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
 
-            case status(scope, company_id, employee_id, type.id, from_year, previous) do
-              :closed ->
-                Map.update!(counts, :existing, &(&1 + 1))
+              case status(scope, company_id, employee_id, type.id, from_year, previous) do
+                :closed ->
+                  {Map.update!(counts, :existing, &(&1 + 1)), skips}
 
-              :open ->
-                close(
-                  scope,
-                  company_id,
-                  employee_id,
-                  type,
-                  policy,
-                  from_year,
-                  actor_user_id,
-                  year
-                )
+                :open ->
+                  close(
+                    scope,
+                    company_id,
+                    employee_id,
+                    type,
+                    policy,
+                    from_year,
+                    actor_user_id,
+                    year
+                  )
 
-                Map.update!(counts, :carried, &(&1 + 1))
+                  {Map.update!(counts, :carried, &(&1 + 1)), skips}
 
-              reason ->
-                Map.update!(counts, reason, &(&1 + 1))
-            end
-        end
+                reason ->
+                  skip = %{
+                    employee_id: employee_id,
+                    employee_label: "#{employee.display_name} (#{employee.employee_number})",
+                    leave_type_id: type.id,
+                    reason: Atom.to_string(reason)
+                  }
+
+                  {Map.update!(counts, reason, &(&1 + 1)), [skip | skips]}
+              end
+          end
+
+        record_skips(scope, company_id, from_year, skips)
+        counts
       end)
     end
   end
@@ -108,36 +121,56 @@ defmodule Bilimbi.People.Leave.CarryForward do
   def run(%Scope{}, _, _, _), do: {:error, :invalid_year}
 
   @doc """
-  Current employees and types of an ended `from_year` that a carry-forward
-  run leaves open, with the reason: `:pending` requests in that year, the
+  The employees and types the latest carry-forward run of `from_year` left
+  open, with the reason: `:pending` requests in that year, the
   `:previous_year_open`, or the `:next_year_closed` over a balance.
   """
-  def skipped(%Scope{} = scope, company_id, from_year)
-      when is_integer(from_year) and from_year in 1900..9997 do
-    with {:ok, year} <- ended_year(scope, company_id, from_year),
-         {:ok, read} <- Workforce.employees(scope, company_id),
-         {:ok, employees} <- ReadResult.require_current(read) do
-      Repo.transaction(fn ->
-        {types, previous} = carrying(scope, company_id, year)
-
-        for {type, _policy} <- types,
-            employee <- employees,
-            employee_id = String.to_integer(employee.reference.stable_id),
-            reason = status(scope, company_id, employee_id, type.id, from_year, previous),
-            reason not in [:open, :closed] do
-          %{
-            employee_id: employee_id,
-            employee_name: "#{employee.display_name} (#{employee.employee_number})",
-            leave_type_id: type.id,
-            leave_type_name: type.name,
-            reason: reason
-          }
-        end
-      end)
+  def skipped(%Scope{} = scope, company_id, from_year) when is_integer(from_year) do
+    with {:ok, _rules} <- Leave.rules(scope, company_id) do
+      {:ok,
+       Repo.all(
+         from(s in Tenancy.scope_query(CarryForwardSkip, scope),
+           join: t in LeaveType,
+           on: t.id == s.leave_type_id,
+           where: s.company_id == ^company_id and s.from_year == ^from_year,
+           order_by: [asc: s.employee_label, asc: t.name],
+           select: %{
+             employee_id: s.employee_id,
+             employee_name: s.employee_label,
+             leave_type_id: s.leave_type_id,
+             leave_type_name: t.name,
+             reason: s.reason
+           }
+         )
+       )
+       |> Enum.map(&Map.update!(&1, :reason, fn reason -> String.to_existing_atom(reason) end))}
     end
   end
 
   def skipped(%Scope{}, _, _), do: {:error, :invalid_year}
+
+  defp record_skips(scope, company_id, from_year, skips) do
+    Repo.delete_all(
+      from(s in Tenancy.scope_query(CarryForwardSkip, scope),
+        where: s.company_id == ^company_id and s.from_year == ^from_year
+      )
+    )
+
+    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+    Repo.insert_all(
+      CarryForwardSkip,
+      Enum.map(
+        skips,
+        &Map.merge(&1, %{
+          tenant_id: Scope.tenant_id(scope),
+          company_id: company_id,
+          from_year: from_year,
+          inserted_at: now
+        })
+      )
+    )
+  end
 
   defp ended_year(scope, company_id, from_year) do
     with {:ok, rules} <- Leave.rules(scope, company_id),
@@ -176,10 +209,9 @@ defmodule Bilimbi.People.Leave.CarryForward do
       type_id in previous and open?(scope, company_id, employee_id, type_id, year - 1) ->
         :previous_year_open
 
-      closed?(scope, company_id, employee_id, type_id, year + 1) ->
-        if active?(scope, company_id, employee_id, type_id, year),
-          do: :next_year_closed,
-          else: :closed
+      closed?(scope, company_id, employee_id, type_id, year + 1) and
+          active?(scope, company_id, employee_id, type_id, year) ->
+        :next_year_closed
 
       true ->
         :open

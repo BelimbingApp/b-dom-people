@@ -24,7 +24,8 @@
   migrations: "priv/repo/migrations",
   migration_dispositions: %{
     20_260_930_160_101 => :bilimbi_only,
-    20_260_930_190_101 => :bilimbi_only
+    20_260_930_190_101 => :bilimbi_only,
+    20_260_930_200_101 => :bilimbi_only
   },
   web: "priv/web_routes.exs",
   # Compatibility verification precedes pending Bilimbi-only migrations.

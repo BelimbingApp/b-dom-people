@@ -5,7 +5,8 @@ requests with approval, and year-end carry-forward.
 
 This module owns fresh `people_leave_types`, `people_leave_policies`,
 `people_leave_ledger_entries`, `people_leave_requests`,
-`people_leave_request_days` and `people_leave_request_events` tables. Call
+`people_leave_request_days`, `people_leave_request_events` and
+`people_leave_carry_forward_skips` tables. Call
 `Bilimbi.People.Leave` with a validated `Bilimbi.Base.Tenancy.Scope` and
 explicit company ID; company and employee identity come from
 `people/workforce` and must be current. Missing, sibling-company and
@@ -98,10 +99,12 @@ a previous year still open (`previous_year_open`: a capped type with ledger
 entries or pending requests in that year and no carry-forward), or whose next
 year is already closed while this year has ledger entries
 (`next_year_closed`). An employee without entries in the year, such as one
-hired later, is not held back. The run returns a count per reason, and
-`carry_forward_skipped/3` lists the skipped employees, types and reasons from
-the current ledger and requests, so the Policies page shows them after the
-queued run. Running the year again once the cause is resolved carries them.
+hired later, is not held back: the run closes their year with a zero entry.
+The run returns a count per reason and replaces its year's rows in
+`people_leave_carry_forward_skips`; `carry_forward_skipped/3` reads that
+report, so the Policies page shows the latest run's skipped employees, types
+and reasons after the queued job. Running the year again once the cause is
+resolved carries them.
 
 `enqueue_carry_forward/3` queues `Bilimbi.People.Leave.CarryForwardWorker`
 (worker ID `people-leave/carry-forward`) through Base Queue as the signed-in
@@ -128,7 +131,8 @@ policies, entries or requests, and no country, statutory or customer
 defaults. Service-length bands wait for a workforce hire-date contract;
 encashment and payroll handoff belong to later slices.
 
-The migration versions `20260930160101` and `20260930190101` are
+The migration versions `20260930160101`, `20260930190101` and
+`20260930200101` are
 `:bilimbi_only` and must remain globally unique. The owned `SchemaContract`
 describes the fresh tables, but the descriptor does not register it with
 compatibility verification: that verifier also runs before pending

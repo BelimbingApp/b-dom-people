@@ -120,6 +120,19 @@ defmodule Bilimbi.People.Leave.TestFixtures do
           CREATE TRIGGER people_leave_request_events_append_only
           BEFORE UPDATE OR DELETE ON people_leave_request_events
           FOR EACH ROW EXECUTE FUNCTION pg_temp.people_leave_request_events_append_only()
+          """,
+          """
+          CREATE TEMPORARY TABLE people_leave_carry_forward_skips (
+            id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
+            from_year integer NOT NULL, employee_id bigint NOT NULL,
+            employee_label varchar(300) NOT NULL,
+            leave_type_id bigint NOT NULL REFERENCES people_leave_types(id),
+            reason varchar(24) NOT NULL, inserted_at timestamp(0) NOT NULL,
+            CONSTRAINT people_leave_carry_forward_skips_unique
+              UNIQUE (company_id, from_year, employee_id, leave_type_id),
+            CONSTRAINT people_leave_carry_forward_skips_reason
+              CHECK (reason IN ('pending', 'previous_year_open', 'next_year_closed'))
+          ) ON COMMIT PRESERVE ROWS
           """
         ] do
       SQL.query!(Repo, statement, [])

@@ -215,7 +215,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
          {:ok, today} <- Leave.today(scope(socket), company_id),
          current_year = Leave.leave_year(rules, today),
          {:ok, carried} <-
-           Leave.carried_forward_count(scope(socket), company_id, current_year - 1) do
+           Leave.carried_forward_count(scope(socket), company_id, current_year - 1),
+         {:ok, skipped} <-
+           Leave.carry_forward_skipped(scope(socket), company_id, current_year - 1) do
       assign(socket,
         rules: rules,
         request_rules: request_rules,
@@ -223,17 +225,10 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         policies: policies,
         current_year: current_year,
         carried_count: carried,
-        carry_skipped: carry_skipped(scope(socket), company_id, current_year - 1)
+        carry_skipped: skipped
       )
     else
       _ -> assign(socket, empty_assigns())
-    end
-  end
-
-  defp carry_skipped(scope, company_id, from_year) do
-    case Leave.carry_forward_skipped(scope, company_id, from_year) do
-      {:ok, skipped} -> skipped
-      _ -> []
     end
   end
 
@@ -352,9 +347,10 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
             <p class="mt-2 text-sm text-ink-muted">
               For each type whose policy on the year's last day sets a cap, each current employee's
               closing balance up to the cap moves into the next year and the rest expires. The year
-              must have ended, and years are carried in order. Employees with pending requests in it,
-              or whose previous year is not carried yet, are skipped and listed until run again. A
-              carried year is closed to new requests and entries.
+              must have ended, and years are carried in order. The latest run lists the employees it
+              skipped: those with a pending request in the year, whose previous year is not carried
+              forward yet, or whose next year is already carried forward. Run the year again once
+              that is resolved. A carried year is closed to new requests and entries.
             </p>
           </section>
 
