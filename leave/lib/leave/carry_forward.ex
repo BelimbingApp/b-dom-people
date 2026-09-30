@@ -13,7 +13,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # cancellations and entries into those years are refused, so no quantity is
   # spent twice. Years close in order per employee and type: an employee with
   # an earlier year still open is skipped instead of closed. Each run replaces
-  # its year's stored skip report, which `skipped/3` reads.
+  # its year's stored skip report, which `skipped/2` reads.
   import Ecto.Query
 
   alias Bilimbi.Base.Repo

@@ -429,7 +429,7 @@ defmodule Bilimbi.People.Leave do
     as: :closed_count
 
   @doc """
-  Employees and types that carry-forward runs left open, newest leave year
+  Employees and types that carry-forward runs left open, oldest leave year
   first, with the reason and the leave year to resolve: at most a bounded
   number of `skips` and the `total` count.
   """
