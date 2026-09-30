@@ -158,11 +158,8 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
           "effective_from" => "2026-02-01"
         })
 
-      assert {:ok, [claim_type.id]} ==
-               Claims.set_assignment_claim_types(scope, 73, assignment.id, [claim_type.id])
-
-      assert {:ok, [employee.id]} ==
-               Claims.set_assignment_employees(scope, 73, assignment.id, [
+      assert {:ok, %{claim_type_ids: [claim_type.id], employee_ids: [employee.id]}} ==
+               Claims.set_assignment_members(scope, 73, assignment.id, [claim_type.id], [
                  Integer.to_string(employee.id)
                ])
 
@@ -242,24 +239,36 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
                })
 
       assert {:error, :employee_not_found} =
-               Claims.set_assignment_employees(scope, 73, assignment.id, [sibling.id])
+               Claims.set_assignment_members(scope, 73, assignment.id, [claim_type.id], [
+                 sibling.id
+               ])
+
+      assert {:ok, [listed]} = Claims.assignments(scope, 73)
+      assert listed.claim_type_ids == []
 
       assert {:error, :employee_not_found} =
-               Claims.set_assignment_employees(scope, 73, assignment.id, ["x"])
+               Claims.set_assignment_members(scope, 73, assignment.id, [], ["x"])
 
       assert {:error, :claim_type_not_found} =
-               Claims.set_assignment_claim_types(scope, 73, assignment.id, [claim_type.id + 99])
+               Claims.set_assignment_members(scope, 73, assignment.id, [claim_type.id + 99], [
+                 employee.id
+               ])
+
+      assert {:ok, [listed]} = Claims.assignments(scope, 73)
+      assert listed.employee_ids == []
 
       assert {:error, :not_found} =
-               Claims.set_assignment_employees(scope, 73, assignment.id + 99, [employee.id])
+               Claims.set_assignment_members(scope, 73, assignment.id + 99, [], [employee.id])
 
       assert {:error, :not_found} = Claims.assignments(other_scope, 73)
       assert {:error, :not_found} = Claims.create_assignment(other_scope, 73, %{})
 
       assert {:error, :not_found} =
-               Claims.set_assignment_employees(other_scope, 73, assignment.id, [employee.id])
+               Claims.set_assignment_members(other_scope, 73, assignment.id, [], [employee.id])
 
-      assert {:ok, []} = Claims.set_assignment_employees(scope, 73, assignment.id, [])
+      assert {:ok, %{claim_type_ids: [], employee_ids: []}} =
+               Claims.set_assignment_members(scope, 73, assignment.id, [], [])
+
       assert {:ok, [listed]} = Claims.assignments(scope, 73)
       assert listed.employee_ids == []
       assert {:ok, []} = Claims.assignments(scope, 74)
@@ -329,6 +338,15 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
 
       assert Decimal.equal?(approved.approved_amount, "50")
       assert approved.decision_reason == "Only fuel is covered"
+
+      assert {:ok, _} = Claims.reimburse_request(scope, 73, request.id, 93, %{})
+
+      assert {:ok,
+              [
+                _,
+                %{to_status: "approved", reason: "Only fuel is covered"},
+                %{to_status: "reimbursed", reason: nil}
+              ]} = Claims.request_events(scope, 73, employee.id, request.id)
 
       # Only 50 of the month's 100 is still open: the approval released 30.
       assert {:error, :monthly_limit_exceeded} =
@@ -493,6 +511,13 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
       assert {:error, :invalid_currency} = Claims.create_handoff_batch(scope, 73, "a1", 92)
       assert {:error, :nothing_to_hand_off} = Claims.create_handoff_batch(scope, 73, "CCC", 92)
       assert {:error, :not_found} = Claims.create_handoff_batch(scope, 74 + 99, "AAA", 92)
+      assert {:error, :not_found} = Claims.handoff_waiting(scope, 74 + 99)
+
+      assert {:ok, [{"AAA", 2, aaa_total}, {"BBB", 1, bbb_total}]} =
+               Claims.handoff_waiting(scope, 73)
+
+      assert Decimal.equal?(aaa_total, "50")
+      assert Decimal.equal?(bbb_total, "12.50")
 
       assert {:ok, batch} = Claims.create_handoff_batch(scope, 73, "aaa", 92)
       assert batch.currency == "AAA"
@@ -501,6 +526,7 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
       assert batch.created_by_actor_id == 92
 
       assert {:error, :nothing_to_hand_off} = Claims.create_handoff_batch(scope, 73, "AAA", 92)
+      assert {:ok, [{"BBB", 1, _}]} = Claims.handoff_waiting(scope, 73)
       assert {:ok, [%{id: id}]} = Claims.handoff_batches(scope, 73)
       assert id == batch.id
 

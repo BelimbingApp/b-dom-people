@@ -240,18 +240,9 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
 
   # Approved claims that no batch holds yet, per currency.
   defp waiting(%{assigns: %{tab: "approved"}} = socket) do
-    case Claims.claim_queue(scope(socket), company_id(socket), "approved") do
-      {:ok, rows} ->
-        rows
-        |> Enum.filter(&is_nil(&1.handoff_batch_id))
-        |> Enum.group_by(& &1.currency, & &1.approved_amount)
-        |> Enum.map(fn {currency, amounts} ->
-          {currency, length(amounts), Enum.reduce(amounts, Decimal.new(0), &Decimal.add/2)}
-        end)
-        |> Enum.sort()
-
-      _ ->
-        []
+    case Claims.handoff_waiting(scope(socket), company_id(socket)) do
+      {:ok, waiting} -> waiting
+      _ -> []
     end
   end
 

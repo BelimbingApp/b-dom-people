@@ -482,7 +482,7 @@ defmodule Bilimbi.People.Claims do
 
   @doc """
   Adds an effective-dated assignment. Members are set separately with
-  `set_assignment_claim_types/4` and `set_assignment_employees/4`.
+  `set_assignment_members/5`.
   """
   def create_assignment(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
     with {:ok, _company} <- company(scope, company_id) do
@@ -512,41 +512,28 @@ defmodule Bilimbi.People.Claims do
   end
 
   @doc """
-  Replaces the claim types an assignment opens. Every type must belong to the
-  company.
+  Replaces the claim types an assignment opens and the employees it covers,
+  together. Every claim type and employee must belong to the company;
+  working status is judged when a claim is submitted.
   """
-  def set_assignment_claim_types(%Scope{} = scope, company_id, assignment_id, type_ids)
-      when is_list(type_ids) do
+  def set_assignment_members(%Scope{} = scope, company_id, assignment_id, type_ids, employee_ids)
+      when is_list(type_ids) and is_list(employee_ids) do
     with {:ok, _company} <- company(scope, company_id),
-         {:ok, ids} <- normalize_ids(type_ids, :claim_type_not_found) do
+         {:ok, type_ids} <- normalize_ids(type_ids, :claim_type_not_found),
+         {:ok, employee_ids} <- normalize_ids(employee_ids, :employee_not_found),
+         :ok <- company_employees(scope, company_id, employee_ids) do
       transaction(fn ->
         with %Assignment{} = assignment <- lock_assignment(scope, company_id, assignment_id),
-             :ok <- all_in_company(scope, company_id, ClaimType, ids, :claim_type_not_found) do
-          replace_members(assignment, AssignmentType, :claim_type_id, ids)
+             :ok <-
+               all_in_company(scope, company_id, ClaimType, type_ids, :claim_type_not_found),
+             {:ok, type_ids} <-
+               replace_members(assignment, AssignmentType, :claim_type_id, type_ids),
+             {:ok, employee_ids} <-
+               replace_members(assignment, AssignmentEmployee, :employee_id, employee_ids) do
+          {:ok, %{claim_type_ids: type_ids, employee_ids: employee_ids}}
         else
           nil -> {:error, :not_found}
           error -> error
-        end
-      end)
-    end
-  end
-
-  @doc """
-  Replaces the employees an assignment covers. Every employee must belong to
-  the company; working status is judged when a claim is submitted.
-  """
-  def set_assignment_employees(%Scope{} = scope, company_id, assignment_id, employee_ids)
-      when is_list(employee_ids) do
-    with {:ok, _company} <- company(scope, company_id),
-         {:ok, ids} <- normalize_ids(employee_ids, :employee_not_found),
-         :ok <- company_employees(scope, company_id, ids) do
-      transaction(fn ->
-        case lock_assignment(scope, company_id, assignment_id) do
-          %Assignment{} = assignment ->
-            replace_members(assignment, AssignmentEmployee, :employee_id, ids)
-
-          nil ->
-            {:error, :not_found}
         end
       end)
     end
@@ -592,6 +579,22 @@ defmodule Bilimbi.People.Claims do
          |> Map.merge(employee_columns(employees, request.employee_id))
          |> Map.merge(type_columns(types, request.claim_type_id))
        end)}
+    end
+  end
+
+  @doc """
+  Approved claims that no hand-off batch holds yet, per currency, as
+  `{currency, count, total_approved_amount}` sorted by currency.
+  """
+  def handoff_waiting(%Scope{} = scope, company_id) do
+    with {:ok, _company} <- company(scope, company_id) do
+      {:ok,
+       scoped(Request, scope, company_id)
+       |> where([r], r.status == "approved" and is_nil(r.handoff_batch_id))
+       |> group_by([r], r.currency)
+       |> order_by([r], asc: r.currency)
+       |> select([r], {r.currency, count(r.id), sum(r.approved_amount)})
+       |> Repo.all()}
     end
   end
 
@@ -940,8 +943,8 @@ defmodule Bilimbi.People.Claims do
                lock_request(scope, company_id, request_id),
              :ok <- own_claim_error(scope, request, actor_id) || :ok,
              {:ok, updated} <- request |> build_changeset.(now()) |> Repo.update(),
-             {:ok, _event} <-
-               record_event(updated, from_status, actor_id, updated.decision_reason) do
+             reason = if(from_status == "submitted", do: updated.decision_reason),
+             {:ok, _event} <- record_event(updated, from_status, actor_id, reason) do
           {:ok, Map.take(updated, @request_fields)}
         else
           %Request{} -> {:error, :not_decidable}

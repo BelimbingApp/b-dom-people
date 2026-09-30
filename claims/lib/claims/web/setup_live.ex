@@ -120,26 +120,20 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
     company_id = company_id(socket)
     id = positive_id(raw_id)
 
-    with {:ok, _types} <-
-           Claims.set_assignment_claim_types(
-             scope,
-             company_id,
-             id,
-             Map.get(params, "claim_type_ids", [])
-           ),
-         {:ok, _employees} <-
-           Claims.set_assignment_employees(
-             scope,
-             company_id,
-             id,
-             Map.get(params, "employee_ids", [])
-           ) do
-      {:noreply,
-       socket
-       |> load()
-       |> clear_flash(:error)
-       |> put_flash(:info, "Assignment members saved.")}
-    else
+    case Claims.set_assignment_members(
+           scope,
+           company_id,
+           id,
+           Map.get(params, "claim_type_ids", []),
+           Map.get(params, "employee_ids", [])
+         ) do
+      {:ok, _members} ->
+        {:noreply,
+         socket
+         |> load()
+         |> clear_flash(:error)
+         |> put_flash(:info, "Assignment members saved.")}
+
       _ ->
         {:noreply, put_flash(socket, :error, "Choose claim types and employees of this company.")}
     end
