@@ -90,8 +90,7 @@ defmodule Bilimbi.People.Skills.Migrations.AddAssessments do
 
     create(
       constraint(:people_skill_assessments, :people_skill_assessments_band,
-        check:
-          "result_band IN ('exceeds', 'meets', 'minor_gap', 'major_gap', 'critical_gap')"
+        check: "result_band IN ('exceeds', 'meets', 'minor_gap', 'major_gap', 'critical_gap')"
       )
     )
 
@@ -383,9 +382,7 @@ defmodule Bilimbi.People.Skills.Migrations.AddAssessments do
     )
 
     create(
-      constraint(:people_skill_actions, :people_skill_actions_dates,
-        check: "due_on >= start_on"
-      )
+      constraint(:people_skill_actions, :people_skill_actions_dates, check: "due_on >= start_on")
     )
 
     create(
@@ -448,7 +445,15 @@ defmodule Bilimbi.People.Skills.Migrations.AddAssessments do
     create(
       unique_index(
         :people_skill_reminders,
-        [:company_id, :rule, :employee_id, :skill_id, :action_id, :period_key, :recipient_user_id],
+        [
+          :company_id,
+          :rule,
+          :employee_id,
+          :skill_id,
+          :action_id,
+          :period_key,
+          :recipient_user_id
+        ],
         name: :people_skill_reminders_once,
         nulls_distinct: false
       )
