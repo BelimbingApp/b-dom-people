@@ -21,6 +21,7 @@ defmodule Bilimbi.People.Performance.MixProject do
       elixir: "~> 1.20",
       compilers: [:bilimbi_graph] ++ Mix.compilers(),
       bilimbi_module_root: __DIR__,
+      test_ignore_filters: [~r"^test/support/"],
       start_permanent: Mix.env() == :prod,
       deps: Bilimbi.Base.ModuleRegistry.MixDiscovery.module_dependencies(__DIR__)
     ]

@@ -22,7 +22,9 @@ and reminders.
 Payroll owns periods, effective-dated pay items and classifications, Leave/Claims
 mappings and immutable frozen setup runs. Its menu remains hidden pending the
 whole payroll area; attendance mappings are not available yet.
-Other modules remain empty;
+Performance owns position-description versions, KPI definitions and governed
+individual targets, attributable observations, independently released reviews
+and employee responses. Other modules remain empty;
 no sample rows are installed.
 
 | Module ID | Ownership |
@@ -37,7 +39,7 @@ no sample rows are installed.
 | `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
 | `people/skills` | Skill catalog, requirement profiles, assessments, reassessment, development actions and reminders |
 | `people/training` | Courses, sessions, and learning records |
-| `people/performance` | Performance reviews |
+| `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
 | `people/progression` | Progression policy |
 | `people/payroll` | Payroll periods, catalog versions, mappings and frozen setup |
 
@@ -112,6 +114,13 @@ action types and the reminder run. See `skills/docs/README.md`.
 Payroll foundation is available for authorized review at `/people/payroll/setup`.
 See `payroll/docs/README.md` for explicit country/currency settings, effective
 versions and permanent run locking. Calculation and outputs are not implemented.
+
+Performance is available by direct authorized routes at `/people/performance`
+for planning and authored reviews, and `/people/performance/my` for the login
+actor's own linked employee. Published content and evidence remain immutable;
+corrections append versions with reasons. Performance menu leaves remain hidden
+until the entire area's rollout acceptance is complete. See
+`performance/docs/README.md` for capabilities, release guards and verification.
 
 ## License
 
