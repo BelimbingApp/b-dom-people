@@ -19,6 +19,9 @@ bounded explorer, and the Workforce position read. Skills owns the skill
 catalog, versioned proficiency scales and requirement profiles, evidence-backed
 assessments with independent review, reassessment requests, development actions
 and reminders.
+Payroll owns periods, effective-dated pay items and classifications, Leave/Claims
+mappings and immutable frozen setup runs. Its menu remains hidden pending the
+whole payroll area; attendance mappings are not available yet.
 Other modules remain empty;
 no sample rows are installed.
 
@@ -36,7 +39,7 @@ no sample rows are installed.
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Performance reviews |
 | `people/progression` | Progression policy |
-| `people/payroll` | Payroll |
+| `people/payroll` | Payroll periods, catalog versions, mappings and frozen setup |
 
 ## Mount and validate
 
@@ -105,6 +108,10 @@ Development > Development actions opens `/people/skills/actions`; People > My
 work > My skills shows an employee's own standing; and People > Settings >
 Skills policy holds the company's reassessment, priority and reminder settings,
 action types and the reminder run. See `skills/docs/README.md`.
+
+Payroll foundation is available for authorized review at `/people/payroll/setup`.
+See `payroll/docs/README.md` for explicit country/currency settings, effective
+versions and permanent run locking. Calculation and outputs are not implemented.
 
 ## License
 

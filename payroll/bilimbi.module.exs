@@ -5,10 +5,21 @@
   required: false,
   otp_app: :bilimbi_people_payroll,
   namespace: Bilimbi.People.Payroll,
-  dependencies: [],
-  migrations: nil,
-  web: nil,
+  dependencies: [
+    "base/authz",
+    "base/database",
+    "base/module_registry",
+    "base/settings",
+    "base/tenancy",
+    "base/ui",
+    "core/company",
+    "people/leave",
+    "people/claims"
+  ],
+  migrations: "priv/repo/migrations",
+  migration_dispositions: %{20_260_930_230_501 => :bilimbi_only},
+  web: "priv/web_routes.exs",
   schema_contract: nil,
-  contribution_provider: nil,
+  contribution_provider: Bilimbi.People.Payroll.Contributions,
   dev_seed: nil
 ]

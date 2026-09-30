@@ -1,1 +1,4 @@
-[inputs: ["*.{ex,exs}", "{lib,test}/**/*.{ex,exs}"]]
+[
+  plugins: [Phoenix.LiveView.HTMLFormatter],
+  inputs: ["*.{ex,exs}", "{lib,test,web_test,priv}/**/*.{ex,exs}"]
+]
