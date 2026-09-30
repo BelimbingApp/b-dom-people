@@ -16,7 +16,9 @@ assignments, employee claim requests, approval, reimbursement, and hand-off
 batches.
 Organisation owns fresh position tables, versioned titles, assignments, a
 bounded explorer, and the Workforce position read. Skills owns the skill
-catalog, versioned proficiency scales and versioned requirement profiles.
+catalog, versioned proficiency scales and requirement profiles, evidence-backed
+assessments with independent review, reassessment requests, development actions
+and reminders.
 Other modules remain empty;
 no sample rows are installed.
 
@@ -30,7 +32,7 @@ no sample rows are installed.
 | `people/attendance` | Clock events, day facts, rules, rosters, clocking locations and adjustments |
 | `people/leave` | Leave types, policies, balance ledger, requests, approval and carry-forward |
 | `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
-| `people/skills` | Skill catalog, proficiency scales and requirement profiles |
+| `people/skills` | Skill catalog, requirement profiles, assessments, reassessment, development actions and reminders |
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Performance reviews |
 | `people/progression` | Progression policy |
@@ -96,7 +98,13 @@ off in per-currency batches with a CSV export. See `claims/docs/README.md`.
 People > Development > Skills opens `/people/skills`, where an operator
 maintains a company's skill categories, skills, proficiency scales and
 requirement profiles, and a publisher publishes or retires profile versions.
-See `skills/docs/README.md`.
+People > Development > Assessments opens `/people/skills/assessments`, where
+assessors submit evidence-backed assessments, independent reviewers and
+finalizers decide them, and team leads request reassessments. People >
+Development > Development actions opens `/people/skills/actions`; People > My
+work > My skills shows an employee's own standing; and People > Settings >
+Skills policy holds the company's reassessment, priority and reminder settings,
+action types and the reminder run. See `skills/docs/README.md`.
 
 ## License
 

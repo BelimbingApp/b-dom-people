@@ -340,9 +340,19 @@ defmodule Bilimbi.People.SkillsTest do
            ]
   end
 
-  test "the Skills leaf hangs on the People development container" do
-    [leaf] = Contributions.contributions().menu
-    assert leaf.parent == "people.development"
-    assert Enum.any?(SettingsContributions.contributions().menu, &(&1.id == "people.development"))
+  test "every Skills leaf hangs on a People container and names a declared capability" do
+    contributions = Contributions.contributions()
+    containers = SettingsContributions.contributions().menu |> Enum.map(& &1.id) |> MapSet.new()
+
+    assert Enum.map(contributions.menu, & &1.id) ==
+             Enum.uniq(Enum.map(contributions.menu, & &1.id))
+
+    for leaf <- contributions.menu do
+      assert MapSet.member?(containers, leaf.parent)
+      assert leaf.capability in contributions.authz.capabilities
+    end
+
+    assert Enum.map(contributions.menu, & &1.parent) |> Enum.uniq() |> Enum.sort() ==
+             ["people.development", "people.my_work", "people.settings"]
   end
 end
