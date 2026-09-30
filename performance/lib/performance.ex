@@ -287,8 +287,10 @@ defmodule Bilimbi.People.Performance do
     with {:ok, actor} <- authorize(scope, company_id, @view),
          row when not is_nil(row) <- get(Review, actor.scope, company_id, id),
          true <-
-           row.actor_user_id == actor.id or
-             allowed?(actor.scope, company_id, "people.performance.reviews.approve") do
+           (row.actor_user_id == actor.id or
+              allowed?(actor.scope, company_id, "people.performance.reviews.approve")) and
+             (row.status == "released" or
+                linked_employee(actor, company_id) != {:ok, row.employee_id}) do
       {:ok, review_view(actor.scope, company_id, row)}
     else
       nil -> {:error, :not_found}
@@ -314,10 +316,7 @@ defmodule Bilimbi.People.Performance do
           [t],
           t.employee_id == ^employee_id and t.status == "published" and not t.confidential
         )
-        |> order_by([t], desc: t.id)
-        |> limit(100)
-        |> Repo.all()
-        |> Enum.map(&view/1)
+        |> records()
 
       {:ok,
        %{
@@ -330,57 +329,52 @@ defmodule Bilimbi.People.Performance do
     end
   end
 
-  @doc "Bounded planning records. Author scope is retained for observations and review lists."
+  @doc """
+  Bounded planning records. Author scope is retained for observations and review
+  lists; records about the viewer's own linked employee are never listed here.
+  """
   def planning_records(%Scope{} = scope, company_id) do
     with {:ok, actor} <- authorize(scope, company_id, @view) do
+      can? = &allowed?(actor.scope, company_id, &1)
+      own = linked_employee(actor, company_id)
+      subject = &not_subject(scoped(&1, actor.scope, company_id), own)
+
       definitions =
-        if allowed?(actor.scope, company_id, @target),
-          do: records(Definition, actor.scope, company_id),
-          else: []
+        if can?.(@target), do: records(scoped(Definition, actor.scope, company_id)), else: []
 
       descriptions =
-        records(Description, actor.scope, company_id)
-        |> Enum.filter(
-          &(allowed?(actor.scope, company_id, @description) or &1.status == "published")
-        )
+        if can?.(@description),
+          do: scoped(Description, actor.scope, company_id),
+          else: where(scoped(Description, actor.scope, company_id), [d], d.status == "published")
 
       targets =
-        if Enum.any?(
-             ~w(people.performance.kpis.submit people.performance.kpis.review people.performance.kpis.approve),
-             &allowed?(actor.scope, company_id, &1)
-           ), do: records(Target, actor.scope, company_id), else: []
+        cond do
+          can?.("people.performance.kpis.review") or can?.("people.performance.kpis.approve") ->
+            records(subject.(Target))
 
-      targets =
-        Enum.filter(
-          targets,
-          &(allowed?(actor.scope, company_id, "people.performance.kpis.review") or
-              allowed?(actor.scope, company_id, "people.performance.kpis.approve") or
-              &1.actor_user_id == actor.id)
-        )
+          can?.(@target) ->
+            records(where(subject.(Target), [t], t.actor_user_id == ^actor.id))
 
-      observations =
-        scoped(Observation, actor.scope, company_id)
-        |> where([o], o.actor_user_id == ^actor.id)
-        |> order_by([o], desc: o.id)
-        |> limit(100)
-        |> Repo.all()
-        |> Enum.map(&view/1)
+          true ->
+            []
+        end
 
       drafts =
-        if allowed?(actor.scope, company_id, "people.performance.reviews.approve"),
-          do: records(Review, actor.scope, company_id) |> Enum.filter(&(&1.status == "draft")),
+        if can?.("people.performance.reviews.approve"),
+          do: records(where(subject.(Review), [r], r.status == "draft")),
           else: []
 
       {:ok,
        %{
          definitions: definitions,
-         descriptions: descriptions,
+         descriptions: records(descriptions),
          targets: targets,
-         observations: observations,
+         observations: records(where(subject.(Observation), [o], o.actor_user_id == ^actor.id)),
          drafts: drafts,
          prior_reviews:
-           records(Review, actor.scope, company_id)
-           |> Enum.filter(&(&1.actor_user_id == actor.id))
+           records(
+             where(subject.(Review), [r], r.actor_user_id == ^actor.id and r.status == "released")
+           )
        }}
     end
   end
@@ -432,7 +426,11 @@ defmodule Bilimbi.People.Performance do
       ~w(employee_id description_id period_start period_end cutoff_at outcome rationale change_reason)a
 
     attrs = stringify(attrs)
-    attrs = if prior, do: Map.put_new(attrs, "cutoff_at", prior.cutoff_at), else: attrs
+
+    attrs =
+      if prior && attrs["cutoff_at"] in [nil, ""],
+        do: Map.put(attrs, "cutoff_at", prior.cutoff_at),
+        else: attrs
 
     attrs =
       if prior,
@@ -586,16 +584,24 @@ defmodule Bilimbi.People.Performance do
   defp independent!(actor, company_id, row) do
     require!(actor.id != row.actor_user_id, :self_approval)
 
-    case self_employee(actor, company_id) do
+    case linked_employee(actor, company_id) do
       {:ok, id} -> require!(id != row.employee_id, :self_approval)
       _ -> :ok
     end
   end
 
-  defp self_employee(actor, company_id) do
+  defp linked_employee(actor, company_id) do
     with %Actor{type: :user, company_id: ^company_id} <- actor,
          {:ok, user} <- User.get_user(actor.scope, company_id, actor.id),
-         id when is_integer(id) <- user.employee_id,
+         id when is_integer(id) <- user.employee_id do
+      {:ok, id}
+    else
+      _ -> {:error, :unavailable}
+    end
+  end
+
+  defp self_employee(actor, company_id) do
+    with {:ok, id} <- linked_employee(actor, company_id),
          {:ok, read} <- Workforce.employee(actor.scope, company_id, id),
          {:ok, _employee} <- ReadResult.require_current(read) do
       {:ok, id}
@@ -757,13 +763,11 @@ defmodule Bilimbi.People.Performance do
   defp successor?(module, scope, company_id, id),
     do: Repo.exists?(from(r in scoped(module, scope, company_id), where: r.supersedes_id == ^id))
 
-  defp records(module, scope, company_id),
-    do:
-      scoped(module, scope, company_id)
-      |> order_by([r], desc: r.id)
-      |> limit(100)
-      |> Repo.all()
-      |> Enum.map(&view/1)
+  defp records(query),
+    do: query |> order_by([r], desc: r.id) |> limit(100) |> Repo.all() |> Enum.map(&view/1)
+
+  defp not_subject(query, {:ok, id}), do: where(query, [r], r.employee_id != ^id)
+  defp not_subject(query, _), do: query
 
   defp view(%{__struct__: _} = row),
     do: row |> Map.from_struct() |> Map.drop([:__meta__, :tenant_id, :company_id])

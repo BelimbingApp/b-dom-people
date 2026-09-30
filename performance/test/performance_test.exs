@@ -2,7 +2,7 @@ defmodule Bilimbi.People.PerformanceTest do
   use Bilimbi.Base.Database.DataCase, async: false
   import Bilimbi.People.Performance.WorkflowFixtures
   alias Bilimbi.People.Performance
-  alias Bilimbi.People.Performance.{Review, Observation, Target}
+  alias Bilimbi.People.Performance.{Description, Review, Observation, Target}
   alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Tenancy
 
@@ -373,6 +373,100 @@ defmodule Bilimbi.People.PerformanceTest do
     assert hd(draft.observations).evidence == "Late corrected evidence"
     assert {:ok, old} = Performance.review(manager, 73, original.id)
     assert old.cutoff_at == attrs.cutoff_at and hd(old.observations).id == ctx.observation.id
+  end
+
+  test "an approver who is the subject never sees the pre-release review about themselves", %{
+    ctx: ctx
+  } do
+    ctx = ready!(ctx)
+    subject = actor(ctx, :employee)
+    reviewer = actor(ctx, :reviewer)
+    grant!(ctx.scope, :employee, 73, ["people.performance.reviews.approve"])
+    {:ok, draft} = Performance.draft_review(actor(ctx, :manager), 73, review_attrs(ctx))
+
+    assert {:ok, planning} = Performance.planning_records(subject, 73)
+    assert planning.drafts == []
+    assert {:error, :not_found} = Performance.review(subject, 73, draft.id)
+    assert {:error, :self_approval} = Performance.release_review(subject, 73, draft.id)
+    assert {:ok, queue} = Performance.planning_records(reviewer, 73)
+    assert Enum.map(queue.drafts, & &1.id) == [draft.id]
+
+    {:ok, _} = Performance.release_review(reviewer, 73, draft.id)
+    assert {:ok, mine} = Performance.my_records(subject, 73)
+    assert Enum.map(mine.reviews.rows, & &1.id) == [draft.id]
+  end
+
+  test "KPI reviewers and approvers never list targets about themselves", %{ctx: ctx} do
+    manager = actor(ctx, :manager)
+    subject = actor(ctx, :employee)
+
+    grant!(
+      ctx.scope,
+      :employee,
+      73,
+      ~w(people.performance.kpis.review people.performance.kpis.approve)
+    )
+
+    {:ok, definition} = Performance.define_kpi(manager, 73, definition_attrs())
+
+    {:ok, secret} =
+      Performance.propose_target(
+        manager,
+        73,
+        Map.put(target_attrs(ctx, definition), :confidential, true)
+      )
+
+    assert {:ok, planning} = Performance.planning_records(subject, 73)
+    assert planning.targets == []
+    assert {:ok, queue} = Performance.planning_records(actor(ctx, :reviewer), 73)
+    assert Enum.map(queue.targets, & &1.id) == [secret.id]
+  end
+
+  test "planning lists filter before their bound so newer rows cannot crowd out the actor's set",
+       %{ctx: ctx} do
+    ctx = ready!(ctx)
+    attrs = description_attrs(ctx)
+
+    for version <- 2..101 do
+      Repo.insert!(%Description{
+        tenant_id: 41,
+        company_id: 73,
+        actor_user_id: 101,
+        status: "draft",
+        code: attrs.code,
+        version: version,
+        position_id: attrs.position_id,
+        position_version: attrs.position_version,
+        effective_from: attrs.effective_from,
+        purpose: attrs.purpose,
+        responsibilities: attrs.responsibilities,
+        duties: attrs.duties,
+        authority: attrs.authority,
+        qualifications: attrs.qualifications,
+        competency_links: %{"profiles" => attrs.competency_links}
+      })
+    end
+
+    assert {:ok, planning} = Performance.planning_records(actor(ctx, :viewer), 73)
+    assert Enum.map(planning.descriptions, & &1.id) == [ctx.description.id]
+  end
+
+  test "a correction submitted without a cutoff keeps the prior cutoff", %{ctx: ctx} do
+    ctx = ready!(ctx)
+    manager = actor(ctx, :manager)
+    attrs = review_attrs(ctx)
+    {:ok, original} = Performance.draft_review(manager, 73, attrs)
+    {:ok, _} = Performance.release_review(actor(ctx, :reviewer), 73, original.id)
+
+    assert {:ok, next} =
+             Performance.correct_review(
+               manager,
+               73,
+               original.id,
+               %{attrs | cutoff_at: nil} |> Map.put(:change_reason, "Clarified rationale")
+             )
+
+    assert next.cutoff_at == original.cutoff_at
   end
 
   test "the schema verifier checks the owner's exact temporary structures and canonical predicates" do
