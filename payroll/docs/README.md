@@ -1,9 +1,10 @@
 # Payroll foundation
 
 `people/payroll` owns fresh Bilimbi periods, effective-dated classifications,
-pay items, Leave/Claims mappings and frozen setup runs. It installs no sample
-rows, statutory packs, country rules or bank formats. Calculation, contribution
-intake, approvals, artifacts and output belong to slice 6A.
+pay items, Leave/Claims and Attendance allowance mappings and frozen setup
+runs. It installs no sample rows, statutory packs, country rules or bank
+formats. Calculation, contribution intake, approvals, artifacts and output
+belong to slice 6A.
 
 The authenticated `/people/payroll/setup` route requires
 `people.payroll.view`. Editing requires `people.payroll.manage` both in the

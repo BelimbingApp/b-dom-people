@@ -148,7 +148,7 @@ for `people_%` relations. The repository has no access to those environments;
 this change cannot certify their inventory. If unexpected rows exist, stop the
 deployment and obtain a migration decision. Run `mix bilimbi.migrate` only from
 the Bilimbi root after that check. `Bilimbi.People.Attendance.SchemaContract`
-describes both attendance migrations and verifies against a freshly migrated
+describes all attendance migrations and verifies against a freshly migrated
 database with `Bilimbi.Base.Database.SchemaVerifier.verify/2`; it is not
 registered in the descriptor, because pending Bilimbi-only migrations would
 otherwise fail compatibility verification.
