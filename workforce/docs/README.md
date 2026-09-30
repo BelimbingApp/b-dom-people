@@ -10,11 +10,11 @@ last confirmation time, and `unavailable/1` carries a reason. Call
 `ReadResult.require_current/1` to obtain the value only when it is current;
 stale and unavailable results return a `:not_current` refusal.
 `people/attendance` and `people/leave` consume this seam, and the People
-connector contract in the separate `b-dom-people-connector` repository (slice 1C) will too. The
-settings page shows a notice for stale or unavailable reads. Native workforce
-company identity maps to Core Company today, but the two axes remain distinct.
-References use stable `people/native` source identity and immutable native IDs.
-Employee identity never implies a login actor.
+connector contract in the separate `b-dom-people-connector` repository
+(slice 1C) will too. The settings page shows a notice for stale or unavailable
+reads. Native workforce company identity maps to Core Company today, but the
+two axes remain distinct. References use stable `people/native` source identity
+and immutable native IDs. Employee identity never implies a login actor.
 
 `positions/4` uses the same company boundary and returns a current `ReadResult`
 of bounded position projections when Organisation is mounted. Organisation
