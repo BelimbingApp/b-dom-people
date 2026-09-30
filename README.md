@@ -8,7 +8,9 @@ exposes a scoped native read seam and a per-company operator settings page.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules and self view.
-Other modules remain empty; no sample rows are installed.
+The claims module owns the claim catalog, effective-dated claim policies, and
+employee claim requests. Other modules remain empty; no sample rows are
+installed.
 
 | Module ID | Future ownership |
 | --- | --- |
@@ -19,7 +21,7 @@ Other modules remain empty; no sample rows are installed.
 | `people/organisation` | Positions and assignments |
 | `people/attendance` | Clock events, day facts, policy settings and self view |
 | `people/leave` | Leave policy and balances |
-| `people/claims` | Claims and reimbursement |
+| `people/claims` | Claim catalog, policies, currencies, and requests |
 | `people/skills` | Skills and development |
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Performance reviews |
@@ -67,6 +69,12 @@ Attendance contributes **My attendance** under My work and **Attendance rules**
 under Settings for per-company attendance policy. See
 `attendance/docs/README.md` for the rules, their defaults, the data contract,
 and the deployment inventory step.
+
+People > My work > My claims opens `/people/claims` for the signed-in actor's
+linked working employee. People > Settings > Claim policies opens
+`/people/claims/setup`, where an operator chooses a company's claim currencies,
+categories, claim types, and effective-dated limits. A new company has no claim
+currency, so it accepts no claims until an operator sets one.
 
 ## License
 
