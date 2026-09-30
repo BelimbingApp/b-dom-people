@@ -33,13 +33,38 @@ defmodule Bilimbi.People.Attendance.Contributions do
             help:
               "Hours after clock-in that a shift stays open; a clock-out within it closes the shift on the clock-in day.",
             capability: "people.attendance.rules.manage"
+          },
+          "people.attendance.location_required" => %{
+            type: :boolean,
+            scopes: [:company],
+            default: false,
+            label: "Require a clocking location",
+            help:
+              "Refuse clock events that do not carry coordinates inside an active clocking location. Approved adjustments are exempt.",
+            capability: "people.attendance.rules.manage"
+          },
+          "people.attendance.adjustment_window_days" => %{
+            type: :integer,
+            scopes: [:company],
+            default: 7,
+            minimum: 1,
+            maximum: 366,
+            label: "Adjustment request window",
+            help:
+              "Days, counting today, for which an employee may request a missing clock event.",
+            capability: "people.attendance.rules.manage"
           }
         },
         runtime_claims: []
       },
       authz: %{
         domains: %{"people" => "People domain modules"},
-        capabilities: ["people.attendance.self.view", "people.attendance.rules.manage"]
+        capabilities: [
+          "people.attendance.self.view",
+          "people.attendance.rules.manage",
+          "people.attendance.roster.manage",
+          "people.attendance.adjustments.approve"
+        ]
       },
       menu: [
         %{
@@ -50,6 +75,24 @@ defmodule Bilimbi.People.Attendance.Contributions do
           route: "/people/attendance/my",
           capability: "people.attendance.self.view",
           order: 10
+        },
+        %{
+          id: "people.attendance.rosters",
+          label: "Rosters",
+          icon: "clipboard-document-list",
+          parent: "people.team",
+          route: "/people/attendance/rosters",
+          capability: "people.attendance.roster.manage",
+          order: 30
+        },
+        %{
+          id: "people.attendance.approvals",
+          label: "Attendance approvals",
+          icon: "shield-check",
+          parent: "people.team",
+          route: "/people/attendance/approvals",
+          capability: "people.attendance.adjustments.approve",
+          order: 40
         },
         %{
           id: "people.attendance.rules",

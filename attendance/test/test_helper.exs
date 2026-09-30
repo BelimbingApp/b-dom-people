@@ -3,9 +3,11 @@ workspace_apps = Path.expand("../../../..", __DIR__)
 for path <- [
       "base/tenancy/test/support/test_fixtures.ex",
       "base/settings/test/support/test_fixtures.ex",
+      "base/audit/test/support/test_fixtures.ex",
       "core/geonames/test/support/test_fixtures.ex",
       "core/company/test/support/test_fixtures.ex",
-      "core/employee/test/support/test_fixtures.ex"
+      "core/employee/test/support/test_fixtures.ex",
+      "core/user/test/support/test_fixtures.ex"
     ] do
   Code.require_file(Path.join(workspace_apps, path))
 end

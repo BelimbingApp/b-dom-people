@@ -7,7 +7,8 @@ tables, a company-scoped operator route, and an API. The workforce module
 exposes a scoped native read seam and a per-company operator settings page.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
-Attendance owns clock facts, day projections, company rules and self view.
+Attendance owns clock facts, day projections, company rules, shift templates,
+published rosters, clocking locations, adjustment approvals and self view.
 Leave owns types, effective-dated entitlement policies and a balance ledger.
 The claims module owns the claim catalog, effective-dated claim policies, and
 employee claim requests.
@@ -22,7 +23,7 @@ no sample rows are installed.
 | `people/workforce` | Scoped native company, employee and optional position reads with per-company working statuses |
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Versioned positions, assignments, and explorer |
-| `people/attendance` | Clock events, day facts, policy settings and self view |
+| `people/attendance` | Clock events, day facts, rules, rosters, clocking locations and adjustments |
 | `people/leave` | Leave types, entitlement policies and balance ledger |
 | `people/claims` | Claim catalog, policies, currencies, and requests |
 | `people/skills` | Skills and development |
@@ -68,10 +69,11 @@ alongside People-owned work profile, portal eligibility, and profile change
 requests. Review decisions record history but do not modify Core Employee
 identity. Saved views belong to one login actor and company.
 
-Attendance contributes **My attendance** under My work and **Attendance rules**
-under Settings for per-company attendance policy. See
-`attendance/docs/README.md` for the rules, their defaults, the data contract,
-and the deployment inventory step.
+Attendance contributes **My attendance** under My work, **Rosters** and
+**Attendance approvals** under Team, and **Attendance rules** (with shift
+template and clocking location tabs) under Settings. See
+`attendance/docs/README.md` for the rules, their defaults, the roster and
+adjustment workflows, the data contract, and the deployment inventory step.
 
 Leave contributes **My leave** under My work and **Leave policies** under
 Settings for each company's leave year, types, policy versions and grants. See
