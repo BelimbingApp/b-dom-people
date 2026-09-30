@@ -33,6 +33,7 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
+    CompanyFixtures.create_company_identity_tables!()
     SettingsFixtures.create_settings_table!()
     AuditFixtures.create_audit_tables!()
     TestFixtures.create_attendance_tables!()
