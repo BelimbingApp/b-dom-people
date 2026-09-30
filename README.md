@@ -8,6 +8,7 @@ exposes a scoped native read seam and a per-company operator settings page.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules and self view.
+Leave owns types, effective-dated entitlement policies and a balance ledger.
 The claims module owns the claim catalog, effective-dated claim policies, and
 employee claim requests.
 Organisation owns fresh position tables, versioned titles, assignments, a
@@ -22,7 +23,7 @@ no sample rows are installed.
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Versioned positions, assignments, and explorer |
 | `people/attendance` | Clock events, day facts, policy settings and self view |
-| `people/leave` | Leave policy and balances |
+| `people/leave` | Leave types, entitlement policies and balance ledger |
 | `people/claims` | Claim catalog, policies, currencies, and requests |
 | `people/skills` | Skills and development |
 | `people/training` | Courses, sessions, and learning records |
@@ -71,6 +72,10 @@ Attendance contributes **My attendance** under My work and **Attendance rules**
 under Settings for per-company attendance policy. See
 `attendance/docs/README.md` for the rules, their defaults, the data contract,
 and the deployment inventory step.
+
+Leave contributes **My leave** under My work and **Leave policies** under
+Settings for each company's leave year, types, policy versions and grants. See
+`leave/docs/README.md`.
 
 People > My work > My claims opens `/people/claims` for the signed-in actor's
 linked working employee. People > Settings > Claim policies opens
