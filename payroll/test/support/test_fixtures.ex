@@ -38,6 +38,7 @@ defmodule Bilimbi.People.Payroll.TestFixtures do
     )
   end
 
+  defp sql_type(:uuid), do: "uuid"
   defp sql_type(:bigint), do: "bigint"
   defp sql_type(:date), do: "date"
   defp sql_type(:jsonb), do: "jsonb"

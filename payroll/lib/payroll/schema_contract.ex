@@ -187,7 +187,43 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
           }
         }
       }
+    ] ++ output_tables()
+  end
+
+  defp output_tables do
+    [
+      output_table("contributions", %{
+        "employee_id" => column(:bigint, false), "item_id" => column(:bigint, false),
+        "source_key" => column({:varchar, 120}, false), "evidence" => column({:varchar, 500}, false),
+        "on_date" => column(:date, false), "units" => column({:numeric, 20, 6}, false),
+        "direction" => column({:varchar, 20}, false)
+      }, %{ "people_payroll_contributions_company_id_source_key_index" => index(["company_id", "source_key"], true)}, %{
+        "people_payroll_contributions_units" => %{expression: "units > (0)::numeric", validated: true},
+        "people_payroll_contributions_direction" => %{expression: "(direction)::text = ANY ((ARRAY['earning'::character varying, 'deduction'::character varying, 'employer'::character varying])::text[])", validated: true}
+      }, %{"people_payroll_contributions_item_id_fkey" => %{columns: ["item_id"], references: {"people_payroll_items", ["id"]}, on_delete: :restrict}}),
+      output_table("result_lines", %{"contribution_id" => column(:bigint, false), "employee_id" => column(:bigint, false), "direction" => column({:varchar, 20}, false), "amount" => column({:numeric, 40, 12}, false)},
+        %{"people_payroll_result_lines_contribution_id_index" => index(["contribution_id"], true)},
+        %{"people_payroll_result_lines_amount" => %{expression: "amount >= (0)::numeric", validated: true}},
+        %{"people_payroll_result_lines_contribution_id_fkey" => %{columns: ["contribution_id"], references: {"people_payroll_contributions", ["id"]}, on_delete: :restrict}}),
+      output_table("calculations", %{"snapshot" => column(:jsonb, false), "digest" => column({:varchar, 64}, false)},
+        %{"people_payroll_calculations_run_id_index" => index(["run_id"], true)}, %{}, %{}),
+      output_table("decisions", %{"outcome" => column({:varchar, 20}, false), "reason" => column({:varchar, 500}, false)},
+        %{"people_payroll_decisions_run_id_index" => index(["run_id"], true)},
+        %{"people_payroll_decisions_outcome" => %{expression: "(outcome)::text = ANY ((ARRAY['approved'::character varying, 'rejected'::character varying])::text[])", validated: true}}, %{}),
+      output_table("documents", %{"employee_id" => column(:bigint, true), "artifact_id" => column(:uuid, false), "kind" => column({:varchar, 20}, false)},
+        %{"people_payroll_documents_artifact_id_index" => index(["artifact_id"], true)},
+        %{"people_payroll_documents_kind" => %{expression: "(kind)::text = 'report'::text AND employee_id IS NULL OR (kind)::text = 'payslip'::text AND employee_id IS NOT NULL", validated: true}}, %{})
     ]
+  end
+
+  defp output_table(suffix, columns, indexes, checks, fks) do
+    name = "people_payroll_" <> suffix
+    %{name: name,
+      columns: Map.merge(common(name), Map.put(columns, "run_id", column(:bigint, false))),
+      indexes: Map.merge(%{ "#{name}_pkey" => index(["id"], true),
+        "#{name}_tenant_id_company_id_index" => index(["tenant_id", "company_id"], false)}, indexes),
+      checks: checks,
+      foreign_keys: Map.put(fks, "#{name}_run_id_fkey", %{columns: ["run_id"], references: {"people_payroll_runs", ["id"]}, on_delete: :restrict})}
   end
 
   defp common(table),

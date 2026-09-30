@@ -2,23 +2,19 @@ defmodule Bilimbi.People.Payroll do
   @moduledoc """
   Company-scoped payroll foundation. Definitions and mappings are append-only,
   effective-dated versions. Runs freeze their setup; locking is irreversible.
-  Calculation, contributions and financial outputs belong to the next slice.
+  Calculation replays accepted contributions against frozen rates; independent
+  decisions release private Base Artifacts documents.
   """
   import Ecto.Query
   alias Bilimbi.Base.{Authz, Repo, Settings, Tenancy}
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Core.Company
-  alias Bilimbi.People.{Attendance, Claims, Leave}
-
-  alias Bilimbi.People.Payroll.{
-    AttendanceAllowanceMapping,
-    Classification,
-    Item,
-    Mapping,
-    Period,
-    Run
-  }
+  alias Bilimbi.People.{Attendance, Claims, Leave, Workforce}
+  alias Bilimbi.People.Workforce.ReadResult
+  alias Bilimbi.People.Payroll.{Contribution, Calculation, Decision, Document, Replay, DocumentOwner, ResultLine}
+  alias Bilimbi.Base.Artifacts
+  alias Bilimbi.People.Payroll.{AttendanceAllowanceMapping, Classification, Item, Mapping, Period, Run}
 
   @view "people.payroll.view"
   @manage "people.payroll.manage"
@@ -339,6 +335,223 @@ defmodule Bilimbi.People.Payroll do
       _ -> {:error, :unauthorized}
     end
   end
+
+  @doc "Accepts an operator-attested contribution with a company-unique replay key."
+  def intake(%Scope{} = scope, company_id, run_id, attrs) do
+    with {:ok, _} <- authorize(scope, company_id, @manage) do
+      transaction(scope, company_id, fn ->
+        changeset = Contribution.changeset(
+          %Contribution{tenant_id: Scope.tenant_id(scope), company_id: company_id,
+            run_id: run_id, created_by_actor_id: Scope.actor(scope).user_id}, attrs)
+
+        with {:ok, input} <- Ecto.Changeset.apply_action(changeset, :insert),
+             %Run{} = run <- fetch(Run, scope, company_id, run_id),
+             nil <- fetch_for_run(Calculation, scope, company_id, run_id),
+             {:ok, %ReadResult{freshness: :current, value: _}} <-
+               Workforce.employee(scope, company_id, input.employee_id),
+             true <- valid_input?(run, input) do
+          case Repo.one(from(c in scoped(Contribution, scope, company_id),
+                 where: c.source_key == ^input.source_key)) do
+            nil -> insert(changeset)
+            previous ->
+              keys = [:run_id, :employee_id, :item_id, :source_key, :evidence, :on_date, :direction]
+              if Map.take(previous, keys) == Map.take(input, keys) and
+                   Decimal.equal?(previous.units, input.units),
+                do: {:ok, public(previous)}, else: {:error, :replay_conflict}
+          end
+        else
+          {:error, _} = error -> error
+          _ -> {:error, :intake_unavailable}
+        end
+      end)
+    end
+  end
+
+  @doc "Intakes an attested mapped source using its frozen mapping and exact units."
+  def intake_mapped(%Scope{} = scope, company_id, run_id, source_kind, source_key, attrs) do
+    with {:ok, _} <- authorize(scope, company_id, @manage),
+         %Run{} = run <- fetch(Run, scope, company_id, run_id),
+         {:ok, on_date} <- Ecto.Type.cast(:date, Map.get(attrs, :on_date, Map.get(attrs, "on_date"))) do
+      date = Date.to_iso8601(on_date)
+      mappings = Enum.filter(run.snapshot["mappings"], fn mapping ->
+        mapping["source_kind"] == source_kind and mapping["source_key"] == source_key and
+          mapping["effective_from"] <= date and
+          (is_nil(mapping["effective_to"]) or mapping["effective_to"] >= date)
+      end)
+      case mappings do
+        [mapping] -> intake(scope, company_id, run_id,
+          attrs |> Map.new(fn {key, value} -> {to_string(key), value} end)
+            |> Map.put("item_id", mapping["item_id"]))
+        _ -> {:error, :source_not_mapped}
+      end
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :source_not_mapped}
+    end
+  end
+
+  @doc "Attendance allowance intake seam until its owning module supplies mapped facts."
+  def intake_attendance_allowance(%Scope{} = scope, company_id, _run_id, _attrs) do
+    with {:ok, _} <- authorize(scope, company_id, @manage),
+      do: {:error, :attendance_allowances_unavailable}
+  end
+
+  defp valid_input?(run, input) do
+    period = run.snapshot["period"]
+    date = Date.to_iso8601(input.on_date)
+    items = Enum.filter(run.snapshot["items"], &(&1["id"] == input.item_id))
+    case items do
+      [item] ->
+        date >= period["starts_on"] and date <= period["ends_on"] and
+          date >= item["effective_from"] and
+          (is_nil(item["effective_to"]) or date <= item["effective_to"])
+      _ -> false
+    end
+  end
+
+  @doc "Calculates once after setup locking; replay returns the same immutable record."
+  def calculate(%Scope{} = scope, company_id, run_id) do
+    with {:ok, _} <- authorize(scope, company_id, @manage) do
+      transaction(scope, company_id, fn ->
+        with %Run{locked_at: locked} = run when not is_nil(locked) <- fetch(Run, scope, company_id, run_id) do
+          case fetch_for_run(Calculation, scope, company_id, run_id) do
+            nil ->
+              inputs = Repo.all(from(c in scoped(Contribution, scope, company_id),
+                where: c.run_id == ^run_id, order_by: c.source_key))
+              if inputs == [], do: Repo.rollback(:no_contributions)
+              ids = inputs |> Enum.map(& &1.employee_id) |> Enum.uniq()
+              with {:ok, %ReadResult{freshness: :current, value: employees}} <-
+                     Workforce.employees_by_ids(scope, company_id, ids),
+                   true <- length(employees) == length(ids) do
+                snapshot = %{"setup" => run.snapshot,
+                  "contributions" => Enum.map(inputs, &json/1),
+                  "result" => Replay.calculate(run.snapshot, Enum.map(inputs, &json/1))}
+                digest = :crypto.hash(:sha256, :erlang.term_to_binary(snapshot, [:deterministic]))
+                  |> Base.encode16(case: :lower)
+                for line <- snapshot["result"]["lines"] do
+                  Repo.insert!(%ResultLine{tenant_id: Scope.tenant_id(scope), company_id: company_id,
+                    created_by_actor_id: Scope.actor(scope).user_id, run_id: run_id,
+                    contribution_id: line["id"], employee_id: line["employee_id"],
+                    direction: line["direction"], amount: Decimal.new(line["amount"])})
+                end
+                %Calculation{tenant_id: Scope.tenant_id(scope), company_id: company_id,
+                  run_id: run_id, created_by_actor_id: Scope.actor(scope).user_id,
+                  snapshot: snapshot, digest: digest}
+                |> Repo.insert() |> result()
+              else
+                {:error, _} = error -> error
+                _ -> {:error, :workforce_unavailable}
+              end
+            row -> {:ok, public(row)}
+          end
+        else
+          _ -> {:error, :run_not_locked}
+        end
+      end)
+    end
+  end
+
+  def run_output(%Scope{} = scope, company_id, run_id) do
+    with {:ok, _} <- authorize(scope, company_id, @view),
+         %Run{} = run <- fetch(Run, scope, company_id, run_id) do
+      {:ok, %{run: public(run),
+        contributions: Repo.all(from(c in scoped(Contribution, scope, company_id),
+          where: c.run_id == ^run_id, order_by: c.source_key)) |> Enum.map(&public/1),
+        calculation: maybe_public(fetch_for_run(Calculation, scope, company_id, run_id)),
+        decision: maybe_public(fetch_for_run(Decision, scope, company_id, run_id)),
+        documents: Repo.all(from(d in scoped(Document, scope, company_id),
+          where: d.run_id == ^run_id, order_by: d.id)) |> Enum.map(&public/1)}}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :not_found}
+    end
+  end
+
+  @doc "Independent final approval or rejection; neither decision can be overwritten."
+  def decide_run(%Scope{} = scope, company_id, run_id, outcome, reason) do
+    with {:ok, _} <- authorize(scope, company_id, "people.payroll.approve"),
+         true <- outcome in ["approved", "rejected"] and is_binary(reason) and
+           String.length(String.trim(reason)) in 1..500 do
+      transaction(scope, company_id, fn ->
+        actor = Scope.actor(scope).user_id
+        with %Run{} = run <- fetch(Run, scope, company_id, run_id),
+             %Calculation{} = calculation <- fetch_for_run(Calculation, scope, company_id, run_id),
+             nil <- fetch_for_run(Decision, scope, company_id, run_id),
+             false <- actor in [run.created_by_actor_id, calculation.created_by_actor_id],
+             false <- Repo.exists?(from(c in scoped(Contribution, scope, company_id),
+               where: c.run_id == ^run_id and c.created_by_actor_id == ^actor)) do
+          %Decision{tenant_id: Scope.tenant_id(scope), company_id: company_id, run_id: run_id,
+            created_by_actor_id: actor, outcome: outcome, reason: String.trim(reason)}
+          |> Repo.insert() |> result()
+        else
+          _ -> {:error, :not_decidable}
+        end
+      end)
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_decision}
+    end
+  end
+
+  @doc "Generates an approved report or payslip through Base's private PDF service."
+  def generate_document(%Scope{} = scope, company_id, run_id, kind, employee_id \\ nil) do
+    reference = %{subject: to_string(run_id), kind: kind}
+    with :ok <- document_access(scope, company_id, :create, reference),
+         {:ok, data} <- document_data(scope, company_id, reference, employee_id),
+         {:ok, artifact} <- Artifacts.generate_pdf(scope, company_id, DocumentOwner, reference, data) do
+      transaction(scope, company_id, fn ->
+        %Document{tenant_id: Scope.tenant_id(scope), company_id: company_id, run_id: run_id,
+          created_by_actor_id: Scope.actor(scope).user_id, employee_id: employee_id,
+          artifact_id: artifact.id, kind: kind} |> Repo.insert() |> result()
+      end)
+    end
+  end
+
+  def read_document(%Scope{} = scope, company_id, artifact_id),
+    do: Artifacts.read(scope, company_id, DocumentOwner, artifact_id)
+
+  @doc false
+  def document_access(scope, company_id, operation, reference) do
+    capability = if operation == :read, do: @view, else: @manage
+    with {:ok, _} <- authorize(scope, company_id, capability) do
+      if operation == :purge do
+        :ok
+      else
+        with %{subject: subject, kind: kind} when kind in ["report", "payslip"] <- reference,
+             {id, ""} <- Integer.parse(subject),
+             %Decision{outcome: "approved"} <- fetch_for_run(Decision, scope, company_id, id) do
+          :ok
+        else
+          _ -> {:error, :not_found}
+        end
+      end
+    end
+  end
+
+  @doc false
+  def document_data(scope, company_id, reference, employee_id) do
+    with :ok <- document_access(scope, company_id, :read, reference),
+         {run_id, ""} <- Integer.parse(reference.subject),
+         {:ok, %{run: run, calculation: calculation}} <- run_output(scope, company_id, run_id),
+         true <- (reference.kind == "report" and is_nil(employee_id)) or
+           (reference.kind == "payslip" and is_integer(employee_id) and
+             Enum.any?(calculation.snapshot["result"]["totals"], &(&1["employee_id"] == employee_id))) do
+      rows = calculation.snapshot["result"]["lines"]
+        |> Enum.filter(&(is_nil(employee_id) or &1["employee_id"] == employee_id))
+      totals = calculation.snapshot["result"]["totals"]
+        |> Enum.filter(&(is_nil(employee_id) or &1["employee_id"] == employee_id))
+      {:ok, %{employee_id: employee_id, currency: run.currency, digest: calculation.digest,
+        lines: rows, totals: totals}}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_document}
+    end
+  end
+
+  defp fetch_for_run(schema, scope, company_id, run_id),
+    do: Repo.one(from(r in scoped(schema, scope, company_id), where: r.run_id == ^run_id))
+  defp maybe_public(nil), do: nil
+  defp maybe_public(row), do: public(row)
 
   defp create_version(%Scope{} = scope, company_id, schema, attrs, capability, validate) do
     with {:ok, _} <- authorize(scope, company_id, capability) do

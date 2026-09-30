@@ -1,3 +1,4 @@
+Code.require_file("../priv/repo/migrations/20261001021001_create_payroll_outputs.exs", __DIR__)
 Code.require_file(
   "../priv/repo/migrations/20260930230501_create_payroll_foundation.exs",
   __DIR__
@@ -45,6 +46,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
       dynamic_repo: repo
     )
 
+    Ecto.Migrator.up(Repo, 20_261_001_021_001, Bilimbi.People.Payroll.Migrations.CreateOutputs, log: false, dynamic_repo: repo)
     %{repo: repo}
   end
 
