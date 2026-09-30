@@ -69,9 +69,10 @@ only while that employee is current in the workforce seam.
 Every write for one employee takes Core Employee's affiliation lock, so
 balance and overlap checks cannot race. `decide_request/6` approves or
 rejects a pending request. The requester and the request's own employee are
-refused (`:self_approval`), as is an approver whose user cannot be resolved, and a rejection needs a note. Approval rechecks the
-employee, the type and the balance, then writes a `taken` ledger entry of the
-negative quantity with the approver as actor. `cancel_request/4` lets the
+refused (`:self_approval`), as is an approver whose user cannot be resolved,
+and a rejection needs a note. Approval rechecks the employee, the type and the
+balance, then writes a `taken` ledger entry of the negative quantity with the
+approver as actor. `cancel_request/4` lets the
 employee cancel a pending request, or an approved one before its start date,
 which writes a `cancelled` entry returning the quantity. Rejected and cancelled
 requests release their slots. Each transition is an append-only row in
