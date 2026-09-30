@@ -364,6 +364,13 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
               class="mt-3 flex flex-wrap items-center gap-3 text-sm"
             >
               <span>Period {run.period_id} · {run.currency} · {run.country}</span>
+              <span
+                :if={run.snapshot["unmapped_sources"] != []}
+                id={"run-unmapped-#{run.id}"}
+                class="text-ink-muted"
+              >
+                Unmapped: {Enum.map_join(run.snapshot["unmapped_sources"], ", ", &"#{&1["source_kind"]} · #{&1["name"]}")}
+              </span>
               <span :if={run.locked_at}>Locked
               <.datetime id={"run-locked-#{run.id}"} value={run.locked_at} /></span>
               <.button

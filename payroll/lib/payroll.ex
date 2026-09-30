@@ -140,6 +140,7 @@ defmodule Bilimbi.People.Payroll do
         country = Settings.get("people.payroll.country", setting_scope(company))
 
         with %Period{} = period <- fetch(Period, scope, company_id, period_id),
+             {:ok, sources} <- sources(scope, company_id),
              true <- is_binary(country) and String.trim(country) != "",
              true <- currency in Settings.get("people.payroll.currencies", setting_scope(company)),
              false <-
@@ -154,15 +155,24 @@ defmodule Bilimbi.People.Payroll do
 
           item_ids = Enum.map(items, & &1.id)
 
+          mappings =
+            effective_rows(Mapping, scope, company_id, period)
+            |> Enum.filter(&(&1.item_id in item_ids))
+
+          mapped = MapSet.new(mappings, &{&1.source_kind, &1.source_key})
+
           snapshot = %{
             "period" => json(period),
             "items" => Enum.map(items, &json/1),
             "classifications" =>
               effective_rows(Classification, scope, company_id, period) |> Enum.map(&json/1),
-            "mappings" =>
-              effective_rows(Mapping, scope, company_id, period)
-              |> Enum.filter(&(&1.item_id in item_ids))
-              |> Enum.map(&json/1)
+            "mappings" => Enum.map(mappings, &json/1),
+            "unmapped_sources" =>
+              for {kind, choices} <- Enum.sort(sources),
+                  choice <- choices,
+                  not MapSet.member?(mapped, {kind, choice.key}) do
+                %{"source_kind" => kind, "source_key" => choice.key, "name" => choice.name}
+              end
           }
 
           %Run{
@@ -245,7 +255,13 @@ defmodule Bilimbi.People.Payroll do
     query =
       case row do
         %Mapping{} ->
-          where(query, [r], r.source_kind == ^row.source_kind and r.source_key == ^row.source_key)
+          from(r in query,
+            join: i in Item,
+            on: i.id == r.item_id,
+            join: n in Item,
+            on: n.id == ^row.item_id and n.currency == i.currency,
+            where: r.source_kind == ^row.source_kind and r.source_key == ^row.source_key
+          )
 
         _ ->
           where(query, [r], r.code == ^row.code)

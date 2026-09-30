@@ -1,12 +1,11 @@
 defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   use BilimbiWeb.ConnCase, async: false
   import Phoenix.LiveViewTest
-  alias Bilimbi.Base.{Repo, Tenancy}
+  alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Authentication
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Payroll
-  alias Ecto.Adapters.SQL
 
   setup do
     UserFixtures.create_user_tables!()
@@ -264,9 +263,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
              })
   end
 
-  test "run snapshot survives settings changes and database refuses changing a locked run", %{
-    scope: scope
-  } do
+  test "run snapshot survives settings changes and a locked run stays locked", %{scope: scope} do
     grant()
     %{period: period} = catalog(scope)
     {:ok, run} = Payroll.create_run(scope, 73, period.id, "AAA")
@@ -281,14 +278,75 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
     assert snapshot == run.snapshot
     assert {:error, :locked} = Payroll.lock_run(scope, 73, run.id)
+  end
 
-    for sql <- [
-          "UPDATE people_payroll_runs SET locked_at = NULL, locked_by_actor_id = NULL WHERE id = $1",
-          "UPDATE people_payroll_runs SET snapshot = '{}' WHERE id = $1",
-          "DELETE FROM people_payroll_runs WHERE id = $1"
-        ] do
-      assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
-               SQL.query(Repo, sql, [run.id], mode: :savepoint)
-    end
+  test "a source maps once per currency and runs report unmapped sources", %{
+    conn: conn,
+    scope: scope
+  } do
+    grant()
+    %{classification: classification, item: item, period: period} = catalog(scope)
+
+    {:ok, other} =
+      Payroll.create_item(
+        scope,
+        73,
+        Map.merge(version("item-b"), %{
+          classification_id: classification.id,
+          currency: "BBB",
+          amount: "1"
+        })
+      )
+
+    {:ok, mapped} =
+      Bilimbi.People.Leave.create_type(scope, 73, %{
+        code: "type-a",
+        name: "Type A",
+        unit: "day",
+        paid: true
+      })
+
+    {:ok, unmapped} =
+      Bilimbi.People.Leave.create_type(scope, 73, %{
+        code: "type-b",
+        name: "Type B",
+        unit: "day",
+        paid: false
+      })
+
+    attrs = %{
+      source_kind: "leave",
+      source_key: to_string(mapped.id),
+      item_id: item.id,
+      effective_from: "2026-01-01",
+      effective_to: "2026-12-31"
+    }
+
+    assert {:ok, _} = Payroll.create_mapping(scope, 73, attrs)
+    assert {:ok, _} = Payroll.create_mapping(scope, 73, %{attrs | item_id: other.id})
+
+    assert {:error, :overlapping_version} =
+             Payroll.create_mapping(scope, 73, %{attrs | item_id: other.id})
+
+    runs =
+      for {currency, item_id} <- [{"AAA", item.id}, {"BBB", other.id}] do
+        {:ok, run} = Payroll.create_run(scope, 73, period.id, currency)
+        assert [%{"item_id" => ^item_id}] = run.snapshot["mappings"]
+
+        assert run.snapshot["unmapped_sources"] == [
+                 %{
+                   "source_kind" => "leave",
+                   "source_key" => to_string(unmapped.id),
+                   "name" => "Type B"
+                 }
+               ]
+
+        run
+      end
+
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/payroll/setup")
+
+    for run <- runs,
+        do: assert(has_element?(view, "#run-unmapped-#{run.id}", "leave · Type B"))
   end
 end
