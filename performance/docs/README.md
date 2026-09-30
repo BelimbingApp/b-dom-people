@@ -69,10 +69,15 @@ tasks. Record pickers use public workforce and governed record labels.
 `reviews/3` lists only reviews authored by the current actor, with URL page
 and page-size state. `review/3` reads one authored review; a company-authorized
 release approver can also inspect a release candidate. A peer cannot select
-someone else's review. Current authorization applies on every read and write,
-including revoked grants and cross-company attempts within the same tenant.
-Planning pickers and queues show at most the latest 100 records; the authored
-review index is paginated. Position choices use a bounded Organisation page.
+someone else's review. Whatever their capabilities, no viewer sees pre-release
+or confidential records about their own linked employee: planning lists, the
+release queue and KPI review/approval lists exclude them, and `review/3`
+refuses them until release, after which they appear under My performance.
+Current authorization applies on every read and write, including revoked grants
+and cross-company attempts within the same tenant. Planning pickers and queues
+filter in the query and then show at most the latest 100 matching records;
+published-only selectors are queried separately so newer drafts cannot crowd
+them out. The authored review index is paginated. Position choices use a bounded Organisation page.
 
 `/people/performance/my` derives the linked employee from the current account,
 shows their communicated targets and released review history and accepts their
