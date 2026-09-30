@@ -45,7 +45,12 @@ Freeze setup for a period and currency. The snapshot stores period, applicable
 versions, decimal amount strings, country and currency, ordered by stable IDs.
 Only mappings for that currency's items are included. Leave and Claims sources
 with no mapping for that currency in the period are listed as unmapped in the
-snapshot and on the run. Each period/currency has
+snapshot and on the run: every active leave and claim type, plus any archived or
+inactive type that still has a pending or approved leave request, or a claim
+that is not withdrawn or rejected, in the period. Activity is read through
+`Leave.requested_type_ids/4` and `Claims.requested_claim_type_ids/4`. When
+Workforce data is not current those reads are refused, and the run reports that
+cause instead of freezing. Each period/currency has
 one run. Subsequent settings or future versions cannot alter its snapshot.
 Locking records the authenticated actor and is irreversible. PostgreSQL rejects
 updates/deletes of locked runs, deleting any run, and changing a draft run

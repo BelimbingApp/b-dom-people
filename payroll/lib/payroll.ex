@@ -113,8 +113,12 @@ defmodule Bilimbi.People.Payroll do
       {:ok,
        %{
          "attendance" => [],
-         "leave" => Enum.map(leave, &%{key: to_string(&1.id), name: &1.name}),
-         "claims" => Enum.map(claims, &%{key: to_string(&1.id), name: &1.name})
+         "leave" =>
+           Enum.map(
+             leave,
+             &%{key: to_string(&1.id), name: &1.name, active: &1.status == "active"}
+           ),
+         "claims" => Enum.map(claims, &%{key: to_string(&1.id), name: &1.name, active: &1.active})
        }}
     end
   end
@@ -128,6 +132,7 @@ defmodule Bilimbi.People.Payroll do
            true <- covers?(item, mapping) do
         :ok
       else
+        {:error, _} = error -> error
         _ -> {:error, :invalid_mapping}
       end
     end)
@@ -141,6 +146,7 @@ defmodule Bilimbi.People.Payroll do
 
         with %Period{} = period <- fetch(Period, scope, company_id, period_id),
              {:ok, sources} <- sources(scope, company_id),
+             {:ok, requested} <- requested_sources(scope, company_id, period),
              true <- is_binary(country) and String.trim(country) != "",
              true <- currency in Settings.get("people.payroll.currencies", setting_scope(company)),
              false <-
@@ -170,6 +176,7 @@ defmodule Bilimbi.People.Payroll do
             "unmapped_sources" =>
               for {kind, choices} <- Enum.sort(sources),
                   choice <- choices,
+                  choice.active or MapSet.member?(requested, {kind, choice.key}),
                   not MapSet.member?(mapped, {kind, choice.key}) do
                 %{"source_kind" => kind, "source_key" => choice.key, "name" => choice.name}
               end
@@ -188,9 +195,23 @@ defmodule Bilimbi.People.Payroll do
           })
           |> insert()
         else
+          {:error, _} = error -> error
           _ -> {:error, :run_unavailable}
         end
       end)
+    end
+  end
+
+  defp requested_sources(scope, company_id, period) do
+    with {:ok, leave} <-
+           Leave.requested_type_ids(scope, company_id, period.starts_on, period.ends_on),
+         {:ok, claims} <-
+           Claims.requested_claim_type_ids(scope, company_id, period.starts_on, period.ends_on) do
+      {:ok,
+       MapSet.new(
+         Enum.map(leave, &{"leave", to_string(&1)}) ++
+           Enum.map(claims, &{"claims", to_string(&1)})
+       )}
     end
   end
 

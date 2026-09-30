@@ -349,4 +349,82 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     for run <- runs,
         do: assert(has_element?(view, "#run-unmapped-#{run.id}", "leave · Type B"))
   end
+
+  test "unmapped report keeps inactive sources only with in-period activity", %{
+    scope: scope,
+    system: system
+  } do
+    grant()
+    catalog(scope)
+    Bilimbi.People.ReferenceData.TestFixtures.create_reference_tables!()
+    :ok = Bilimbi.Core.Employee.ensure_system_types()
+
+    {:ok, employee} =
+      Bilimbi.Core.Employee.create_employee(system, 73, %{
+        employee_number: "E-1",
+        full_name: "Employee One"
+      })
+
+    UserFixtures.insert_user!(%{
+      id: 93,
+      company_id: 73,
+      employee_id: employee.id,
+      email: "employee@example.com"
+    })
+
+    {:ok, period} =
+      Payroll.create_period(scope, 73, %{
+        code: "period-b",
+        starts_on: "2099-03-01",
+        ends_on: "2099-03-31",
+        pay_on: "2099-04-01"
+      })
+
+    types =
+      Map.new(~w(active used idle), fn code ->
+        {:ok, type} =
+          Bilimbi.People.Leave.create_type(scope, 73, %{
+            code: code,
+            name: "Leave #{code}",
+            unit: "day",
+            paid: true,
+            balance_required: false
+          })
+
+        {code, type}
+      end)
+
+    assert {:ok, _} =
+             Bilimbi.People.Leave.submit_request(
+               system,
+               73,
+               %{type: :user, id: 93, company_id: 73},
+               %{
+                 leave_type_id: types["used"].id,
+                 starts_on: ~D[2099-03-02],
+                 ends_on: ~D[2099-03-02],
+                 request_key: "payroll-activity"
+               }
+             )
+
+    for code <- ~w(used idle),
+        do: {:ok, _} = Bilimbi.People.Leave.set_type_status(scope, 73, types[code].id, "archived")
+
+    {:ok, category} =
+      Bilimbi.People.Claims.create_category(scope, 73, %{code: "category-a", name: "Category A"})
+
+    {:ok, claim} =
+      Bilimbi.People.Claims.create_claim_type(scope, 73, %{
+        code: "claim-a",
+        name: "Claim A",
+        category_id: category.id,
+        receipt_requirement: "never"
+      })
+
+    {:ok, _} = Bilimbi.People.Claims.set_claim_type_active(scope, 73, claim.id, false)
+    {:ok, run} = Payroll.create_run(scope, 73, period.id, "AAA")
+
+    assert Enum.sort(Enum.map(run.snapshot["unmapped_sources"], & &1["name"])) ==
+             ["Leave active", "Leave used"]
+  end
 end

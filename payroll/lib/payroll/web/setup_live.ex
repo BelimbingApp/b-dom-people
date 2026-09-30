@@ -174,6 +174,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
         :invalid_mapping ->
           "Choose an available Leave or Claims source and an item covering the mapping dates."
 
+        {:not_current, _} ->
+          "Workforce data for this company is not current, so Leave and Claims sources cannot be read. Try again once it has refreshed."
+
         :run_unavailable ->
           "Choose a configured country, currency and unused period."
 
