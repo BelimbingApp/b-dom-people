@@ -63,7 +63,8 @@ defmodule Bilimbi.People.Attendance.Contributions do
           "people.attendance.self.view",
           "people.attendance.rules.manage",
           "people.attendance.roster.manage",
-          "people.attendance.adjustments.approve"
+          "people.attendance.adjustments.approve",
+          "people.attendance.allowances.manage"
         ]
       },
       menu: [

@@ -44,7 +44,7 @@ no sample rows are installed.
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
 | `people/progression` | Progression policy |
-| `people/payroll` | Payroll periods, catalog versions, mappings and frozen setup |
+| `people/payroll` | Payroll periods, catalog versions, mappings, attendance allowance mappings and frozen setup |
 
 ## Mount and validate
 

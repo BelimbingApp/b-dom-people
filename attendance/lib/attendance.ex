@@ -13,7 +13,16 @@ defmodule Bilimbi.People.Attendance do
   alias Bilimbi.Base.Settings
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
-  alias Bilimbi.People.Attendance.{Access, Adjustments, ClockEvent, Day, Locations, Rosters}
+
+  alias Bilimbi.People.Attendance.{
+    Access,
+    Adjustments,
+    Allowances,
+    ClockEvent,
+    Day,
+    Locations,
+    Rosters
+  }
 
   @timezone_key "people.attendance.timezone"
   @self_clock_key "people.attendance.self_clock_enabled"
@@ -411,6 +420,18 @@ defmodule Bilimbi.People.Attendance do
   defdelegate list_clocking_locations(scope, company_id), to: Locations
   defdelegate create_clocking_location(scope, company_id, attrs), to: Locations
   defdelegate set_clocking_location_status(scope, company_id, location_id, status), to: Locations
+
+  defdelegate list_allowance_rules(scope, company_id), to: Allowances, as: :list
+  defdelegate create_allowance_rule(scope, company_id, attrs), to: Allowances, as: :create
+  defdelegate get_allowance_rule(scope, company_id, rule_id), to: Allowances, as: :get
+
+  defdelegate set_allowance_rule_status(scope, company_id, rule_id, status),
+    to: Allowances,
+    as: :set_status
+
+  @doc "Schema-free allowance catalog values for Payroll mapping and as-of reads."
+  def payroll_allowance_sources(scope, company_id, as_of \\ Date.utc_today()),
+    do: Allowances.sources(scope, company_id, as_of)
 
   defdelegate submit_adjustment(scope, company_id, actor, attrs), to: Adjustments
   defdelegate self_adjustments(scope, company_id, actor), to: Adjustments

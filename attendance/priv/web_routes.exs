@@ -24,6 +24,12 @@
     capability: "people.attendance.rules.manage"
   },
   %{
+    path: "/people/attendance/rules/allowances",
+    live: Bilimbi.People.Attendance.Web.AllowancesLive,
+    session: :auth,
+    capability: "people.attendance.allowances.manage"
+  },
+  %{
     path: "/people/attendance/rosters",
     live: Bilimbi.People.Attendance.Web.RostersLive,
     session: :auth,

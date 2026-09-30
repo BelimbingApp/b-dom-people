@@ -113,5 +113,24 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
       """,
       []
     )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TEMPORARY TABLE people_attendance_allowance_rules (
+        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
+        code varchar(40) NOT NULL, name varchar(120) NOT NULL, unit varchar(32) NOT NULL,
+        value numeric(14,4) NOT NULL, currency varchar(3) NOT NULL,
+        effective_from date NOT NULL, effective_until date,
+        status varchar(16) NOT NULL DEFAULT 'active',
+        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
+        CONSTRAINT people_attendance_allowance_rules_company_code_from_unique
+          UNIQUE (company_id, code, effective_from),
+        CHECK (status IN ('active', 'retired')), CHECK (value > 0),
+        CHECK (effective_until IS NULL OR effective_until >= effective_from)
+      ) ON COMMIT PRESERVE ROWS
+      """,
+      []
+    )
   end
 end

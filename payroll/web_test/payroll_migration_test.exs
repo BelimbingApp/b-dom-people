@@ -1,4 +1,9 @@
 Code.require_file(
+  "../priv/repo/migrations/20260930210002_create_people_payroll_attendance_rule_pay_items.exs",
+  __DIR__
+)
+
+Code.require_file(
   "../priv/repo/migrations/20260930230501_create_payroll_foundation.exs",
   __DIR__
 )
@@ -7,7 +12,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
   use ExUnit.Case, async: false
   alias Bilimbi.Base.Database.SchemaVerifier
   alias Bilimbi.Base.Repo
-  alias Bilimbi.People.Payroll.Migrations.CreateFoundation
+  alias Bilimbi.People.Payroll.Migrations.{CreateAttendanceRulePayItems, CreateFoundation}
   alias Bilimbi.People.Payroll.SchemaContract
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
@@ -31,6 +36,11 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
         {Repo, name: repo, database: database, pool: DBConnection.ConnectionPool, pool_size: 2},
         id: repo
       )
+    )
+
+    Ecto.Migrator.up(Repo, 20_260_930_210_002, CreateAttendanceRulePayItems,
+      log: false,
+      dynamic_repo: repo
     )
 
     Ecto.Migrator.up(Repo, 20_260_930_230_501, CreateFoundation, log: false, dynamic_repo: repo)

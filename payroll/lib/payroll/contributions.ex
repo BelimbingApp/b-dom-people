@@ -27,7 +27,11 @@ defmodule Bilimbi.People.Payroll.Contributions do
       },
       authz: %{
         domains: %{"people" => "People domain modules"},
-        capabilities: ["people.payroll.view", "people.payroll.manage"],
+        capabilities: [
+          "people.payroll.view",
+          "people.payroll.manage",
+          "people.payroll.attendance-mappings.manage"
+        ],
         roles: %{
           "tenant_owner" => %{capabilities: ["people.payroll.view", "people.payroll.manage"]}
         }

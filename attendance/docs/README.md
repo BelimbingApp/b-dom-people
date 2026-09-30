@@ -1,6 +1,7 @@
 # Attendance
 
-Module ID: `people/attendance`. Time and attendance.
+Module ID: `people/attendance`. Time and attendance, including allowance
+rule data used by Payroll.
 
 Every public function on `Bilimbi.People.Attendance` takes a validated
 `Bilimbi.Base.Tenancy.Scope` and an explicit platform company ID, and reads
@@ -93,6 +94,28 @@ The same page links to `/people/attendance/rules/shifts` and
 `/people/attendance/rules/locations`, where operators add and retire shift
 templates and clocking locations. No shifts, locations or roster rows are
 seeded.
+
+## Allowance rules and Payroll source
+
+Operators manage a company's effective-dated allowance catalog at
+`/people/attendance/rules/allowances` with the separate
+`people.attendance.allowances.manage` capability. Each version carries an
+operator code and name, a generic unit, a positive value, an explicit
+three-letter currency, and inclusive effective dates. A code cannot have
+overlapping periods. New versions preserve earlier values; an operator can
+retire a version without deleting its history. There are no seeded codes,
+units, rates, or currencies.
+
+`Attendance.payroll_allowance_sources/3` returns only active rules effective
+on the requested date as schema-free values (`id`, `code`, `name`, `unit`,
+`value`, `currency`, and effective dates). It validates the explicit company
+through Workforce before reading. Payroll uses that API to offer source rules
+for company pay-item mapping. The API exposes the allowance catalog; it does
+not calculate attendance quantities or payroll amounts.
+
+The allowance rule editor is available by its scoped route and setup tab. It
+does not add a navigation menu leaf while the broader Payroll and Attendance
+allowance area remains under acceptance.
 
 ## Pages and capabilities
 

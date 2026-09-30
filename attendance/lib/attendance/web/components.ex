@@ -71,10 +71,13 @@ defmodule Bilimbi.People.Attendance.Web.Components do
       )
 
     ~H"""
-    <Bilimbi.Base.UI.Components.tabs id="attendance-rules-tabs" aria-label="Attendance rules" class="mt-4">
-      <:tab id="attendance-rules-tab" href={"/people/attendance/rules#{@query}"} current={@current == :rules}>
-        Rules
-      </:tab>
+      <Bilimbi.Base.UI.Components.tabs id="attendance-rules-tabs" aria-label="Attendance rules" class="mt-4">
+        <:tab id="attendance-rules-tab" href={"/people/attendance/rules#{@query}"} current={@current == :rules}>
+          Rules
+        </:tab>
+        <:tab id="attendance-allowances-tab" href={"/people/attendance/rules/allowances#{@query}"} current={@current == :allowances}>
+          Allowance rules
+        </:tab>
       <:tab id="attendance-shifts-tab" href={"/people/attendance/rules/shifts#{@query}"} current={@current == :shifts}>
         Shift templates
       </:tab>

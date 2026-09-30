@@ -9,8 +9,16 @@ defmodule Bilimbi.People.Payroll do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Core.Company
-  alias Bilimbi.People.{Claims, Leave}
-  alias Bilimbi.People.Payroll.{Classification, Item, Mapping, Period, Run}
+  alias Bilimbi.People.{Attendance, Claims, Leave}
+
+  alias Bilimbi.People.Payroll.{
+    AttendanceAllowanceMapping,
+    Classification,
+    Item,
+    Mapping,
+    Period,
+    Run
+  }
 
   @view "people.payroll.view"
   @manage "people.payroll.manage"
@@ -362,4 +370,51 @@ defmodule Bilimbi.People.Payroll do
   defp json_value(%Date{} = value), do: Date.to_iso8601(value)
   defp json_value(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp json_value(value), do: value
+
+  @doc "Lists current Attendance allowance sources with any configured pay item code."
+  def attendance_allowances(%Scope{} = scope, company_id, as_of \\ Date.utc_today()) do
+    with {:ok, sources} <- Attendance.payroll_allowance_sources(scope, company_id, as_of),
+         {:ok, mappings} <- list_attendance_allowance_mappings(scope, company_id) do
+      by_code = Map.new(mappings, &{&1.attendance_rule_code, &1.pay_item_code})
+      {:ok, Enum.map(sources, &Map.put(&1, :pay_item_code, by_code[&1.code]))}
+    end
+  end
+
+  def list_attendance_allowance_mappings(%Scope{} = scope, company_id) do
+    with {:ok, _sources} <- Attendance.list_allowance_rules(scope, company_id) do
+      {:ok,
+       Repo.all(
+         from(m in Tenancy.scope_query(AttendanceAllowanceMapping, scope),
+           where: m.company_id == ^company_id,
+           order_by: [asc: m.attendance_rule_code]
+         )
+       )}
+    end
+  end
+
+  def put_attendance_allowance_mapping(%Scope{} = scope, company_id, source_code, pay_item_code)
+      when is_binary(source_code) and is_binary(pay_item_code) do
+    with {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
+         true <- Enum.any?(rules, &(&1.code == String.trim(source_code))),
+         {:ok, result} <-
+           %AttendanceAllowanceMapping{
+             tenant_id: Scope.tenant_id(scope),
+             company_id: company_id
+           }
+           |> AttendanceAllowanceMapping.changeset(%{
+             attendance_rule_code: source_code,
+             pay_item_code: pay_item_code
+           })
+           |> Repo.insert(
+             on_conflict: {:replace, [:pay_item_code, :updated_at]},
+             conflict_target: [:company_id, :attendance_rule_code]
+           ) do
+      {:ok, result}
+    else
+      false -> {:error, :attendance_rule_not_found}
+      error -> error
+    end
+  end
+
+  def put_attendance_allowance_mapping(%Scope{}, _, _, _), do: {:error, :invalid_mapping}
 end

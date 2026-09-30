@@ -38,9 +38,9 @@ date must be on or after the end date.
 
 Leave and Claims choices are read through the owning modules' public catalogs.
 A submitted source key must belong to the selected company. Attendance is
-labelled **not available yet** and cannot be mapped: the allowance catalog and
-payroll source API are a separate Attendance follow-up slice. Clocking settings
-are not allowance rules.
+labelled **not available yet** in these setup mappings and cannot be mapped
+here; attendance allowance rules use the separate mapping below. Clocking
+settings are not allowance rules.
 
 Freeze setup for a period and currency. The snapshot stores period, applicable
 versions, decimal amount strings, country and currency, ordered by stable IDs.
@@ -59,9 +59,24 @@ except its initial lock. Classification, item, period and mapping rows are also
 protected against updates/deletes by PostgreSQL. A company-scoped advisory
 transaction lock serializes facade writes, overlap checks and snapshots.
 
+## Attendance allowance mappings
+
+Payroll owns effective-dated pay-item mappings. Attendance allowance rules are
+read through `Bilimbi.People.Attendance.payroll_allowance_sources/3`; Payroll
+does not read Attendance tables. Operators with
+`people.payroll.attendance-mappings.manage` can map a current source rule to a
+company pay-item code at `/people/payroll/attendance-mappings`. The route is
+capability protected and intentionally has no menu contribution while this
+area remains under acceptance.
+
+Mappings are keyed by the Attendance rule code and company. This lets a new
+effective-dated version keep the existing payroll mapping while Attendance
+retains the historical rule version. The target code is stored as governed
+operator data; no pay-item code is assumed by the Domain.
+
 ## Schema and validation
 
-Migration `20260930230501` is `:bilimbi_only`. The unregistered
+Migrations `20260930210002` and `20260930230501` are `:bilimbi_only`. The unregistered
 `Bilimbi.People.Payroll.SchemaContract` is checked after fresh migration with
 `Bilimbi.Base.Database.SchemaVerifier.verify/2`. Registration remains nil because
 pre-migration compatibility verification must not demand new tables.
