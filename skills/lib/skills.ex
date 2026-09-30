@@ -6,7 +6,10 @@ defmodule Bilimbi.People.Skills do
   Every operation takes a validated tenant scope and an explicit platform
   company ID whose workforce company must be current. Publishing and retiring
   a requirement profile take an Authz actor holding the publish capability for
-  that company. Callers never query the schemas directly.
+  that company. Assessments, reassessment requests, development actions and
+  reminders take a login actor, whose capabilities, reporting line and
+  independence from the employee decide what they may do. Callers never query
+  the schemas directly.
   """
   import Ecto.Query
 
@@ -16,8 +19,17 @@ defmodule Bilimbi.People.Skills do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
 
+  alias Bilimbi.Base.Queue
+
   alias Bilimbi.People.Skills.{
+    Actions,
+    Assessments,
     Category,
+    Policy,
+    Reassessments,
+    ReminderWorker,
+    Reminders,
+    Standing,
     Profile,
     ProfileItem,
     ProfileSelector,
@@ -769,6 +781,166 @@ defmodule Bilimbi.People.Skills do
       end
     end)
   end
+
+  ## Positions
+
+  @doc """
+  The position an employee substantively holds on a day, as the mounted
+  Organisation read exposes it, or `{:ok, nil}` when they hold none or no
+  Organisation is mounted.
+  """
+  def position_of(%Scope{} = scope, company_id, employee_id, %Date{} = as_of)
+      when is_integer(employee_id) do
+    target = Integer.to_string(employee_id)
+
+    Enum.reduce_while(1..@max_position_pages, {:ok, nil}, fn page, _acc ->
+      case Workforce.positions(scope, company_id, as_of,
+             page: page,
+             page_size: @position_page_size
+           ) do
+        {:ok, %ReadResult{} = read} ->
+          case ReadResult.require_current(read) do
+            {:ok, positions} ->
+              held =
+                Enum.find(positions, fn position ->
+                  Enum.any?(position.assignments || [], fn assignment ->
+                    assignment.kind == "substantive" and
+                      assignment.employee_reference.stable_id == target
+                  end)
+                end)
+
+              cond do
+                held -> {:halt, {:ok, String.to_integer(held.reference.stable_id)}}
+                length(positions) < @position_page_size -> {:halt, {:ok, nil}}
+                true -> {:cont, {:ok, nil}}
+              end
+
+            _ ->
+              {:halt, {:error, :unavailable}}
+          end
+
+        {:error, :unavailable} ->
+          {:halt, {:ok, nil}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  ## Company policy
+
+  @doc "The company's assessment, priority and reminder policy values."
+  defdelegate policy(scope, company_id), to: Policy, as: :get
+
+  @doc "Stores the given policy values, each a bounded integer; others keep their value."
+  defdelegate put_policy(scope, company_id, changes), to: Policy, as: :put
+
+  ## Assessments
+
+  @doc """
+  Submits an assessment of an employee's skill by a login actor in the
+  reporting line (or a company-wide holder). See `Bilimbi.People.Skills.Assessments`.
+  """
+  defdelegate submit_assessment(actor, company_id, attrs), to: Assessments, as: :submit
+
+  @doc "Verifies (`:verify`) or returns (`:return`, with a note) a pending assessment."
+  defdelegate review_assessment(actor, company_id, assessment_id, decision, note),
+    to: Assessments,
+    as: :review
+
+  @doc "Finalizes a verified assessment and refreshes the employee's current score."
+  defdelegate finalize_assessment(actor, company_id, assessment_id),
+    to: Assessments,
+    as: :finalize
+
+  defdelegate list_assessments(actor, company_id, filters \\ %{}), to: Assessments, as: :list
+  defdelegate assessable_employees(actor, company_id), to: Assessments, as: :assessable
+  defdelegate assessment_queue(actor, company_id), to: Assessments, as: :queue
+
+  defdelegate assessment_decisions(actor, company_id, assessment_id),
+    to: Assessments,
+    as: :decisions
+
+  @doc "Scores with a gap in the actor's reach, mandatory and highest priority first."
+  defdelegate gaps(actor, company_id), to: Standing
+
+  @doc "The signed-in employee's own scores, actions and reassessment requests."
+  defdelegate standing(actor, company_id), to: Standing, as: :own
+
+  @doc "Critical skills and their holders against the company's backup minimum."
+  defdelegate coverage(actor, company_id, as_of \\ Date.utc_today()), to: Standing
+
+  ## Reassessment requests
+
+  defdelegate request_reassessment(actor, company_id, employee_id, skill_id, reason),
+    to: Reassessments,
+    as: :request
+
+  defdelegate pending_reassessments(actor, company_id), to: Reassessments, as: :pending
+  defdelegate cancel_reassessment(actor, company_id, request_id), to: Reassessments, as: :cancel
+
+  defdelegate perform_reassessment(actor, company_id, request_id, attrs),
+    to: Reassessments,
+    as: :perform
+
+  ## Development actions
+
+  defdelegate list_action_types(scope, company_id), to: Actions, as: :list_types
+  defdelegate create_action_type(scope, company_id, attrs), to: Actions, as: :create_type
+
+  defdelegate set_action_type_active(scope, company_id, type_id, active),
+    to: Actions,
+    as: :set_type_active
+
+  defdelegate action_people(actor, company_id), to: Actions, as: :people
+  defdelegate propose_action(actor, company_id, attrs), to: Actions, as: :propose
+  defdelegate revise_action(actor, company_id, action_id, attrs), to: Actions, as: :revise
+  defdelegate approve_action(actor, company_id, action_id), to: Actions, as: :approve
+  defdelegate start_action(actor, company_id, action_id), to: Actions, as: :start
+  defdelegate hold_action(actor, company_id, action_id, reason), to: Actions, as: :hold
+
+  defdelegate complete_action(actor, company_id, action_id, evidence, reassessment_due_on),
+    to: Actions,
+    as: :complete
+
+  defdelegate cancel_action(actor, company_id, action_id, reason), to: Actions, as: :cancel
+
+  defdelegate link_action_reassessment(actor, company_id, action_id, assessment_id),
+    to: Actions,
+    as: :link_reassessment
+
+  defdelegate comment_action(actor, company_id, action_id, comment, evidence \\ nil),
+    to: Actions,
+    as: :comment
+
+  defdelegate list_actions(actor, company_id, group \\ :open), to: Actions, as: :list
+  defdelegate owned_actions(actor, company_id, group \\ :open), to: Actions, as: :owned
+  defdelegate action_events(actor, company_id, action_id), to: Actions, as: :events
+
+  ## Reminders
+
+  @doc "What is due and who would be told as of a day; writes nothing."
+  defdelegate due_reminders(actor, company_id, as_of \\ Date.utc_today()),
+    to: Reminders,
+    as: :due
+
+  @doc "Notifies each recipient of this period's due items once; replays send nothing twice."
+  defdelegate issue_reminders(actor, company_id, as_of \\ nil), to: Reminders, as: :issue
+
+  defdelegate retry_reminders(actor, company_id, as_of \\ nil), to: Reminders, as: :retry
+  defdelegate reminder_inbox(actor, company_id, limit \\ 50), to: Reminders, as: :inbox
+
+  @doc "Queues `issue_reminders/3` to run as the signed-in operator."
+  def enqueue_reminders(%Scope{} = scope, company_id)
+      when is_integer(company_id) and company_id > 0 do
+    case Queue.enqueue_for(scope, ReminderWorker, %{"company_id" => company_id}) do
+      {:ok, _job} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def enqueue_reminders(%Scope{}, _company_id), do: {:error, :invalid_reminders}
 
   ## Private
 
