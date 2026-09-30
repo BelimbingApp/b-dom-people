@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   setup do
     UserFixtures.create_user_tables!()
     Bilimbi.People.Payroll.TestFixtures.create_tables!()
+    Bilimbi.People.Attendance.TestFixtures.create_attendance_tables!()
     Bilimbi.People.Claims.TestFixtures.create_claim_tables!()
     Bilimbi.People.Leave.TestFixtures.create_leave_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})
@@ -179,8 +180,6 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   end
 
   test "attendance mappings are item-backed versions that runs freeze", %{scope: scope} do
-    Bilimbi.People.Attendance.TestFixtures.create_attendance_tables!()
-
     grant_capabilities!([
       "people.payroll.view",
       "people.payroll.manage",
@@ -189,15 +188,29 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
     %{item: item, period: period} = catalog(scope)
 
-    {:ok, _rule} =
-      Bilimbi.People.Attendance.create_allowance_rule(scope, 73, %{
-        code: "rule-a",
-        name: "Rule A",
-        unit: "hour",
-        value: "2",
-        currency: "AAA",
-        effective_from: ~D[2026-01-01]
-      })
+    rules =
+      for {code, currency, from} <- [
+            {"rule-a", "AAA", ~D[2026-01-01]},
+            {"rule-b", "BBB", ~D[2026-01-01]},
+            {"rule-c", "AAA", ~D[2026-01-01]},
+            {"rule-d", "AAA", ~D[2026-07-01]},
+            {"rule-e", "AAA", ~D[2026-01-01]}
+          ],
+          into: %{} do
+        {:ok, rule} =
+          Bilimbi.People.Attendance.create_allowance_rule(scope, 73, %{
+            code: code,
+            name: "Rule #{code}",
+            unit: "hour",
+            value: "2",
+            currency: currency,
+            effective_from: from
+          })
+
+        {code, rule}
+      end
+
+    {:ok, _} = Bilimbi.People.Attendance.retire_allowance_rule(scope, 73, rules["rule-c"].id)
 
     attrs = %{
       attendance_rule_code: "rule-a",
@@ -216,14 +229,19 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     for invalid <- [
           %{later | attendance_rule_code: "missing"},
           %{later | item_id: -1},
-          %{later | effective_to: nil}
+          %{later | effective_to: nil},
+          %{later | attendance_rule_code: "rule-b"},
+          %{later | attendance_rule_code: "rule-c"},
+          %{attrs | attendance_rule_code: "rule-d"}
         ] do
       assert {:error, :invalid_mapping} =
                Payroll.create_attendance_allowance_mapping(scope, 73, invalid)
     end
 
-    assert {:ok, %{sources: [%{code: "rule-a"}], items: [_], mappings: [%{id: id}]}} =
+    assert {:ok, %{sources: sources, items: [_], mappings: [%{id: id}]}} =
              Payroll.attendance_allowances(scope, 73, ~D[2026-01-15])
+
+    assert Enum.map(sources, & &1.code) == ["rule-a", "rule-b", "rule-e"]
 
     assert id == mapping.id
 
@@ -233,6 +251,13 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
              run.snapshot["attendance_mappings"]
 
     assert item_id == item.id
+
+    assert for(
+             %{"source_kind" => "attendance"} = unmapped <- run.snapshot["unmapped_sources"],
+             do: unmapped
+           ) == [
+             %{"source_kind" => "attendance", "source_key" => "rule-e", "name" => "Rule rule-e"}
+           ]
   end
 
   test "versions reject overlaps, foreign classification, invalid money and dates", %{

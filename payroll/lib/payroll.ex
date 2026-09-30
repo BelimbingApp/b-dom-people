@@ -164,9 +164,13 @@ defmodule Bilimbi.People.Payroll do
     create_version(scope, company_id, AttendanceAllowanceMapping, attrs, @attendance, fn
       mapping ->
         with {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
-             true <- Enum.any?(rules, &(&1.code == mapping.attendance_rule_code)),
              %Item{} = item <- fetch(Item, scope, company_id, mapping.item_id),
-             true <- covers?(item, mapping) do
+             true <- covers?(item, mapping),
+             versions =
+               rules
+               |> Enum.filter(&(&1.code == mapping.attendance_rule_code))
+               |> active_rules(mapping.effective_from, mapping.effective_to),
+             true <- versions != [] and Enum.all?(versions, &(&1.currency == item.currency)) do
           :ok
         else
           {:error, _} = error -> error
@@ -184,6 +188,7 @@ defmodule Bilimbi.People.Payroll do
         with %Period{} = period <- fetch(Period, scope, company_id, period_id),
              {:ok, sources} <- sources(scope, company_id),
              {:ok, requested} <- requested_sources(scope, company_id, period),
+             {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
              true <- is_binary(country) and String.trim(country) != "",
              true <- currency in Settings.get("people.payroll.currencies", setting_scope(company)),
              false <-
@@ -206,7 +211,22 @@ defmodule Bilimbi.People.Payroll do
             effective_rows(AttendanceAllowanceMapping, scope, company_id, period)
             |> Enum.filter(&(&1.item_id in item_ids))
 
-          mapped = MapSet.new(mappings, &{&1.source_kind, &1.source_key})
+          mapped =
+            MapSet.new(mappings, &{&1.source_kind, &1.source_key})
+            |> MapSet.union(
+              MapSet.new(attendance_mappings, &{"attendance", &1.attendance_rule_code})
+            )
+
+          sources =
+            Map.put(
+              sources,
+              "attendance",
+              active_rules(rules, period.starts_on, period.ends_on)
+              |> Enum.filter(&(&1.currency == currency))
+              |> Enum.sort_by(& &1.code)
+              |> Enum.uniq_by(& &1.code)
+              |> Enum.map(&%{key: &1.code, name: &1.name, active: true})
+            )
 
           snapshot = %{
             "period" => json(period),
@@ -242,6 +262,14 @@ defmodule Bilimbi.People.Payroll do
         end
       end)
     end
+  end
+
+  defp active_rules(rules, from_date, to_date) do
+    Enum.filter(rules, fn rule ->
+      rule.status == "active" and
+        (is_nil(to_date) or Date.compare(rule.effective_from, to_date) != :gt) and
+        (is_nil(rule.effective_until) or Date.compare(rule.effective_until, from_date) != :lt)
+    end)
   end
 
   defp requested_sources(scope, company_id, period) do

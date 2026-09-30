@@ -72,12 +72,15 @@ an active company. The route has no menu contribution while this area remains
 under acceptance.
 
 Attendance mappings follow the same append-only, effective-dated model as
-Leave/Claims mappings: the rule code must exist for the company, the pay item
-must cover the whole mapping period, and versions of one rule code for the same
-currency cannot overlap. They are keyed by rule code, so a new Attendance rule
+Leave/Claims mappings: an active version of the rule code must be effective
+within the mapping dates, every such version must use the pay item's currency,
+the pay item must cover the whole mapping period, and versions of one rule code
+for the same currency cannot overlap. They are keyed by rule code, so a new Attendance rule
 version keeps its mapping. PostgreSQL refuses updates and deletes, and a run
 freezes the effective attendance mappings for its currency under
-`attendance_mappings` in the snapshot.
+`attendance_mappings` in the snapshot. Active allowance rules in the run
+currency that are effective in the period but have no mapping are reported in
+`unmapped_sources` with source kind `attendance` and the rule code as key.
 
 ## Schema and validation
 
