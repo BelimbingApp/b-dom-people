@@ -431,10 +431,6 @@ defmodule Bilimbi.People.Attendance do
     to: Allowances,
     as: :end_date
 
-  @doc "Schema-free allowance catalog values for Payroll mapping and as-of reads."
-  def payroll_allowance_sources(scope, company_id, as_of \\ Date.utc_today()),
-    do: Allowances.sources(scope, company_id, as_of)
-
   defdelegate submit_adjustment(scope, company_id, actor, attrs), to: Adjustments
   defdelegate self_adjustments(scope, company_id, actor), to: Adjustments
   defdelegate cancel_adjustment(scope, company_id, actor, request_id), to: Adjustments

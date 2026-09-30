@@ -110,12 +110,10 @@ action. New versions preserve earlier values; an operator can retire a version
 without deleting its history. There are no seeded codes, units, rates, or
 currencies.
 
-`Attendance.payroll_allowance_sources/3` returns only active rules effective
-on the requested date as schema-free values (`id`, `code`, `name`, `unit`,
-`value`, `currency`, and effective dates). It validates the explicit company
-through Workforce before reading. Payroll maps rules by code through
-`list_allowance_rules/2`, which also returns future versions. The API exposes the allowance catalog; it does
-not calculate attendance quantities or payroll amounts.
+Payroll maps rules by code through `list_allowance_rules/2`, which validates
+the explicit company through Workforce before reading and returns every
+version. The catalog does not calculate attendance quantities or payroll
+amounts.
 
 The allowance rule editor is available by its scoped route and setup tab; the
 tab shows only to holders of `people.attendance.allowances.manage`. It does not

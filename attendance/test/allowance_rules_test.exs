@@ -46,7 +46,7 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
     %{scope: scope, other_scope: other_scope}
   end
 
-  test "catalog is company scoped and Payroll sources resolve the effective version", %{
+  test "catalog is company scoped and lists every version", %{
     scope: scope,
     other_scope: other
   } do
@@ -64,19 +64,13 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
                attrs("shift", ~D[2026-07-01], nil, "9.2500")
              )
 
-    assert {:ok, []} = Attendance.payroll_allowance_sources(scope, 74, ~D[2026-08-01])
+    assert {:ok, []} = Attendance.list_allowance_rules(scope, 74)
     assert {:error, :not_found} = Attendance.list_allowance_rules(other, 73)
 
-    assert {:ok, [%{id: id, code: "shift", value: value, currency: "USD"}]} =
-             Attendance.payroll_allowance_sources(scope, 73, ~D[2026-03-01])
+    assert {:ok, [%{id: second_id, value: value}, %{id: first_id}]} =
+             Attendance.list_allowance_rules(scope, 73)
 
-    assert id == first.id
-    assert Decimal.equal?(value, Decimal.new("5.5"))
-
-    assert {:ok, [%{id: id, value: value, effective_from: ~D[2026-07-01]}]} =
-             Attendance.payroll_allowance_sources(scope, 73, ~D[2026-08-01])
-
-    assert id == second.id
+    assert {first_id, second_id} == {first.id, second.id}
     assert Decimal.equal?(value, Decimal.new("9.25"))
   end
 
@@ -93,8 +87,8 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
 
     assert id == open.id
 
-    assert {:ok, [%{id: id}]} = Attendance.payroll_allowance_sources(scope, 73, ~D[2026-04-01])
-    assert id == later.id
+    assert {:ok, %{effective_from: ~D[2026-04-01], effective_until: nil}} =
+             Attendance.get_allowance_rule(scope, 73, later.id)
 
     assert [%{"rule_id" => rule_id, "effective_until" => "2026-03-31"}] =
              Repo.all(

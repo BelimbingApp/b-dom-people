@@ -110,26 +110,6 @@ defmodule Bilimbi.People.Attendance.Allowances do
 
   def get(%Scope{}, _, _), do: {:error, :invalid_rule}
 
-  @doc "Returns active rules effective on `as_of` as stable Payroll source values."
-  def sources(%Scope{} = scope, company_id, %Date{} = as_of) do
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
-      rows =
-        Repo.all(
-          from(r in Tenancy.scope_query(AllowanceRule, scope),
-            where:
-              r.company_id == ^company_id and r.status == "active" and
-                r.effective_from <= ^as_of and
-                (is_nil(r.effective_until) or r.effective_until >= ^as_of),
-            order_by: [asc: r.code]
-          )
-        )
-
-      {:ok, Enum.map(rows, &source/1)}
-    end
-  end
-
-  def sources(%Scope{}, _, _), do: {:error, :invalid_date}
-
   defp close_open_version(scope, company_id, changeset) do
     code = Ecto.Changeset.get_field(changeset, :code)
     from_date = Ecto.Changeset.get_field(changeset, :effective_from)
