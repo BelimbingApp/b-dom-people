@@ -312,7 +312,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
               <:col :let={{_id, row}} label="State">{row.status}</:col>
               <:col :let={{_id, row}} label="Outcome">{row.outcome}</:col>
               <:action :let={{_id, row}}><button phx-click="select" phx-value-id={row.id}>Read</button></:action>
-              <:empty><.empty_state id="performance-empty" title="No reviews authored" reason="Record evidence and communicated targets before drafting a review." /></:empty>
+              <:empty :if={@total == 0}><.empty_state id="performance-empty" title="No reviews authored" reason="Record evidence and communicated targets before drafting a review." /></:empty>
             </.table>
             <.pagination id="performance-pagination" page={%{page: @page, page_size: @page_size, total_entries: @total, total_pages: ceil(@total / @page_size)}} filters_form={@filter_form} filters_event="filter" page_event="paginate" page_sizes={[10,25,50,100]} />
             <.card :if={@selected} id="performance-detail" inner_class="p-5 sm:p-6">
@@ -332,7 +332,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
               <:col :let={row} label="Employee">{employee_name(@choices, row.employee_id)}</:col>
               <:col :let={row} label="Rationale">{row.rationale}</:col>
               <:action :let={row}><button phx-click="request_release" phx-value-id={row.id}>Release</button></:action>
-              <:empty><.empty_state title="No drafts awaiting release" /></:empty>
+              <:empty :if={@planning.drafts == []}><.empty_state title="No drafts awaiting release" /></:empty>
             </.table>
             <.record_editor :if={@can_review?} id="review-form" title="Draft a review or correction" event="create_review" form={@record_form}
               planning={@planning} choices={@choices} fields={~w(employee_id description_id period_start period_end cutoff_at outcome rationale observation_ids target_ids supersedes_id change_reason)} />
@@ -347,7 +347,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
               <:col :let={row} label="Effective">{row.effective_from} – {row.effective_to || "Open"}</:col>
               <:col :let={row} label="State">{row.status}</:col>
               <:action :let={row}><button :if={@can_description? && row.status == "draft"} phx-click="request_publish_description" phx-value-id={row.id}>Publish</button></:action>
-              <:empty><.empty_state title="No position descriptions" reason="Create a description linked to a position and published competency profile." /></:empty>
+              <:empty :if={@planning.descriptions == []}><.empty_state title="No position descriptions" reason="Create a description linked to a position and published competency profile." /></:empty>
             </.table>
             <.record_editor :if={@can_description?} id="description-form" title="New position description version" event="create_description" form={@record_form}
               planning={@planning} choices={@choices} fields={~w(code version position_id position_version effective_from effective_to purpose responsibilities duties authority qualifications profile_id)} />
@@ -358,7 +358,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
             <.table id="performance-definitions" rows={@planning.definitions} row_id={&"definition-#{&1.id}"}>
               <:col :let={row} label="Code">{row.code}</:col><:col :let={row} label="Version">{row.version}</:col>
               <:col :let={row} label="Name">{row.name}</:col><:col :let={row} label="Measure">{row.measure} ({row.unit})</:col>
-              <:empty><.empty_state title="No KPI definitions" /></:empty>
+              <:empty :if={@planning.definitions == []}><.empty_state title="No KPI definitions" /></:empty>
             </.table>
             <.record_editor :if={@can_target?} id="definition-form" title="New measurement version" event="create_definition" form={@record_form}
               planning={@planning} choices={@choices} fields={~w(code version name purpose unit measure source_reference calculation_version direction rubric precision interpretation)} />
@@ -372,7 +372,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
                 </.form>
                 <button :if={@can_publish_target? && row.status == "reviewed" && !row.confidential} phx-click="request_publish_target" phx-value-id={row.id}>Communicate</button>
               </:action>
-              <:empty><.empty_state title="No targets available" /></:empty>
+              <:empty :if={@planning.targets == []}><.empty_state title="No targets available" /></:empty>
             </.table>
             <.record_editor :if={@can_target?} id="target-form" title="Propose a target or amendment" event="create_target" form={@record_form}
               planning={@planning} choices={@choices} fields={~w(definition_id employee_id target period_start period_end effective_from confidential supersedes_id change_reason)} />
@@ -383,7 +383,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
             <.table id="performance-observations" rows={@planning.observations} row_id={&"observation-#{&1.id}"}>
               <:col :let={row} label="Source">{row.source_reference}</:col><:col :let={row} label="Employee">{employee_name(@choices, row.employee_id)}</:col>
               <:col :let={row} label="Evidence">{row.evidence}</:col><:col :let={row} label="Source version">{row.source_version}</:col>
-              <:empty><.empty_state title="No observations recorded" /></:empty>
+              <:empty :if={@planning.observations == []}><.empty_state title="No observations recorded" /></:empty>
             </.table>
             <.record_editor :if={@can_review?} id="observation-form" title="Record evidence or a correction" event="create_observation" form={@record_form}
               planning={@planning} choices={@choices} fields={~w(employee_id window_start window_end evidence source_reference source_version supersedes_id change_reason)} />

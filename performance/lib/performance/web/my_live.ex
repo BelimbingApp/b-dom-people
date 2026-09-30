@@ -107,7 +107,7 @@ defmodule Bilimbi.People.Performance.Web.MyLive do
               <:col :let={row} label="Period">{row.period_start} – {row.period_end}</:col>
               <:col :let={row} label="Effective from">{row.effective_from}</:col>
               <:col :let={row} label="Version">{row.version}</:col>
-              <:empty><.empty_state id="my-targets-empty" title="No targets communicated" reason="Your reviewer must approve and communicate targets before they appear here." /></:empty>
+              <:empty :if={@targets == []}><.empty_state id="my-targets-empty" title="No targets communicated" reason="Your reviewer must approve and communicate targets before they appear here." /></:empty>
             </.table>
           </.card>
           <.empty_state :if={@records == []} id="my-performance-empty" title="No reviews released" reason="Your review appears after independent release." />
