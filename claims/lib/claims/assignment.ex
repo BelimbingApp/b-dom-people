@@ -24,7 +24,9 @@ defmodule Bilimbi.People.Claims.Assignment do
     |> validate_length(:code, max: 60)
     |> validate_length(:name, max: 120)
     |> validate_period()
-    |> unique_constraint([:company_id, :code], name: :people_claim_assignments_company_code_unique)
+    |> unique_constraint([:company_id, :code],
+      name: :people_claim_assignments_company_code_unique
+    )
   end
 
   def end_changeset(assignment, effective_to) do

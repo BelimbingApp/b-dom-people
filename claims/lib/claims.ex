@@ -25,6 +25,7 @@ defmodule Bilimbi.People.Claims do
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.Employee
   alias Bilimbi.Core.User
+
   alias Bilimbi.People.Claims.{
     Assignment,
     AssignmentEmployee,

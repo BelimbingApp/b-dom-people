@@ -118,7 +118,9 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
     company_id = socket.assigns.company_id
 
     with {:ok, open_types} <-
-           Claims.open_claim_types(scope, company_id, nil, employee_id: socket.assigns.employee.id),
+           Claims.open_claim_types(scope, company_id, nil,
+             employee_id: socket.assigns.employee.id
+           ),
          {:ok, all_types} <- Claims.claim_types(scope, company_id),
          {:ok, requests} <-
            Claims.employee_requests(scope, company_id, socket.assigns.employee.id) do
@@ -147,7 +149,8 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
   defp decision(%{status: "approved"} = request), do: approved_text(request)
 
   defp decision(%{status: "reimbursed"} = request),
-    do: "#{approved_text(request)}, paid #{Date.to_iso8601(NaiveDateTime.to_date(request.reimbursed_at))}"
+    do:
+      "#{approved_text(request)}, paid #{Date.to_iso8601(NaiveDateTime.to_date(request.reimbursed_at))}"
 
   defp decision(%{status: "rejected", decision_reason: reason}), do: reason
   defp decision(_request), do: "—"

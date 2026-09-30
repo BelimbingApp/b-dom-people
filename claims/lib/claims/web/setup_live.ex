@@ -140,7 +140,8 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
        |> clear_flash(:error)
        |> put_flash(:info, "Assignment members saved.")}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Choose claim types and employees of this company.")}
+      _ ->
+        {:noreply, put_flash(socket, :error, "Choose claim types and employees of this company.")}
     end
   end
 

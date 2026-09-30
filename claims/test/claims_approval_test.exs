@@ -129,7 +129,10 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
 
   defp submit!(scope, employee, claim_type, attrs \\ %{}) do
     actor = if employee.employee_number == "E-1", do: 91, else: 93
-    {:ok, request} = Claims.submit_request(scope, 73, employee.id, actor, claim(claim_type, attrs))
+
+    {:ok, request} =
+      Claims.submit_request(scope, 73, employee.id, actor, claim(claim_type, attrs))
+
     request
   end
 
@@ -190,7 +193,9 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
 
       assert {:ok, ended} = Claims.end_assignment(scope, 73, assignment.id, ~D[2026-03-31])
       assert ended.effective_to == ~D[2026-03-31]
-      assert {:error, :already_ended} = Claims.end_assignment(scope, 73, assignment.id, ~D[2026-04-30])
+
+      assert {:error, :already_ended} =
+               Claims.end_assignment(scope, 73, assignment.id, ~D[2026-04-30])
 
       assert {:error, :claim_type_not_assigned} =
                Claims.submit_request(
@@ -327,7 +332,13 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
 
       # Only 50 of the month's 100 is still open: the approval released 30.
       assert {:error, :monthly_limit_exceeded} =
-               Claims.submit_request(scope, 73, employee.id, 91, claim(claim_type, %{"amount" => "80"}))
+               Claims.submit_request(
+                 scope,
+                 73,
+                 employee.id,
+                 91,
+                 claim(claim_type, %{"amount" => "80"})
+               )
 
       assert {:ok, _} =
                Claims.submit_request(
@@ -353,7 +364,9 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
       employee: employee
     } do
       claim_type = open!(scope, policy: %{"monthly_limit" => "100"})
-      request = submit!(scope, employee, claim_type, %{"amount" => "90", "receipt_number" => "R-1"})
+
+      request =
+        submit!(scope, employee, claim_type, %{"amount" => "90", "receipt_number" => "R-1"})
 
       assert {:error, %Ecto.Changeset{}} = Claims.reject_request(scope, 73, request.id, 92, %{})
 
@@ -370,7 +383,9 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
                )
 
       assert {:ok, rejected} =
-               Claims.reject_request(scope, 73, request.id, 92, %{"decision_reason" => "Not covered"})
+               Claims.reject_request(scope, 73, request.id, 92, %{
+                 "decision_reason" => "Not covered"
+               })
 
       assert rejected.status == "rejected"
       assert is_nil(rejected.approved_amount)
@@ -495,7 +510,10 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
       assert filename == "claim-handoff-#{batch.id}.csv"
       assert [header, row_one, row_three, ""] = String.split(csv, "\r\n")
       assert header =~ "claim_id,employee_number,employee_name"
-      assert row_one =~ "#{batch.id},#{one.id},E-1,Employee One,Travel,fuel,Fuel,2026-03-10,AAA,40.00,40.00"
+
+      assert row_one =~
+               "#{batch.id},#{one.id},E-1,Employee One,Travel,fuel,Fuel,2026-03-10,AAA,40.00,40.00"
+
       assert row_three =~ ",#{three.id},E-2,Employee Two,"
       refute csv =~ "Meals"
 
@@ -547,10 +565,15 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
       assert {:ok, _} = Claims.reimburse_request(scope, 73, one.id, 92, %{})
 
       assert {:error, :own_claim} = Claims.reimburse_batch(scope, 73, batch.id, 93, %{})
-      assert {:ok, [%{id: id, status: "reimbursed"}]} = Claims.reimburse_batch(scope, 73, batch.id, 92, %{"payment_reference" => "RUN-1"})
+
+      assert {:ok, [%{id: id, status: "reimbursed"}]} =
+               Claims.reimburse_batch(scope, 73, batch.id, 92, %{"payment_reference" => "RUN-1"})
+
       assert id == three.id
 
-      assert {:error, :nothing_to_reimburse} = Claims.reimburse_batch(scope, 73, batch.id, 92, %{})
+      assert {:error, :nothing_to_reimburse} =
+               Claims.reimburse_batch(scope, 73, batch.id, 92, %{})
+
       assert {:error, :not_found} = Claims.reimburse_batch(scope, 73, batch.id + 99, 92, %{})
       assert {:error, :not_found} = Claims.reimburse_batch(scope, 74, batch.id, 92, %{})
 
