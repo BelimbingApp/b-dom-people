@@ -240,7 +240,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         checks: %{
           "people_leave_carry_forward_skips_reason" =>
             check(
-              "(reason)::text = ANY ((ARRAY['pending'::character varying, 'previous_year_open'::character varying, 'next_year_closed'::character varying])::text[])"
+              "(reason)::text = ANY ((ARRAY['pending'::character varying, 'previous_year_open'::character varying])::text[])"
             )
         }
       }

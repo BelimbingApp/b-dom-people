@@ -531,7 +531,36 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
-    test "closing a year also closes an untouched previous year", ctx do
+    test "an older open year holds back a later year across an empty one", ctx do
+      %{scope: scope, employee: employee, type: type, year: year} = ctx
+
+      {:ok, _} =
+        Leave.add_policy(scope, 73, type.id, %{
+          effective_from: Date.new!(1990, 1, 1),
+          entitlement: 10,
+          carry_forward_cap: "4"
+        })
+
+      {:ok, rules} = Leave.rules(scope, 73)
+      {first_day, _} = Leave.year_range(rules, year - 1)
+      fund(scope, employee, type, Date.add(first_day, -1), 6)
+
+      assert {:ok, %{carried: 1, previous_year_open: 1}} =
+               Leave.carry_forward(scope, 73, year, 92)
+
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 2, 92)
+      assert Decimal.equal?(balance(scope, employee, year - 1).carried_forward, 4)
+
+      assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
+               Leave.carry_forward(scope, 73, year, 92)
+
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
+    end
+
+    test "closing a year closes every earlier year", ctx do
       %{scope: scope, employee: employee, type: type, year: year} = ctx
 
       {:ok, _} =
@@ -542,7 +571,6 @@ defmodule Bilimbi.People.LeaveRequestsTest do
         })
 
       assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
-      assert {:ok, 2} = Leave.carried_forward_count(scope, 73, year - 1)
 
       {:ok, rules} = Leave.rules(scope, 73)
       {first_day, _} = Leave.year_range(rules, year)

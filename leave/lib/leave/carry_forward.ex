@@ -8,13 +8,12 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # closed year. A negative balance carries nothing and its deficit stays.
   #
   # Every processed employee and type gets one `carried_forward` entry, even
-  # of zero, keyed by type, employee and year. That entry closes the year for
-  # them: a replay skips it, and requests, approvals, cancellations and
-  # entries into that year are refused, so no quantity is spent twice.
-  # Years close in order per employee and type: an employee whose previous
-  # year is still open, or whose next year is already closed over a balance,
-  # is skipped instead of closed. Each run replaces its year's stored skip
-  # report, which `skipped/3` reads.
+  # of zero, keyed by type, employee and year. That entry closes the year and
+  # every earlier year for them: a replay skips it, and requests, approvals,
+  # cancellations and entries into those years are refused, so no quantity is
+  # spent twice. Years close in order per employee and type: an employee with
+  # an earlier year still open is skipped instead of closed. Each run replaces
+  # its year's stored skip report, which `skipped/3` reads.
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
@@ -22,7 +21,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Employee
   alias Bilimbi.People.Leave
-  alias Bilimbi.People.Leave.{CarryForwardSkip, LedgerEntry, LeaveType, Policy, Requests}
+  alias Bilimbi.People.Leave.{CarryForwardSkip, LedgerEntry, LeaveType, Policy, Request, Requests}
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
@@ -30,19 +29,23 @@ defmodule Bilimbi.People.Leave.CarryForward do
 
   @doc """
   Whether `year` is closed to new requests and entries for the employee and
-  type: it has been carried forward, or the following year has.
+  type: it or any later year has been carried forward.
   """
   def closed?(scope, company_id, employee_id, type_id, year) do
-    carried?(scope, company_id, employee_id, type_id, [year, year + 1])
+    Repo.exists?(
+      from(e in carried_entries(scope, company_id, employee_id, type_id),
+        where: e.leave_year > ^year
+      )
+    )
   end
 
-  defp carried?(scope, company_id, employee_id, type_id, years) do
-    keys = Enum.map(List.wrap(years), &key("carry", type_id, employee_id, &1))
-
-    Repo.exists?(
-      from(e in Tenancy.scope_query(LedgerEntry, scope),
-        where: e.company_id == ^company_id and e.source == @source and e.entry_key in ^keys
-      )
+  # A year's closing entry lives in the following year.
+  defp carried_entries(scope, company_id, employee_id, type_id) do
+    from(e in Tenancy.scope_query(LedgerEntry, scope),
+      where:
+        e.company_id == ^company_id and e.employee_id == ^employee_id and
+          e.leave_type_id == ^type_id and e.source == @source and
+          e.entry_type == "carried_forward"
     )
   end
 
@@ -69,7 +72,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
          {:ok, read} <- Workforce.employees(scope, company_id),
          {:ok, employees} <- ReadResult.require_current(read) do
       Repo.transaction(fn ->
-        {types, previous} = carrying(scope, company_id, year)
+        types = carrying_types(scope, company_id, year.last_day)
 
         {counts, skips} =
           for {type, policy} <- types,
@@ -79,8 +82,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
                    carried: 0,
                    existing: 0,
                    pending: 0,
-                   previous_year_open: 0,
-                   next_year_closed: 0
+                   previous_year_open: 0
                  }, []} do
             {counts, skips} ->
               employee_id = String.to_integer(employee.reference.stable_id)
@@ -90,7 +92,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
                 {:error, reason} -> Repo.rollback(reason)
               end
 
-              case status(scope, company_id, employee_id, type.id, from_year, previous) do
+              case status(scope, company_id, employee_id, type.id, from_year, year.rules) do
                 :closed ->
                   {Map.update!(counts, :existing, &(&1 + 1)), skips}
 
@@ -102,16 +104,6 @@ defmodule Bilimbi.People.Leave.CarryForward do
                     type,
                     policy,
                     from_year,
-                    actor_user_id,
-                    year
-                  )
-
-                  close_inactive_previous(
-                    scope,
-                    company_id,
-                    employee_id,
-                    type,
-                    from_year - 1,
                     actor_user_id,
                     year
                   )
@@ -140,8 +132,8 @@ defmodule Bilimbi.People.Leave.CarryForward do
 
   @doc """
   The employees and types the latest carry-forward run of `from_year` left
-  open, with the reason: `:pending` requests in that year, the
-  `:previous_year_open`, or the `:next_year_closed` over a balance.
+  open, with the reason: `:pending` requests in that year, or an earlier
+  year still open (`:previous_year_open`).
   """
   def skipped(%Scope{} = scope, company_id, from_year) when is_integer(from_year) do
     with {:ok, _rules} <- Leave.rules(scope, company_id) do
@@ -193,61 +185,77 @@ defmodule Bilimbi.People.Leave.CarryForward do
   defp ended_year(scope, company_id, from_year) do
     with {:ok, rules} <- Leave.rules(scope, company_id),
          {:ok, today} <- Leave.today(scope, company_id) do
-      {first, _} = Leave.year_range(rules, from_year)
       {first_next, _} = Leave.year_range(rules, from_year + 1)
       last_day = Date.add(first_next, -1)
 
       if Date.compare(last_day, today) == :lt,
-        do:
-          {:ok,
-           %{previous_last_day: Date.add(first, -1), last_day: last_day, first_next: first_next}},
+        do: {:ok, %{rules: rules, last_day: last_day, first_next: first_next}},
         else: {:error, :year_not_ended}
     end
   end
 
-  defp carrying(scope, company_id, year) do
-    previous =
-      scope
-      |> carrying_types(company_id, year.previous_last_day)
-      |> MapSet.new(fn {type, _policy} -> type.id end)
-
-    {carrying_types(scope, company_id, year.last_day), previous}
-  end
-
-  # Years close in order, per employee and type: a year is carried only once
-  # the previous one is no longer open and while the next one is still open.
-  defp status(scope, company_id, employee_id, type_id, year, previous) do
+  defp status(scope, company_id, employee_id, type_id, year, rules) do
     cond do
-      carried?(scope, company_id, employee_id, type_id, year) ->
+      closed?(scope, company_id, employee_id, type_id, year) ->
         :closed
 
       Requests.pending_exists?(scope, company_id, type_id, employee_id, year) ->
         :pending
 
-      type_id in previous and open?(scope, company_id, employee_id, type_id, year - 1) ->
+      earlier_open?(scope, company_id, employee_id, type_id, year, rules) ->
         :previous_year_open
-
-      carried?(scope, company_id, employee_id, type_id, year + 1) and
-          active?(scope, company_id, employee_id, type_id, year) ->
-        :next_year_closed
 
       true ->
         :open
     end
   end
 
-  defp open?(scope, company_id, employee_id, type_id, year) do
-    not carried?(scope, company_id, employee_id, type_id, year) and
-      (active?(scope, company_id, employee_id, type_id, year) or
-         Requests.pending_exists?(scope, company_id, type_id, employee_id, year))
+  # An earlier year after the last carried one is open while it has pending
+  # requests, or ledger entries under a capped policy. Uncapped years never
+  # carry; closing a later year closes them.
+  defp earlier_open?(scope, company_id, employee_id, type_id, year, rules) do
+    after_year =
+      Repo.one(
+        from(e in carried_entries(scope, company_id, employee_id, type_id),
+          select: max(e.leave_year) - 1
+        )
+      ) || 0
+
+    pending? =
+      Repo.exists?(
+        from(r in Tenancy.scope_query(Request, scope),
+          where:
+            r.company_id == ^company_id and r.employee_id == ^employee_id and
+              r.leave_type_id == ^type_id and r.status == "pending" and
+              r.leave_year > ^after_year and r.leave_year < ^year
+        )
+      )
+
+    pending? or
+      Repo.all(
+        from(e in Tenancy.scope_query(LedgerEntry, scope),
+          where:
+            e.company_id == ^company_id and e.employee_id == ^employee_id and
+              e.leave_type_id == ^type_id and e.leave_year > ^after_year and
+              e.leave_year < ^year,
+          distinct: true,
+          select: e.leave_year
+        )
+      )
+      |> Enum.any?(&capped?(scope, company_id, type_id, rules, &1))
   end
 
-  defp active?(scope, company_id, employee_id, type_id, year) do
+  defp capped?(scope, company_id, type_id, rules, year) do
+    {first_next, _} = Leave.year_range(rules, year + 1)
+    last_day = Date.add(first_next, -1)
+
     Repo.exists?(
-      from(e in Tenancy.scope_query(LedgerEntry, scope),
+      from(p in Tenancy.scope_query(Policy, scope),
         where:
-          e.company_id == ^company_id and e.employee_id == ^employee_id and
-            e.leave_type_id == ^type_id and e.leave_year == ^year
+          p.company_id == ^company_id and p.leave_type_id == ^type_id and
+            p.effective_from <= ^last_day and
+            (is_nil(p.effective_to) or p.effective_to >= ^last_day) and
+            not is_nil(p.carry_forward_cap)
       )
     )
   end
@@ -322,32 +330,6 @@ defmodule Bilimbi.People.Leave.CarryForward do
           entry_key: key("expire", type.id, employee_id, year)
         })
       )
-    end
-  end
-
-  # Closing a year also closes an untouched previous year with a zero carry,
-  # so nothing can later be written into it behind the closed year.
-  defp close_inactive_previous(
-         scope,
-         company_id,
-         employee_id,
-         type,
-         previous,
-         actor_user_id,
-         year
-       ) do
-    unless open?(scope, company_id, employee_id, type.id, previous) or
-             carried?(scope, company_id, employee_id, type.id, previous) do
-      insert!(scope, company_id, employee_id, type, %{
-        unit: type.unit,
-        source: @source,
-        actor_user_id: actor_user_id,
-        leave_year: previous + 1,
-        entry_type: "carried_forward",
-        quantity: Decimal.new("0.00"),
-        occurred_on: Date.add(year.previous_last_day, 1),
-        entry_key: key("carry", type.id, employee_id, previous)
-      })
     end
   end
 

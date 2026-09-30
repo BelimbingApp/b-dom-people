@@ -131,7 +131,7 @@ defmodule Bilimbi.People.Leave.TestFixtures do
             CONSTRAINT people_leave_carry_forward_skips_unique
               UNIQUE (company_id, from_year, employee_id, leave_type_id),
             CONSTRAINT people_leave_carry_forward_skips_reason
-              CHECK (reason IN ('pending', 'previous_year_open', 'next_year_closed'))
+              CHECK (reason IN ('pending', 'previous_year_open'))
           ) ON COMMIT PRESERVE ROWS
           """
         ] do

@@ -30,7 +30,7 @@ defmodule Bilimbi.People.Leave.Migrations.AddCarryForwardSkips do
 
     create(
       constraint(:people_leave_carry_forward_skips, :people_leave_carry_forward_skips_reason,
-        check: "reason IN ('pending', 'previous_year_open', 'next_year_closed')"
+        check: "reason IN ('pending', 'previous_year_open')"
       )
     )
   end

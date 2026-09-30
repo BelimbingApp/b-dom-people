@@ -88,22 +88,18 @@ the first day of the next year, and any excess becomes an `expired` entry on
 the last day. A negative balance carries nothing.
 
 Each processed employee and type gets one `carried_forward` entry, even of
-zero, keyed by type, employee and year. That entry closes the year for them:
-a repeated run changes nothing, and new requests, approvals, cancellations and
-`record_entry/4` entries in that year are refused with `:year_closed`, so no
-quantity is spent twice. Carried balances do not expire later in this slice.
+zero, keyed by type, employee and year. That entry closes the year and every
+earlier year for them: a repeated run changes nothing, and grants, new
+requests, approvals, cancellations and `record_entry/4` entries in those years
+are refused with `:year_closed`, so no quantity is spent twice. Carried balances do not expire later in this slice.
 
 Years close in order per employee and type, so no year is stranded. A run
-skips an employee and type with pending requests in the year (`pending`), with
-a previous year still open (`previous_year_open`: a capped type with ledger
-entries or pending requests in that year and no carry-forward), or whose next
-year is already closed while this year has ledger entries
-(`next_year_closed`). An employee without entries in the year, such as one
-hired later, is not held back: the run closes their year with a zero entry,
-and closing a year also closes an untouched previous year with a zero entry.
-A year counts as closed once it or the following year is carried forward, so
-grants, entries, requests, approvals and cancellations into it are refused.
-The run returns a count per reason and replaces its year's rows in
+skips an employee and type with pending requests in the year (`pending`), or
+with an earlier year still open (`previous_year_open`): a year after their
+last carried one with pending requests, or with ledger entries under a capped
+policy. Earlier years without entries, such as before a later hire, do not
+hold the run back, and uncapped years never carry; closing the year closes
+them. The run returns a count per reason and replaces its year's rows in
 `people_leave_carry_forward_skips`; `carry_forward_skipped/3` reads that
 report, so the Policies page shows the latest run's skipped employees, types
 and reasons after the queued job. Running the year again once the cause is

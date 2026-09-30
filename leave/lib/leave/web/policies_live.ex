@@ -245,8 +245,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
 
   defp type_name(types, id), do: Enum.find_value(types, "Leave", &(&1.id == id && &1.name))
   defp skip_reason(:pending), do: "has a pending request in that year"
-  defp skip_reason(:previous_year_open), do: "the previous leave year is not carried forward yet"
-  defp skip_reason(:next_year_closed), do: "the next leave year is already carried forward"
+  defp skip_reason(:previous_year_open), do: "an earlier leave year is not carried forward yet"
 
   defp unit_label("hour"), do: "hours"
   defp unit_label(_), do: "days"
@@ -348,9 +347,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
               For each type whose policy on the year's last day sets a cap, each current employee's
               closing balance up to the cap moves into the next year and the rest expires. The year
               must have ended, and years are carried in order. The latest run lists the employees it
-              skipped: those with a pending request in the year, whose previous year is not carried
-              forward yet, or whose next year is already carried forward. Run the year again once
-              that is resolved. A carried year is closed to new requests and entries.
+              skipped: those with a pending request in the year, or with an earlier year not carried
+              forward yet. Run the year again once that is resolved. A carried year, and every year
+              before it, is closed to new requests and entries.
             </p>
           </section>
 

@@ -414,11 +414,10 @@ defmodule Bilimbi.People.Leave do
   Carries each current employee's closing balance of `from_year`, up to the
   cap of the policy in force on its last day, into the next leave year and
   expires the excess. Refused until that year has ended. Years close in order
-  per employee and type, so an employee with pending requests in that year,
-  whose previous year is still open, or whose next year is already closed over
-  a balance is skipped; a repeated run changes nothing. Returns counts of
-  `carried` and `existing` balances and of each skip reason: `pending`,
-  `previous_year_open` and `next_year_closed`.
+  per employee and type, so an employee with pending requests in that year or
+  with an earlier year still open is skipped; a repeated run changes nothing.
+  Returns counts of `carried` and `existing` balances and of each skip reason:
+  `pending` and `previous_year_open`.
   """
   defdelegate carry_forward(scope, company_id, from_year, actor_user_id \\ nil),
     to: CarryForward,
