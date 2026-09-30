@@ -24,7 +24,10 @@ mappings and immutable frozen setup runs. Its menu remains hidden pending the
 whole payroll area; attendance mappings are not available yet.
 Performance owns position-description versions, KPI definitions and governed
 individual targets, attributable observations, independently released reviews
-and employee responses. Other modules remain empty;
+and employee responses.
+Training owns a company-scoped course catalog, delivery events and a session
+calendar with explicit capacity and IANA time zones.
+Other modules remain empty;
 no sample rows are installed.
 
 | Module ID | Ownership |
@@ -66,7 +69,7 @@ and absent compositions.
 This is fresh Bilimbi schema work. Future module migrations must have globally
 unique versions and declare `:bilimbi_only`; no source People tables or data are
 adopted. Add a visible menu leaf only with an implemented route, capability,
-scoped behavior, and meaningful empty state. Training remains work in progress.
+scoped behavior, and meaningful empty state. The later Training slices remain work in progress.
 
 After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
 operator can open `/people/companies/:company_id/references` for an accessible
@@ -121,6 +124,13 @@ actor's own linked employee. Published content and evidence remain immutable;
 corrections append versions with reasons. Performance menu leaves remain hidden
 until the entire area's rollout acceptance is complete. See
 `performance/docs/README.md` for capabilities, release guards and verification.
+
+People > Development > Courses opens `/people/training/courses` for authorized
+catalog viewers. Sessions & calendar opens `/people/training/sessions`, with
+company/month filters and list/calendar views. Operators supply courses,
+events, capacities and delivery time zones; empty companies have no sample
+training data. Later Training workflows remain hidden. See
+`training/docs/README.md`.
 
 ## License
 
