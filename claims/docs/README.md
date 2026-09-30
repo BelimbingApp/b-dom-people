@@ -1,13 +1,13 @@
 # Claims
 
-Module ID: `people/claims`. Claim catalog, effective-dated claim policies, and
-employee claim requests.
+Module ID: `people/claims`. Claim catalog, effective-dated claim policies,
+assignments, employee claim requests, decisions, reimbursement, and hand-off.
 
 ## Ownership
 
-This module owns five fresh Bilimbi-only tables: claim categories, claim
-types, claim policies, claim requests, and the append-only request status
-history. Call `Bilimbi.People.Claims` with a validated
+This module owns nine fresh Bilimbi-only tables: claim categories, claim
+types, claim policies, claim requests, the append-only request status history,
+assignments with their claim types and employees, and hand-off batches. Call `Bilimbi.People.Claims` with a validated
 `Bilimbi.Base.Tenancy.Scope` and an explicit platform company ID; callers do
 not query its schemas. Core Company validates the company, Core User links a
 login actor to an employee, the People workforce seam decides who is a working
@@ -22,7 +22,8 @@ claim until an operator chooses its currencies. Codes are three uppercase
 letters (ISO 4217 shape); the module ships no currency list or default.
 
 A claim type belongs to one category and declares a receipt rule: `always`,
-`never`, or `above_threshold`. A policy gives one claim type an effective
+`never`, or `above_threshold`, and who may claim it: `all_employees` (every
+working employee) or `assigned_only`. A policy gives one claim type an effective
 period, a currency from the company's list, and optional per-claim, calendar
 month, and calendar year limits. A threshold receipt rule needs the policy's
 receipt threshold. Periods of one claim type never overlap; an open-ended
@@ -48,9 +49,45 @@ Duplicates:
   possible duplicate unless the submitter confirms it, which is recorded.
 
 `withdraw_request/5` withdraws the employee's own submitted claim. Withdrawn
-claims keep their history, stop counting toward limits, and release their
-receipt reference. Approval, reimbursement, assignment, and exports belong to
-the later approval slice; this module does not claim them yet.
+and rejected claims keep their history, stop counting toward limits, and
+release their receipt reference. An approval for less than the claimed amount
+counts toward limits for the approved amount.
+
+## Assignments
+
+An assignment is a named group with an effective period, the claim types it
+opens, and the employees it covers. An `assigned_only` claim type is offered
+to an employee, and accepted on submission, only when an assignment in effect
+on the expense date covers both. Otherwise submission is refused with
+`:claim_type_not_assigned`. Members must belong to the company; whether an
+employee is working is judged when a claim is submitted, not when assigned.
+
+## Decisions, reimbursement, and hand-off
+
+A submitted claim is decided by someone other than its claimant:
+
+- `approve_request/5` approves in full, or for a lower `approved_amount` with
+  a `decision_reason`;
+- `reject_request/5` needs a `decision_reason`, which the employee sees;
+- `reimburse_request/5` records payment of an approved claim with an optional
+  `payment_reference`.
+
+A login actor never decides or pays a claim it submitted or one of the
+employee it is linked to (`:own_claim`). Each transition locks the request,
+checks its status, and writes its history row in one transaction, so a claim
+is decided or withdrawn once. Statuses are `submitted`, `approved`, `rejected`,
+`reimbursed`, and `withdrawn`; database checks keep the decision and
+reimbursement columns consistent with the status.
+
+Hand-off is an auditable record, not a payroll or accounting integration.
+`create_handoff_batch/4` takes every approved claim of one currency that is
+not yet in a batch and records the batch (count, total, actor, time); claims
+of different currencies never share a batch. `handoff_export/3` renders a
+batch as CSV from stored facts with the claim's current status, and neutralizes
+cells that a spreadsheet would read as a formula. `reimburse_batch/5` marks the
+batch's still-approved claims reimbursed. Nothing here assumes a currency,
+account code, or payment format; downstream posting belongs to Payroll or a
+finance integration that reads the batch through this facade.
 
 ## Pages and menu
 
@@ -58,16 +95,29 @@ the later approval slice; this module does not claim them yet.
   `people.claims.submit`. The signed-in actor's company is the company axis;
   an actor without a linked working employee sees an unavailable state. The
   page lists open claim types with their currency, limits, and receipt rule,
-  submits claims, and withdraws submitted ones.
+  submits claims, and withdraws submitted ones. It shows each claim's
+  decision, approved amount, and reason. Assigned-only types appear only for
+  assigned employees.
 - **People > Settings > Claim policies** opens `/people/claims/setup` under
   `people.claims.manage`. Operators choose one company they may manage and edit
-  its claim currencies, categories, claim types, and policies. Each section has
-  an empty state.
+  its claim currencies, categories, claim types, assignments, and policies.
+  Each section has an empty state.
+- **People > Time and expenses > Claim operations** opens
+  `/people/claims/operations` under `people.claims.approve`. Operators choose
+  one company they may approve for and work five views: awaiting decision,
+  approved, reimbursed, rejected, and hand-off batches. Approve, reject,
+  reimburse, batch creation, and batch reimbursement each wait for
+  confirmation. Paying, batching, and exporting also need
+  `people.claims.reimburse`, checked again for the selected company; without
+  it those controls are absent and the batches view says so. The CSV is a
+  download link built on the page, so nothing is stored outside the batch.
 
 ## Schema
 
-Migration `20260930150101` is `:bilimbi_only` and must remain globally unique.
-It creates no rows and copies no source table names or migration sequence.
+Migrations `20260930150101` (catalog, policies, requests) and `20260930170101`
+(assignments, decisions, reimbursement, hand-off) are `:bilimbi_only` and must
+remain globally unique. They create no rows and copy no source table names or
+migration sequence.
 Run `mix bilimbi.migrate` from a mounted Bilimbi root. The owned
 `SchemaContract` describes the fresh tables, but the descriptor does not
 register it with compatibility verification: that verifier also runs before

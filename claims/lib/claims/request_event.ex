@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Claims.RequestEvent do
     field(:from_status, :string)
     field(:to_status, :string)
     field(:actor_id, :integer)
+    field(:reason, :string)
     field(:occurred_at, :naive_datetime)
   end
 end

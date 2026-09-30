@@ -20,7 +20,10 @@
     "people/workforce"
   ],
   migrations: "priv/repo/migrations",
-  migration_dispositions: %{20_260_930_150_101 => :bilimbi_only},
+  migration_dispositions: %{
+    20_260_930_150_101 => :bilimbi_only,
+    20_260_930_170_101 => :bilimbi_only
+  },
   web: "priv/web_routes.exs",
   # Compatibility verification precedes pending Bilimbi-only migrations.
   # Registering fresh tables here would require them before migration runs.

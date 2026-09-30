@@ -25,7 +25,20 @@ defmodule Bilimbi.People.Claims do
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.Employee
   alias Bilimbi.Core.User
-  alias Bilimbi.People.Claims.{Category, ClaimType, Policy, Request, RequestEvent}
+
+  alias Bilimbi.People.Claims.{
+    Assignment,
+    AssignmentEmployee,
+    AssignmentType,
+    Category,
+    ClaimType,
+    Csv,
+    HandoffBatch,
+    Policy,
+    Request,
+    RequestEvent
+  }
+
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
@@ -33,7 +46,7 @@ defmodule Bilimbi.People.Claims do
   @max_currencies 20
 
   @category_fields [:id, :code, :name, :active]
-  @type_fields [:id, :category_id, :code, :name, :receipt_requirement, :active]
+  @type_fields [:id, :category_id, :code, :name, :receipt_requirement, :eligibility, :active]
   @policy_fields [
     :id,
     :claim_type_id,
@@ -60,8 +73,29 @@ defmodule Bilimbi.People.Claims do
     :submitted_by_actor_id,
     :submitted_at,
     :withdrawn_by_actor_id,
-    :withdrawn_at
+    :withdrawn_at,
+    :approved_amount,
+    :decided_by_actor_id,
+    :decided_at,
+    :decision_reason,
+    :reimbursed_by_actor_id,
+    :reimbursed_at,
+    :payment_reference,
+    :handoff_batch_id
   ]
+  @assignment_fields [:id, :code, :name, :effective_from, :effective_to]
+  @batch_fields [:id, :currency, :request_count, :total_amount, :created_by_actor_id, :created_at]
+
+  # A withdrawn or rejected claim stops counting toward limits and releases
+  # its receipt reference; every other status is live.
+  @dead_statuses ["withdrawn", "rejected"]
+  @queue_statuses ~w(submitted approved rejected reimbursed)
+  @queue_limit 500
+  @export_headers ~w(
+    batch_id claim_id employee_number employee_name category claim_type_code
+    claim_type_name incurred_on currency claimed_amount approved_amount
+    receipt_number description status approved_at reimbursed_at payment_reference
+  )
 
   ## Currencies
 
@@ -265,25 +299,42 @@ defmodule Bilimbi.People.Claims do
   def self_service_employee(%Scope{}, _company_id, _user_id), do: {:error, :not_linked}
 
   @doc """
-  Claim types an employee can claim against on `on_date` (default: today in
-  the company time zone), each with the policy in effect on that date.
+  Claim types open for claims on `on_date` (default: today in the company
+  time zone), each with the policy in effect on that date.
+
+  With `employee_id:`, assigned-only types appear only when an assignment in
+  effect on `on_date` covers the type and the employee. Without it, every
+  open type appears.
   """
-  def open_claim_types(%Scope{} = scope, company_id, on_date \\ nil) do
+  def open_claim_types(%Scope{} = scope, company_id, on_date \\ nil, opts \\ []) do
     with {:ok, company} <- company(scope, company_id) do
       on_date = on_date || company_today(company)
 
+      query =
+        from(t in Tenancy.scope_query(ClaimType, scope),
+          join: c in Category,
+          on: c.id == t.category_id,
+          join: p in Policy,
+          on: p.claim_type_id == t.id,
+          where: t.company_id == ^company_id and t.active and c.active,
+          where: p.effective_from <= ^on_date,
+          where: is_nil(p.effective_to) or p.effective_to >= ^on_date,
+          order_by: [asc: c.name, asc: t.name, asc: t.id],
+          select: {t, c.name, p}
+        )
+
+      query =
+        case Keyword.fetch(opts, :employee_id) do
+          {:ok, employee_id} ->
+            assigned = assigned_type_ids(scope, company_id, employee_id, on_date)
+            where(query, [t], t.eligibility == "all_employees" or t.id in ^assigned)
+
+          :error ->
+            query
+        end
+
       {:ok,
-       from(t in Tenancy.scope_query(ClaimType, scope),
-         join: c in Category,
-         on: c.id == t.category_id,
-         join: p in Policy,
-         on: p.claim_type_id == t.id,
-         where: t.company_id == ^company_id and t.active and c.active,
-         where: p.effective_from <= ^on_date,
-         where: is_nil(p.effective_to) or p.effective_to >= ^on_date,
-         order_by: [asc: c.name, asc: t.name, asc: t.id],
-         select: {t, c.name, p}
-       )
+       query
        |> Repo.all()
        |> Enum.map(fn {claim_type, category_name, policy} ->
          claim_type
@@ -316,7 +367,7 @@ defmodule Bilimbi.People.Claims do
        |> where([e], e.request_id == ^request.id)
        |> order_by([e], asc: e.id)
        |> Repo.all()
-       |> Enum.map(&Map.take(&1, [:from_status, :to_status, :actor_id, :occurred_at]))}
+       |> Enum.map(&Map.take(&1, [:from_status, :to_status, :actor_id, :reason, :occurred_at]))}
     else
       _ -> {:error, :not_found}
     end
@@ -326,7 +377,7 @@ defmodule Bilimbi.People.Claims do
   Submits one claim for a working employee.
 
   Refusals: `:employee_unavailable`, `:claim_type_unavailable`,
-  `:future_incurred_on`, `:no_effective_policy`, `:currency_not_allowed`,
+  `:claim_type_not_assigned`, `:future_incurred_on`, `:no_effective_policy`, `:currency_not_allowed`,
   `:receipt_required`, `:per_claim_limit_exceeded`, `:monthly_limit_exceeded`,
   `:yearly_limit_exceeded`, `:duplicate_receipt`, and `:possible_duplicate`.
   The last is a claim of the same type, date, amount, and currency; the
@@ -349,6 +400,7 @@ defmodule Bilimbi.People.Claims do
 
         with {:ok, input} <- Ecto.Changeset.apply_action(changeset, :insert),
              %ClaimType{} = claim_type <- open_claim_type(scope, company_id, input.claim_type_id),
+             :ok <- assigned(scope, company_id, claim_type, input),
              :ok <- not_future(input.incurred_on, company),
              %Policy{} = policy <-
                effective_policy(scope, company_id, claim_type.id, input.incurred_on),
@@ -402,7 +454,352 @@ defmodule Bilimbi.People.Claims do
     end)
   end
 
+  ## Assignments
+
+  @doc """
+  Assignments with the claim types they open and the employees they cover.
+  """
+  def assignments(%Scope{} = scope, company_id) do
+    with {:ok, _company} <- company(scope, company_id) do
+      assignments =
+        scoped(Assignment, scope, company_id)
+        |> order_by([a], asc: a.name, asc: a.id)
+        |> Repo.all()
+
+      ids = Enum.map(assignments, & &1.id)
+      types = member_ids(scope, company_id, AssignmentType, :claim_type_id, ids)
+      employees = member_ids(scope, company_id, AssignmentEmployee, :employee_id, ids)
+
+      {:ok,
+       Enum.map(assignments, fn assignment ->
+         assignment
+         |> Map.take(@assignment_fields)
+         |> Map.put(:claim_type_ids, Map.get(types, assignment.id, []))
+         |> Map.put(:employee_ids, Map.get(employees, assignment.id, []))
+       end)}
+    end
+  end
+
+  @doc """
+  Adds an effective-dated assignment. Members are set separately with
+  `set_assignment_members/5`.
+  """
+  def create_assignment(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
+    with {:ok, _company} <- company(scope, company_id) do
+      %Assignment{tenant_id: Scope.tenant_id(scope), company_id: company_id}
+      |> Assignment.changeset(attrs)
+      |> Repo.insert()
+      |> map_result(&Map.take(&1, @assignment_fields))
+    end
+  end
+
+  @doc "Closes an open-ended assignment on `effective_to`."
+  def end_assignment(%Scope{} = scope, company_id, assignment_id, effective_to) do
+    with {:ok, _company} <- company(scope, company_id) do
+      transaction(fn ->
+        with %Assignment{effective_to: nil} = assignment <-
+               lock_assignment(scope, company_id, assignment_id),
+             {:ok, ended} <-
+               assignment |> Assignment.end_changeset(effective_to) |> Repo.update() do
+          {:ok, Map.take(ended, @assignment_fields)}
+        else
+          %Assignment{} -> {:error, :already_ended}
+          nil -> {:error, :not_found}
+          error -> error
+        end
+      end)
+    end
+  end
+
+  @doc """
+  Replaces the claim types an assignment opens and the employees it covers,
+  together. Every claim type and employee must belong to the company;
+  working status is judged when a claim is submitted.
+  """
+  def set_assignment_members(%Scope{} = scope, company_id, assignment_id, type_ids, employee_ids)
+      when is_list(type_ids) and is_list(employee_ids) do
+    with {:ok, _company} <- company(scope, company_id),
+         {:ok, type_ids} <- normalize_ids(type_ids, :claim_type_not_found),
+         {:ok, employee_ids} <- normalize_ids(employee_ids, :employee_not_found),
+         :ok <- company_employees(scope, company_id, employee_ids) do
+      transaction(fn ->
+        with %Assignment{} = assignment <- lock_assignment(scope, company_id, assignment_id),
+             :ok <-
+               all_in_company(scope, company_id, ClaimType, type_ids, :claim_type_not_found),
+             {:ok, type_ids} <-
+               replace_members(assignment, AssignmentType, :claim_type_id, type_ids),
+             {:ok, employee_ids} <-
+               replace_members(assignment, AssignmentEmployee, :employee_id, employee_ids) do
+          {:ok, %{claim_type_ids: type_ids, employee_ids: employee_ids}}
+        else
+          nil -> {:error, :not_found}
+          error -> error
+        end
+      end)
+    end
+  end
+
+  @doc "Employees of the company an assignment may cover, by employee number."
+  def assignable_employees(%Scope{} = scope, company_id) do
+    with {:ok, _company} <- company(scope, company_id),
+         {:ok, employees} <- Employee.list_employees(scope, company_id) do
+      {:ok,
+       employees
+       |> Enum.map(&%{id: &1.id, employee_number: &1.employee_number, name: &1.full_name})
+       |> Enum.sort_by(&{&1.employee_number, &1.id})}
+    else
+      _ -> {:error, :not_found}
+    end
+  end
+
+  ## Decisions and reimbursement
+
+  @doc """
+  Operator queue of one status, newest decision context first: submitted
+  claims oldest first, every other status newest first. At most 500 rows.
+  """
+  def claim_queue(%Scope{} = scope, company_id, status) when status in @queue_statuses do
+    with {:ok, _company} <- company(scope, company_id) do
+      order = if status == "submitted", do: [asc: :id], else: [desc: :id]
+
+      requests =
+        scoped(Request, scope, company_id)
+        |> where([r], r.status == ^status)
+        |> order_by(^order)
+        |> limit(@queue_limit)
+        |> Repo.all()
+
+      employees = employee_index(scope, Enum.map(requests, & &1.employee_id))
+      types = catalog_index(scope, company_id)
+
+      {:ok,
+       Enum.map(requests, fn request ->
+         request
+         |> Map.take(@request_fields)
+         |> Map.merge(employee_columns(employees, request.employee_id))
+         |> Map.merge(type_columns(types, request.claim_type_id))
+       end)}
+    end
+  end
+
+  @doc """
+  Approved claims that no hand-off batch holds yet, per currency, as
+  `{currency, count, total_approved_amount}` sorted by currency.
+  """
+  def handoff_waiting(%Scope{} = scope, company_id) do
+    with {:ok, _company} <- company(scope, company_id) do
+      {:ok,
+       scoped(Request, scope, company_id)
+       |> where([r], r.status == "approved" and is_nil(r.handoff_batch_id))
+       |> group_by([r], r.currency)
+       |> order_by([r], asc: r.currency)
+       |> select([r], {r.currency, count(r.id), sum(r.approved_amount)})
+       |> Repo.all()}
+    end
+  end
+
+  @doc """
+  Approves a submitted claim, in full unless `approved_amount` is lower; a
+  lower amount needs a `decision_reason`.
+
+  Refusals: `:not_found`, `:not_decidable` (not submitted), `:own_claim`, and
+  a changeset for invalid amounts. The decision and its history row are one
+  transaction.
+  """
+  def approve_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
+      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
+    decide(scope, company_id, request_id, actor_id, "submitted", fn request, now ->
+      Request.approval_changeset(request, attrs, actor_id, now)
+    end)
+  end
+
+  @doc "Rejects a submitted claim; a `decision_reason` is required."
+  def reject_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
+      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
+    decide(scope, company_id, request_id, actor_id, "submitted", fn request, now ->
+      Request.rejection_changeset(request, attrs, actor_id, now)
+    end)
+  end
+
+  @doc """
+  Records that an approved claim was paid, with an optional
+  `payment_reference`. Refused for claims that are not approved or are the
+  actor's own.
+  """
+  def reimburse_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
+      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
+    decide(scope, company_id, request_id, actor_id, "approved", fn request, now ->
+      Request.reimbursement_changeset(request, attrs, actor_id, now)
+    end)
+  end
+
+  @doc """
+  Hands off every approved claim in `currency` that is not yet in a batch.
+
+  The batch is an immutable record of who handed off which claims and when;
+  claims of different currencies never share a batch. Refused with
+  `:nothing_to_hand_off` when none qualifies.
+  """
+  def create_handoff_batch(%Scope{} = scope, company_id, currency, actor_id)
+      when is_binary(currency) and is_integer(actor_id) and actor_id > 0 do
+    with {:ok, _company} <- company(scope, company_id),
+         {:ok, [currency]} <- handoff_currency(currency) do
+      transaction(fn ->
+        requests =
+          scoped(Request, scope, company_id)
+          |> where([r], r.status == "approved" and is_nil(r.handoff_batch_id))
+          |> where([r], r.currency == ^currency)
+          |> order_by([r], asc: r.id)
+          |> lock("FOR UPDATE")
+          |> Repo.all()
+
+        if requests == [] do
+          {:error, :nothing_to_hand_off}
+        else
+          total = Enum.reduce(requests, Decimal.new(0), &Decimal.add(&2, &1.approved_amount))
+
+          {:ok, batch} =
+            Repo.insert(%HandoffBatch{
+              tenant_id: Scope.tenant_id(scope),
+              company_id: company_id,
+              currency: currency,
+              request_count: length(requests),
+              total_amount: total,
+              created_by_actor_id: actor_id,
+              created_at: now()
+            })
+
+          ids = Enum.map(requests, & &1.id)
+
+          scoped(Request, scope, company_id)
+          |> where([r], r.id in ^ids)
+          |> Repo.update_all(set: [handoff_batch_id: batch.id, updated_at: now()])
+
+          {:ok, Map.take(batch, @batch_fields)}
+        end
+      end)
+    end
+  end
+
+  def handoff_batches(%Scope{} = scope, company_id) do
+    with {:ok, _company} <- company(scope, company_id) do
+      {:ok,
+       scoped(HandoffBatch, scope, company_id)
+       |> order_by([b], desc: b.id)
+       |> limit(@queue_limit)
+       |> Repo.all()
+       |> Enum.map(&Map.take(&1, @batch_fields))}
+    end
+  end
+
+  @doc """
+  CSV of one hand-off batch: one row per claim with its current status,
+  built from the stored facts. Returns `%{filename: _, content: _}`.
+  """
+  def handoff_export(%Scope{} = scope, company_id, batch_id) do
+    with {:ok, _company} <- company(scope, company_id),
+         %HandoffBatch{} = batch <- fetch(HandoffBatch, scope, company_id, batch_id) do
+      requests =
+        scoped(Request, scope, company_id)
+        |> where([r], r.handoff_batch_id == ^batch.id)
+        |> order_by([r], asc: r.id)
+        |> Repo.all()
+
+      employees = employee_index(scope, Enum.map(requests, & &1.employee_id))
+      types = catalog_index(scope, company_id)
+
+      rows =
+        Enum.map(requests, fn request ->
+          employee = employee_columns(employees, request.employee_id)
+          type = type_columns(types, request.claim_type_id)
+
+          [
+            batch.id,
+            request.id,
+            employee.employee_number,
+            employee.employee_name,
+            type.category_name,
+            type.claim_type_code,
+            type.claim_type_name,
+            request.incurred_on,
+            request.currency,
+            request.amount,
+            request.approved_amount,
+            request.receipt_number,
+            request.description,
+            request.status,
+            request.decided_at,
+            request.reimbursed_at,
+            request.payment_reference
+          ]
+        end)
+
+      {:ok,
+       %{
+         filename: "claim-handoff-#{batch.id}.csv",
+         content: Csv.encode(@export_headers, rows)
+       }}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc """
+  Marks every still-approved claim of a hand-off batch reimbursed. Refused
+  with `:own_claim` when the actor's own claim is among them.
+  """
+  def reimburse_batch(%Scope{} = scope, company_id, batch_id, actor_id, attrs)
+      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
+    with {:ok, _company} <- company(scope, company_id),
+         %HandoffBatch{} = batch <- fetch(HandoffBatch, scope, company_id, batch_id) do
+      transaction(fn ->
+        requests =
+          scoped(Request, scope, company_id)
+          |> where([r], r.handoff_batch_id == ^batch.id and r.status == "approved")
+          |> order_by([r], asc: r.id)
+          |> lock("FOR UPDATE")
+          |> Repo.all()
+
+        with [_ | _] <- requests,
+             :ok <- Enum.find_value(requests, :ok, &own_claim_error(scope, &1, actor_id)),
+             {:ok, done} <- reimburse_all(requests, attrs, actor_id) do
+          {:ok, done}
+        else
+          [] -> {:error, :nothing_to_reimburse}
+          error -> error
+        end
+      end)
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
   ## Submission rules
+
+  defp assigned(_scope, _company_id, %ClaimType{eligibility: "all_employees"}, _input), do: :ok
+
+  defp assigned(scope, company_id, %ClaimType{} = claim_type, input) do
+    if claim_type.id in assigned_type_ids(scope, company_id, input.employee_id, input.incurred_on),
+      do: :ok,
+      else: {:error, :claim_type_not_assigned}
+  end
+
+  defp assigned_type_ids(scope, company_id, employee_id, on_date) do
+    from(a in Tenancy.scope_query(Assignment, scope),
+      join: at in AssignmentType,
+      on: at.assignment_id == a.id,
+      join: ae in AssignmentEmployee,
+      on: ae.assignment_id == a.id,
+      where: a.company_id == ^company_id and ae.employee_id == ^employee_id,
+      where: a.effective_from <= ^on_date,
+      where: is_nil(a.effective_to) or a.effective_to >= ^on_date,
+      distinct: true,
+      select: at.claim_type_id
+    )
+    |> Repo.all()
+  end
 
   defp open_claim_type(scope, company_id, claim_type_id) do
     from(t in Tenancy.scope_query(ClaimType, scope),
@@ -480,11 +877,12 @@ defmodule Bilimbi.People.Claims do
   defp exceeds?(limit, amount), do: Decimal.gt?(amount, limit)
 
   # Every live request of the type and currency counts toward the period,
-  # whatever policy was in effect when it was incurred.
+  # whatever policy was in effect when it was incurred. An approval for less
+  # than the claim counts for what was approved.
   defp used(scope, input, first, last) do
     live_requests(scope, input)
     |> where([r], r.incurred_on >= ^first and r.incurred_on <= ^last)
-    |> select([r], coalesce(sum(r.amount), 0))
+    |> select([r], coalesce(sum(coalesce(r.approved_amount, r.amount)), 0))
     |> Repo.one()
     |> Decimal.new()
   end
@@ -493,7 +891,7 @@ defmodule Bilimbi.People.Claims do
     receipt_taken? =
       not is_nil(input.receipt_number) and
         scoped(Request, scope, input.company_id)
-        |> where([r], r.employee_id == ^input.employee_id and r.status != "withdrawn")
+        |> where([r], r.employee_id == ^input.employee_id and r.status not in ^@dead_statuses)
         |> where([r], r.receipt_number == ^input.receipt_number)
         |> Repo.exists?()
 
@@ -513,10 +911,10 @@ defmodule Bilimbi.People.Claims do
   defp live_requests(scope, input) do
     scoped(Request, scope, input.company_id)
     |> where([r], r.employee_id == ^input.employee_id and r.claim_type_id == ^input.claim_type_id)
-    |> where([r], r.currency == ^input.currency and r.status != "withdrawn")
+    |> where([r], r.currency == ^input.currency and r.status not in ^@dead_statuses)
   end
 
-  defp record_event(request, from_status, actor_id) do
+  defp record_event(request, from_status, actor_id, reason \\ nil) do
     Repo.insert(%RequestEvent{
       tenant_id: request.tenant_id,
       company_id: request.company_id,
@@ -524,9 +922,195 @@ defmodule Bilimbi.People.Claims do
       from_status: from_status,
       to_status: request.status,
       actor_id: actor_id,
+      reason: reason,
       occurred_at: now()
     })
   end
+
+  ## Decision rules
+
+  defp handoff_currency(currency) do
+    case normalize_currencies([currency]) do
+      {:ok, [_code]} = ok -> ok
+      {:error, :invalid_currencies} -> {:error, :invalid_currency}
+    end
+  end
+
+  defp decide(scope, company_id, request_id, actor_id, from_status, build_changeset) do
+    with {:ok, _company} <- company(scope, company_id) do
+      transaction(fn ->
+        with %Request{status: ^from_status} = request <-
+               lock_request(scope, company_id, request_id),
+             :ok <- own_claim_error(scope, request, actor_id) || :ok,
+             {:ok, updated} <- request |> build_changeset.(now()) |> Repo.update(),
+             reason = if(from_status == "submitted", do: updated.decision_reason),
+             {:ok, _event} <- record_event(updated, from_status, actor_id, reason) do
+          {:ok, Map.take(updated, @request_fields)}
+        else
+          %Request{} -> {:error, :not_decidable}
+          nil -> {:error, :not_found}
+          error -> error
+        end
+      end)
+    end
+  end
+
+  defp reimburse_all(requests, attrs, actor_id) do
+    Enum.reduce_while(requests, {:ok, []}, fn request, {:ok, done} ->
+      moment = now()
+
+      with {:ok, updated} <-
+             request |> Request.reimbursement_changeset(attrs, actor_id, moment) |> Repo.update(),
+           {:ok, _event} <- record_event(updated, "approved", actor_id) do
+        {:cont, {:ok, [Map.take(updated, @request_fields) | done]}}
+      else
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, done} -> {:ok, Enum.reverse(done)}
+      error -> error
+    end
+  end
+
+  defp lock_request(scope, company_id, request_id) when is_integer(request_id) do
+    scoped(Request, scope, company_id)
+    |> where([r], r.id == ^request_id)
+    |> lock("FOR UPDATE")
+    |> Repo.one()
+  end
+
+  defp lock_request(_scope, _company_id, _request_id), do: nil
+
+  # Separation of duties: a login actor never decides or pays a claim it
+  # submitted, nor one of the employee it is linked to.
+  defp own_claim_error(scope, %Request{} = request, actor_id) do
+    linked_employee =
+      case User.get_tenant_user(scope, actor_id) do
+        {:ok, %{employee_id: employee_id}} -> employee_id
+        _ -> nil
+      end
+
+    if request.submitted_by_actor_id == actor_id or
+         (not is_nil(linked_employee) and linked_employee == request.employee_id),
+       do: {:error, :own_claim},
+       else: nil
+  end
+
+  ## Assignment rules
+
+  defp lock_assignment(scope, company_id, assignment_id) when is_integer(assignment_id) do
+    scoped(Assignment, scope, company_id)
+    |> where([a], a.id == ^assignment_id)
+    |> lock("FOR UPDATE")
+    |> Repo.one()
+  end
+
+  defp lock_assignment(_scope, _company_id, _assignment_id), do: nil
+
+  defp member_ids(_scope, _company_id, _schema, _field, []), do: %{}
+
+  defp member_ids(scope, company_id, schema, field, assignment_ids) do
+    scoped(schema, scope, company_id)
+    |> where([m], m.assignment_id in ^assignment_ids)
+    |> order_by([m], asc: field(m, ^field))
+    |> select([m], {m.assignment_id, field(m, ^field)})
+    |> Repo.all()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+  end
+
+  defp replace_members(assignment, schema, field, ids) do
+    existing =
+      from(m in schema, where: m.assignment_id == ^assignment.id)
+      |> Repo.all()
+
+    kept = MapSet.new(ids)
+
+    stale = for m <- existing, not MapSet.member?(kept, Map.fetch!(m, field)), do: m.id
+    present = MapSet.new(existing, &Map.fetch!(&1, field))
+
+    from(m in schema, where: m.id in ^stale) |> Repo.delete_all()
+
+    Enum.each(ids, fn id ->
+      unless MapSet.member?(present, id) do
+        Repo.insert!(
+          struct!(schema, %{
+            tenant_id: assignment.tenant_id,
+            company_id: assignment.company_id,
+            assignment_id: assignment.id
+          })
+          |> Map.put(field, id)
+        )
+      end
+    end)
+
+    {:ok, Enum.sort(ids)}
+  end
+
+  defp normalize_ids(ids, error) do
+    parsed = Enum.map(ids, &attr_id(%{id: &1}, :id))
+
+    if length(ids) <= 1_000 and Enum.all?(parsed, & &1),
+      do: {:ok, Enum.uniq(parsed)},
+      else: {:error, error}
+  end
+
+  defp all_in_company(_scope, _company_id, _schema, [], _error), do: :ok
+
+  defp all_in_company(scope, company_id, schema, ids, error) do
+    found =
+      scoped(schema, scope, company_id)
+      |> where([row], row.id in ^ids)
+      |> select([row], count(row.id))
+      |> Repo.one()
+
+    if found == length(ids), do: :ok, else: {:error, error}
+  end
+
+  defp company_employees(_scope, _company_id, []), do: :ok
+
+  defp company_employees(scope, company_id, ids) do
+    {:ok, employees} = Employee.get_tenant_employees(scope, ids)
+
+    if Enum.all?(ids, &match?(%{company_id: ^company_id}, Map.get(employees, &1))),
+      do: :ok,
+      else: {:error, :employee_not_found}
+  end
+
+  ## Queue and export rows
+
+  defp employee_index(_scope, []), do: %{}
+
+  defp employee_index(scope, employee_ids) do
+    {:ok, employees} = Employee.get_tenant_employees(scope, Enum.uniq(employee_ids))
+    employees
+  end
+
+  defp employee_columns(employees, employee_id) do
+    case Map.get(employees, employee_id) do
+      nil -> %{employee_number: nil, employee_name: nil}
+      employee -> %{employee_number: employee.employee_number, employee_name: employee.full_name}
+    end
+  end
+
+  defp catalog_index(scope, company_id) do
+    from(t in Tenancy.scope_query(ClaimType, scope),
+      join: c in Category,
+      on: c.id == t.category_id,
+      where: t.company_id == ^company_id,
+      select: {t.id, %{claim_type_code: t.code, claim_type_name: t.name, category_name: c.name}}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  defp type_columns(types, claim_type_id),
+    do:
+      Map.get(types, claim_type_id, %{
+        claim_type_code: nil,
+        claim_type_name: nil,
+        category_name: nil
+      })
 
   ## Policy rules
 
@@ -552,7 +1136,7 @@ defmodule Bilimbi.People.Claims do
 
   defp requests_after?(scope, company_id, policy_id, effective_to) do
     scoped(Request, scope, company_id)
-    |> where([r], r.claim_policy_id == ^policy_id and r.status != "withdrawn")
+    |> where([r], r.claim_policy_id == ^policy_id and r.status not in ^@dead_statuses)
     |> where([r], r.incurred_on > ^effective_to)
     |> Repo.exists?()
   end

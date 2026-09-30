@@ -97,6 +97,48 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
     )
   end
 
+  def handle_event("create_assignment", %{"assignment" => attrs}, socket) do
+    socket
+    |> outcome(
+      Claims.create_assignment(scope(socket), company_id(socket), attrs),
+      "Assignment added.",
+      "Check the assignment fields, its dates, and unique code."
+    )
+  end
+
+  def handle_event("end_assignment", %{"assignment_id" => raw_id, "effective_to" => date}, socket) do
+    socket
+    |> outcome(
+      Claims.end_assignment(scope(socket), company_id(socket), positive_id(raw_id), date),
+      "Assignment end date saved.",
+      "Choose an end date on or after the start date."
+    )
+  end
+
+  def handle_event("save_assignment_members", %{"assignment_id" => raw_id} = params, socket) do
+    scope = scope(socket)
+    company_id = company_id(socket)
+    id = positive_id(raw_id)
+
+    case Claims.set_assignment_members(
+           scope,
+           company_id,
+           id,
+           Map.get(params, "claim_type_ids", []),
+           Map.get(params, "employee_ids", [])
+         ) do
+      {:ok, _members} ->
+        {:noreply,
+         socket
+         |> load()
+         |> clear_flash(:error)
+         |> put_flash(:info, "Assignment members saved.")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "Choose claim types and employees of this company.")}
+    end
+  end
+
   def handle_event("create_policy", %{"policy" => attrs}, socket) do
     case Claims.create_policy(scope(socket), company_id(socket), attrs) do
       {:ok, _policy} ->
@@ -164,12 +206,16 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
     with {:ok, currencies} <- Claims.currencies(scope, company_id),
          {:ok, categories} <- Claims.categories(scope, company_id),
          {:ok, claim_types} <- Claims.claim_types(scope, company_id),
-         {:ok, policies} <- Claims.policies(scope, company_id) do
+         {:ok, policies} <- Claims.policies(scope, company_id),
+         {:ok, assignments} <- Claims.assignments(scope, company_id),
+         {:ok, employees} <- Claims.assignable_employees(scope, company_id) do
       assign(socket,
         currencies: currencies,
         categories: categories,
         claim_types: claim_types,
-        policies: policies
+        policies: policies,
+        assignments: assignments,
+        employees: employees
       )
     else
       _ -> socket |> assign(:company, nil) |> clear()
@@ -177,7 +223,15 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
   end
 
   defp clear(socket),
-    do: assign(socket, currencies: [], categories: [], claim_types: [], policies: [])
+    do:
+      assign(socket,
+        currencies: [],
+        categories: [],
+        claim_types: [],
+        policies: [],
+        assignments: [],
+        employees: []
+      )
 
   defp scope(socket), do: socket.assigns.current_scope.scope
   defp company_id(socket), do: socket.assigns.company.id
@@ -200,6 +254,9 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
   defp receipt_label("above_threshold"), do: "Above threshold"
   defp receipt_label("never"), do: "Never"
 
+  defp eligibility_label("all_employees"), do: "All working employees"
+  defp eligibility_label("assigned_only"), do: "Assigned employees only"
+
   @input "rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
 
   @impl true
@@ -211,7 +268,7 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
       <.page id="people-claim-setup" variant={:form}>
         <.header>
           Claim policies
-          <:subtitle>Currencies, claim types, and effective-dated limits for one company.</:subtitle>
+          <:subtitle>Currencies, claim types, assignments, and effective-dated limits for one company.</:subtitle>
         </.header>
 
         <div :if={@company == nil} class="mt-5 rounded-xl border border-line bg-surface px-4 py-8">
@@ -286,6 +343,7 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
                 <span class="text-ink-muted">{claim_type.code}</span>
                 <span class="text-ink-muted">{name_of(@categories, claim_type.category_id)}</span>
                 <span class="text-ink-muted">Receipt: {receipt_label(claim_type.receipt_requirement)}</span>
+                <span class="text-ink-muted">{eligibility_label(claim_type.eligibility)}</span>
                 <span class="text-ink-muted">{if claim_type.active, do: "Active", else: "Inactive"}</span>
                 <button
                   type="button"
@@ -315,7 +373,87 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
                   Receipt: {receipt_label(requirement)}
                 </option>
               </select>
+              <select name="claim_type[eligibility]" aria-label="Who may claim" class={@input}>
+                <option :for={eligibility <- ClaimType.eligibilities()} value={eligibility}>
+                  {eligibility_label(eligibility)}
+                </option>
+              </select>
               <.button type="submit">Add claim type</.button>
+            </form>
+          </.card>
+
+          <.card inner_class="p-5 sm:p-6" role="region" aria-labelledby="claim-assignments-heading">
+            <.section_heading id="claim-assignments-heading" title="Assignments" />
+            <p class="mt-1 text-xs text-ink-muted">
+              An assignment opens assigned-only claim types for the employees it covers while it is in effect.
+            </p>
+            <p :if={@assignments == []} id="claim-assignments-empty" class="mt-2 text-sm text-ink-muted">
+              No claim assignments have been added for this company.
+            </p>
+            <div
+              :for={assignment <- @assignments}
+              id={"claim-assignment-#{assignment.id}"}
+              class="mt-3 rounded-md border border-line p-3 text-sm"
+            >
+              <p class="flex flex-wrap items-center gap-3">
+                <span class="font-medium">{assignment.name}</span>
+                <span class="text-ink-muted">{assignment.code}</span>
+                <span class="tabular-nums text-ink-muted">
+                  {Date.to_iso8601(assignment.effective_from)} to {(assignment.effective_to && Date.to_iso8601(assignment.effective_to)) || "open"}
+                </span>
+              </p>
+              <form
+                :if={is_nil(assignment.effective_to)}
+                phx-submit="end_assignment"
+                class="mt-2 flex gap-1"
+              >
+                <input type="hidden" name="assignment_id" value={assignment.id} />
+                <input type="date" name="effective_to" aria-label="Assignment end date" required class={@input} />
+                <button type="submit" class="text-link hover:underline">End</button>
+              </form>
+              <form
+                id={"claim-assignment-members-#{assignment.id}"}
+                phx-submit="save_assignment_members"
+                class="mt-2 grid gap-3 sm:grid-cols-2"
+              >
+                <input type="hidden" name="assignment_id" value={assignment.id} />
+                <fieldset>
+                  <legend class="text-xs font-medium text-ink-muted">Claim types</legend>
+                  <p :if={@claim_types == []} class="text-xs text-ink-muted">No claim types yet.</p>
+                  <label :for={claim_type <- @claim_types} class="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="claim_type_ids[]"
+                      value={claim_type.id}
+                      checked={claim_type.id in assignment.claim_type_ids}
+                    />
+                    {claim_type.name}
+                  </label>
+                </fieldset>
+                <fieldset class="max-h-56 overflow-y-auto">
+                  <legend class="text-xs font-medium text-ink-muted">Employees</legend>
+                  <p :if={@employees == []} class="text-xs text-ink-muted">No employees in this company.</p>
+                  <label :for={employee <- @employees} class="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="employee_ids[]"
+                      value={employee.id}
+                      checked={employee.id in assignment.employee_ids}
+                    />
+                    {employee.name} <span class="text-ink-muted">{employee.employee_number}</span>
+                  </label>
+                </fieldset>
+                <div class="sm:col-span-2">
+                  <.button type="submit">Save members</.button>
+                </div>
+              </form>
+            </div>
+            <form id="claim-assignment-form" phx-submit="create_assignment" class="mt-3 flex flex-wrap gap-2">
+              <input name="assignment[code]" aria-label="Assignment code" placeholder="Code" required maxlength="60" class={@input} />
+              <input name="assignment[name]" aria-label="Assignment name" placeholder="Name" required maxlength="120" class={@input} />
+              <input type="date" name="assignment[effective_from]" aria-label="Assignment effective from" required class={@input} />
+              <input type="date" name="assignment[effective_to]" aria-label="Assignment effective to" class={@input} />
+              <.button type="submit">Add assignment</.button>
             </form>
           </.card>
 
