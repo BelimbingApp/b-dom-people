@@ -522,7 +522,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
       assert employee_id == employee.id
 
-      assert {:ok, %{carried: 2, existing: 0}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
       assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
       assert Decimal.equal?(balance(scope, employee, year).carried_forward, 4)
 
@@ -531,7 +531,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
-    test "an inactive year under a closed next year is closed with a zero carry", ctx do
+    test "closing a year also closes an untouched previous year", ctx do
       %{scope: scope, employee: employee, type: type, year: year} = ctx
 
       {:ok, _} =
@@ -542,9 +542,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
         })
 
       assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
-      assert {:ok, %{carried: 2, existing: 0}} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
+      assert {:ok, 2} = Leave.carried_forward_count(scope, 73, year - 1)
 
       {:ok, rules} = Leave.rules(scope, 73)
       {first_day, _} = Leave.year_range(rules, year)
@@ -560,6 +558,9 @@ defmodule Bilimbi.People.LeaveRequestsTest do
                })
 
       assert {:ok, %{granted: 0, closed: 2}} = Leave.grant_entitlements(scope, 73, year - 1)
+      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
+      assert Decimal.equal?(balance(scope, employee, year - 1).balance, 0)
     end
 
     test "a late grant skips a year already carried forward", ctx do

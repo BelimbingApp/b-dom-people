@@ -99,7 +99,10 @@ a previous year still open (`previous_year_open`: a capped type with ledger
 entries or pending requests in that year and no carry-forward), or whose next
 year is already closed while this year has ledger entries
 (`next_year_closed`). An employee without entries in the year, such as one
-hired later, is not held back: the run closes their year with a zero entry.
+hired later, is not held back: the run closes their year with a zero entry,
+and closing a year also closes an untouched previous year with a zero entry.
+A year counts as closed once it or the following year is carried forward, so
+grants, entries, requests, approvals and cancellations into it are refused.
 The run returns a count per reason and replaces its year's rows in
 `people_leave_carry_forward_skips`; `carry_forward_skipped/3` reads that
 report, so the Policies page shows the latest run's skipped employees, types

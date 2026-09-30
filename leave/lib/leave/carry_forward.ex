@@ -28,12 +28,20 @@ defmodule Bilimbi.People.Leave.CarryForward do
 
   @source "carry_forward"
 
+  @doc """
+  Whether `year` is closed to new requests and entries for the employee and
+  type: it has been carried forward, or the following year has.
+  """
   def closed?(scope, company_id, employee_id, type_id, year) do
+    carried?(scope, company_id, employee_id, type_id, [year, year + 1])
+  end
+
+  defp carried?(scope, company_id, employee_id, type_id, years) do
+    keys = Enum.map(List.wrap(years), &key("carry", type_id, employee_id, &1))
+
     Repo.exists?(
       from(e in Tenancy.scope_query(LedgerEntry, scope),
-        where:
-          e.company_id == ^company_id and e.source == @source and
-            e.entry_key == ^key("carry", type_id, employee_id, year)
+        where: e.company_id == ^company_id and e.source == @source and e.entry_key in ^keys
       )
     )
   end
@@ -94,6 +102,16 @@ defmodule Bilimbi.People.Leave.CarryForward do
                     type,
                     policy,
                     from_year,
+                    actor_user_id,
+                    year
+                  )
+
+                  close_inactive_previous(
+                    scope,
+                    company_id,
+                    employee_id,
+                    type,
+                    from_year - 1,
                     actor_user_id,
                     year
                   )
@@ -200,7 +218,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # the previous one is no longer open and while the next one is still open.
   defp status(scope, company_id, employee_id, type_id, year, previous) do
     cond do
-      closed?(scope, company_id, employee_id, type_id, year) ->
+      carried?(scope, company_id, employee_id, type_id, year) ->
         :closed
 
       Requests.pending_exists?(scope, company_id, type_id, employee_id, year) ->
@@ -209,7 +227,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
       type_id in previous and open?(scope, company_id, employee_id, type_id, year - 1) ->
         :previous_year_open
 
-      closed?(scope, company_id, employee_id, type_id, year + 1) and
+      carried?(scope, company_id, employee_id, type_id, year + 1) and
           active?(scope, company_id, employee_id, type_id, year) ->
         :next_year_closed
 
@@ -219,7 +237,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   end
 
   defp open?(scope, company_id, employee_id, type_id, year) do
-    not closed?(scope, company_id, employee_id, type_id, year) and
+    not carried?(scope, company_id, employee_id, type_id, year) and
       (active?(scope, company_id, employee_id, type_id, year) or
          Requests.pending_exists?(scope, company_id, type_id, employee_id, year))
   end
@@ -304,6 +322,32 @@ defmodule Bilimbi.People.Leave.CarryForward do
           entry_key: key("expire", type.id, employee_id, year)
         })
       )
+    end
+  end
+
+  # Closing a year also closes an untouched previous year with a zero carry,
+  # so nothing can later be written into it behind the closed year.
+  defp close_inactive_previous(
+         scope,
+         company_id,
+         employee_id,
+         type,
+         previous,
+         actor_user_id,
+         year
+       ) do
+    unless open?(scope, company_id, employee_id, type.id, previous) or
+             carried?(scope, company_id, employee_id, type.id, previous) do
+      insert!(scope, company_id, employee_id, type, %{
+        unit: type.unit,
+        source: @source,
+        actor_user_id: actor_user_id,
+        leave_year: previous + 1,
+        entry_type: "carried_forward",
+        quantity: Decimal.new("0.00"),
+        occurred_on: Date.add(year.previous_last_day, 1),
+        entry_key: key("carry", type.id, employee_id, previous)
+      })
     end
   end
 
