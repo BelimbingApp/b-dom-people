@@ -1,9 +1,6 @@
 defmodule Bilimbi.People.Payroll.SchemaContract do
   @moduledoc "Fresh Bilimbi payroll foundation schema; verified after migration."
   @behaviour Bilimbi.Base.Database.SchemaContract
-
-  def migration_version, do: 20_260_930_230_501
-
   @impl true
   def tables do
     [
@@ -163,25 +160,32 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
       },
       %{
         name: "people_payroll_attendance_rule_pay_items",
-        columns: %{
-          "id" =>
-            column(:bigint, false, {:sequence, "people_payroll_attendance_rule_pay_items_id_seq"}),
-          "tenant_id" => column(:bigint, false),
-          "company_id" => column(:bigint, false),
-          "attendance_rule_code" => column({:varchar, 40}, false),
-          "pay_item_code" => column({:varchar, 40}, false),
-          "inserted_at" => column({:timestamp, 0}, false),
-          "updated_at" => column({:timestamp, 0}, false)
-        },
+        columns:
+          common("people_payroll_attendance_rule_pay_items")
+          |> Map.merge(%{
+            "attendance_rule_code" => column({:varchar, 40}, false),
+            "item_id" => column(:bigint, false),
+            "effective_from" => column(:date, false),
+            "effective_to" => column(:date, true)
+          }),
         indexes: %{
           "people_payroll_attendance_rule_pay_items_pkey" => index(["id"], true),
-          "people_payroll_attendance_rule_pay_items_company_rule_unique" =>
-            index(["company_id", "attendance_rule_code"], true),
           "people_payroll_attendance_rule_pay_items_company_index" =>
-            index(["tenant_id", "company_id"])
+            index(["tenant_id", "company_id"], false)
         },
-        foreign_keys: %{},
-        checks: %{}
+        foreign_keys: %{
+          "people_payroll_attendance_rule_pay_items_item_id_fkey" => %{
+            columns: ["item_id"],
+            references: {"people_payroll_items", ["id"]},
+            on_delete: :restrict
+          }
+        },
+        checks: %{
+          "people_payroll_attendance_rule_pay_items_dates" => %{
+            expression: "effective_to IS NULL OR effective_to >= effective_from",
+            validated: true
+          }
+        }
       }
     ]
   end
@@ -199,5 +203,5 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
   defp column(type, nullable, default \\ nil),
     do: %{type: type, nullable: nullable, default: default}
 
-  defp index(columns, unique \\ false), do: %{columns: columns, unique: unique, where: nil}
+  defp index(columns, unique), do: %{columns: columns, unique: unique, where: nil}
 end

@@ -55,28 +55,33 @@ cause instead of freezing. Each period/currency has
 one run. Subsequent settings or future versions cannot alter its snapshot.
 Locking records the authenticated actor and is irreversible. PostgreSQL rejects
 updates/deletes of locked runs, deleting any run, and changing a draft run
-except its initial lock. Classification, item, period and mapping rows are also
-protected against updates/deletes by PostgreSQL. A company-scoped advisory
-transaction lock serializes facade writes, overlap checks and snapshots.
+except its initial lock. Classification, item, period and both mapping tables
+are also protected against updates/deletes by PostgreSQL. A company-scoped
+advisory transaction lock serializes facade writes, overlap checks and
+snapshots.
 
 ## Attendance allowance mappings
 
-Payroll owns effective-dated pay-item mappings. Attendance allowance rules are
-read through `Bilimbi.People.Attendance.payroll_allowance_sources/3`; Payroll
-does not read Attendance tables. Operators with
-`people.payroll.attendance-mappings.manage` can map a current source rule to a
-company pay-item code at `/people/payroll/attendance-mappings`. The route is
-capability protected and intentionally has no menu contribution while this
-area remains under acceptance.
+Attendance allowance rules are read through
+`Bilimbi.People.Attendance.payroll_allowance_sources/3` and
+`list_allowance_rules/2`; Payroll does not read Attendance tables. Operators
+with `people.payroll.attendance-mappings.manage` map an allowance rule code to
+an existing company pay item at `/people/payroll/attendance-mappings`. Every
+facade function checks that capability, a signed-in non-impersonated user and
+an active company. The route has no menu contribution while this area remains
+under acceptance.
 
-Mappings are keyed by the Attendance rule code and company. This lets a new
-effective-dated version keep the existing payroll mapping while Attendance
-retains the historical rule version. The target code is stored as governed
-operator data; no pay-item code is assumed by the Domain.
+Attendance mappings follow the same append-only, effective-dated model as
+Leave/Claims mappings: the rule code must exist for the company, the pay item
+must cover the whole mapping period, and versions of one rule code for the same
+currency cannot overlap. They are keyed by rule code, so a new Attendance rule
+version keeps its mapping. PostgreSQL refuses updates and deletes, and a run
+freezes the effective attendance mappings for its currency under
+`attendance_mappings` in the snapshot.
 
 ## Schema and validation
 
-Migrations `20260930210002` and `20260930230501` are `:bilimbi_only`. The unregistered
+Migrations `20260930230501` and `20260930230502` are `:bilimbi_only`. The unregistered
 `Bilimbi.People.Payroll.SchemaContract` is checked after fresh migration with
 `Bilimbi.Base.Database.SchemaVerifier.verify/2`. Registration remains nil because
 pre-migration compatibility verification must not demand new tables.

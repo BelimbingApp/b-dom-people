@@ -101,10 +101,14 @@ Operators manage a company's effective-dated allowance catalog at
 `/people/attendance/rules/allowances` with the separate
 `people.attendance.allowances.manage` capability. Each version carries an
 operator code and name, a generic unit, a positive value, an explicit
-three-letter currency, and inclusive effective dates. A code cannot have
-overlapping periods. New versions preserve earlier values; an operator can
-retire a version without deleting its history. There are no seeded codes,
-units, rates, or currencies.
+three-letter currency, and inclusive effective dates. Active versions of a
+code cannot overlap; retired versions are ignored by that check. Adding a later
+version ends the code's open-ended active version on the day before the new
+start. An operator can also end an active version explicitly, only ever
+earlier. Both end-dates record a `people.attendance.allowance_rule_ended` audit
+action. New versions preserve earlier values; an operator can retire a version
+without deleting its history. There are no seeded codes, units, rates, or
+currencies.
 
 `Attendance.payroll_allowance_sources/3` returns only active rules effective
 on the requested date as schema-free values (`id`, `code`, `name`, `unit`,
@@ -113,8 +117,9 @@ through Workforce before reading. Payroll uses that API to offer source rules
 for company pay-item mapping. The API exposes the allowance catalog; it does
 not calculate attendance quantities or payroll amounts.
 
-The allowance rule editor is available by its scoped route and setup tab. It
-does not add a navigation menu leaf while the broader Payroll and Attendance
+The allowance rule editor is available by its scoped route and setup tab; the
+tab shows only to holders of `people.attendance.allowances.manage`. It does not
+add a navigation menu leaf while the broader Payroll and Attendance
 allowance area remains under acceptance.
 
 ## Pages and capabilities

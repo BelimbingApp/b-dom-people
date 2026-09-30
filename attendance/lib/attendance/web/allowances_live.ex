@@ -68,16 +68,28 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
     end
   end
 
-  def handle_event("set_status", %{"id" => raw_id, "status" => status}, socket) do
+  def handle_event("retire", %{"id" => raw_id}, socket) do
     result =
       with {id, ""} <- Integer.parse(raw_id),
-           do: Attendance.set_allowance_rule_status(scope(socket), company_id(socket), id, status)
+           do: Attendance.retire_allowance_rule(scope(socket), company_id(socket), id)
 
-    case result do
-      {:ok, _} -> {:noreply, socket |> reload() |> put_flash(:success, "Allowance rule updated.")}
-      _ -> {:noreply, put_flash(socket, :error, "Allowance rule could not be updated.")}
-    end
+    updated(socket, result)
   end
+
+  def handle_event("end_date", %{"rule_id" => raw_id, "effective_until" => raw_date}, socket) do
+    result =
+      with {id, ""} <- Integer.parse(raw_id),
+           {:ok, until_date} <- Date.from_iso8601(raw_date),
+           do: Attendance.end_allowance_rule(scope(socket), company_id(socket), id, until_date)
+
+    updated(socket, result)
+  end
+
+  defp updated(socket, {:ok, _}),
+    do: {:noreply, socket |> reload() |> put_flash(:success, "Allowance rule updated.")}
+
+  defp updated(socket, _),
+    do: {:noreply, put_flash(socket, :error, "Allowance rule could not be updated.")}
 
   defp scope(socket), do: socket.assigns.current_scope.scope
   defp company_id(socket), do: socket.assigns.company.id
@@ -93,7 +105,7 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page id="attendance-allowances-page" variant={:form}>
         <.header>Allowance rules</.header>
-        <AttendanceComponents.rules_tabs current={:allowances} company={@company} />
+        <AttendanceComponents.rules_tabs current={:allowances} company={@company} actor={@current_scope.actor} />
         <.empty_state :if={@company == nil} id="allowances-no-company"
           title="No active company is available for allowance rules." />
         <div :if={@company} class="mt-5">
@@ -105,7 +117,7 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
         <div :if={@rules} class="mt-5 space-y-6">
           <section class="rounded-xl border border-line bg-surface p-4">
             <h2 class="font-semibold text-ink-strong">Add effective-dated rule</h2>
-            <p class="mt-1 text-sm text-ink-muted">Use a company code and explicit currency. A code cannot have overlapping effective dates.</p>
+            <p class="mt-1 text-sm text-ink-muted">Use a company code and explicit currency. A later version ends the code's open version the day before it starts; active versions cannot overlap.</p>
             <form id="allowance-rule-form" phx-submit="create" class="mt-4 grid gap-3 sm:grid-cols-2">
               <label class="text-sm">Code<input name="rule[code]" required maxlength="40" class={[@input, "mt-1 w-full"]} /></label>
               <label class="text-sm">Name<input name="rule[name]" required maxlength="120" class={[@input, "mt-1 w-full"]} /></label>
@@ -131,7 +143,16 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
                     <td class="px-2 py-1 tabular-nums">{rule.value} {rule.currency} / {rule.unit}</td>
                     <td class="px-2 py-1 tabular-nums">{rule.effective_from} – {rule.effective_until || "Open"}</td>
                     <td class="px-2 py-1">{rule.status}</td>
-                    <td class="px-2 py-1"><button :if={rule.status == "active"} type="button" phx-click="set_status" phx-value-id={rule.id} phx-value-status="retired" class="text-link underline">Retire</button></td>
+                    <td class="px-2 py-1">
+                      <div :if={rule.status == "active"} class="flex flex-wrap items-center gap-2">
+                        <form phx-submit="end_date" class="flex items-center gap-2">
+                          <input type="hidden" name="rule_id" value={rule.id} />
+                          <input name="effective_until" type="date" required min={rule.effective_from} max={rule.effective_until} aria-label={"End date for #{rule.code}"} class={@input} />
+                          <.button type="submit">End</.button>
+                        </form>
+                        <button type="button" phx-click="retire" phx-value-id={rule.id} class="text-link underline">Retire</button>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>

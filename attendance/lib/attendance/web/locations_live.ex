@@ -94,7 +94,7 @@ defmodule Bilimbi.People.Attendance.Web.LocationsLive do
           Attendance rules
           <:subtitle>Places where clock events count as on site.</:subtitle>
         </.header>
-        <AttendanceComponents.rules_tabs current={:locations} company={@company} />
+        <AttendanceComponents.rules_tabs current={:locations} company={@company} actor={@current_scope.actor} />
         <.empty_state :if={@company == nil} id="attendance-locations-no-company" class="mt-5"
           title="No active company is available for clocking locations." />
         <div :if={@company} class="mt-5 space-y-5">

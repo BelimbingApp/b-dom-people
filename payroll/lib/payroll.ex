@@ -22,6 +22,7 @@ defmodule Bilimbi.People.Payroll do
 
   @view "people.payroll.view"
   @manage "people.payroll.manage"
+  @attendance "people.payroll.attendance-mappings.manage"
 
   def allowed?(%Scope{} = scope, company_id, capability) do
     match?({:ok, _}, authorize(scope, company_id, capability))
@@ -69,10 +70,10 @@ defmodule Bilimbi.People.Payroll do
   end
 
   def create_classification(%Scope{} = scope, company_id, attrs),
-    do: create_version(scope, company_id, Classification, attrs, fn _ -> :ok end)
+    do: create_version(scope, company_id, Classification, attrs, @manage, fn _ -> :ok end)
 
   def create_item(%Scope{} = scope, company_id, attrs) do
-    create_version(scope, company_id, Item, attrs, fn item ->
+    create_version(scope, company_id, Item, attrs, @manage, fn item ->
       with {:ok, company} <- Company.get_company(scope, company_id),
            true <-
              item.currency in Settings.get("people.payroll.currencies", setting_scope(company)),
@@ -132,7 +133,7 @@ defmodule Bilimbi.People.Payroll do
   end
 
   def create_mapping(%Scope{} = scope, company_id, attrs) do
-    create_version(scope, company_id, Mapping, attrs, fn mapping ->
+    create_version(scope, company_id, Mapping, attrs, @manage, fn mapping ->
       with {:ok, sources} <- sources(scope, company_id),
            true <-
              Enum.any?(Map.get(sources, mapping.source_kind, []), &(&1.key == mapping.source_key)),
@@ -143,6 +144,34 @@ defmodule Bilimbi.People.Payroll do
         {:error, _} = error -> error
         _ -> {:error, :invalid_mapping}
       end
+    end)
+  end
+
+  @doc "Current Attendance allowance sources, company pay items and attendance mapping versions."
+  def attendance_allowances(%Scope{} = scope, company_id, as_of \\ Date.utc_today()) do
+    with {:ok, _} <- authorize(scope, company_id, @attendance),
+         {:ok, sources} <- Attendance.payroll_allowance_sources(scope, company_id, as_of) do
+      {:ok,
+       %{
+         sources: sources,
+         items: rows(Item, scope, company_id),
+         mappings: rows(AttendanceAllowanceMapping, scope, company_id)
+       }}
+    end
+  end
+
+  def create_attendance_allowance_mapping(%Scope{} = scope, company_id, attrs) do
+    create_version(scope, company_id, AttendanceAllowanceMapping, attrs, @attendance, fn
+      mapping ->
+        with {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
+             true <- Enum.any?(rules, &(&1.code == mapping.attendance_rule_code)),
+             %Item{} = item <- fetch(Item, scope, company_id, mapping.item_id),
+             true <- covers?(item, mapping) do
+          :ok
+        else
+          {:error, _} = error -> error
+          _ -> {:error, :invalid_mapping}
+        end
     end)
   end
 
@@ -173,6 +202,10 @@ defmodule Bilimbi.People.Payroll do
             effective_rows(Mapping, scope, company_id, period)
             |> Enum.filter(&(&1.item_id in item_ids))
 
+          attendance_mappings =
+            effective_rows(AttendanceAllowanceMapping, scope, company_id, period)
+            |> Enum.filter(&(&1.item_id in item_ids))
+
           mapped = MapSet.new(mappings, &{&1.source_kind, &1.source_key})
 
           snapshot = %{
@@ -181,6 +214,7 @@ defmodule Bilimbi.People.Payroll do
             "classifications" =>
               effective_rows(Classification, scope, company_id, period) |> Enum.map(&json/1),
             "mappings" => Enum.map(mappings, &json/1),
+            "attendance_mappings" => Enum.map(attendance_mappings, &json/1),
             "unmapped_sources" =>
               for {kind, choices} <- Enum.sort(sources),
                   choice <- choices,
@@ -250,8 +284,8 @@ defmodule Bilimbi.People.Payroll do
     end
   end
 
-  defp create_version(%Scope{} = scope, company_id, schema, attrs, validate) do
-    with {:ok, _} <- authorize(scope, company_id, @manage) do
+  defp create_version(%Scope{} = scope, company_id, schema, attrs, capability, validate) do
+    with {:ok, _} <- authorize(scope, company_id, capability) do
       transaction(scope, company_id, fn ->
         changeset =
           schema.changeset(
@@ -284,13 +318,12 @@ defmodule Bilimbi.People.Payroll do
     query =
       case row do
         %Mapping{} ->
-          from(r in query,
-            join: i in Item,
-            on: i.id == r.item_id,
-            join: n in Item,
-            on: n.id == ^row.item_id and n.currency == i.currency,
-            where: r.source_kind == ^row.source_kind and r.source_key == ^row.source_key
-          )
+          same_currency(query, row)
+          |> where([r], r.source_kind == ^row.source_kind and r.source_key == ^row.source_key)
+
+        %AttendanceAllowanceMapping{} ->
+          same_currency(query, row)
+          |> where([r], r.attendance_rule_code == ^row.attendance_rule_code)
 
         _ ->
           where(query, [r], r.code == ^row.code)
@@ -298,6 +331,15 @@ defmodule Bilimbi.People.Payroll do
 
     if Repo.exists?(query), do: {:error, :overlapping_version}, else: :ok
   end
+
+  defp same_currency(query, row),
+    do:
+      from(r in query,
+        join: i in Item,
+        on: i.id == r.item_id,
+        join: n in Item,
+        on: n.id == ^row.item_id and n.currency == i.currency
+      )
 
   defp covers?(parent, child),
     do:
@@ -370,51 +412,4 @@ defmodule Bilimbi.People.Payroll do
   defp json_value(%Date{} = value), do: Date.to_iso8601(value)
   defp json_value(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
   defp json_value(value), do: value
-
-  @doc "Lists current Attendance allowance sources with any configured pay item code."
-  def attendance_allowances(%Scope{} = scope, company_id, as_of \\ Date.utc_today()) do
-    with {:ok, sources} <- Attendance.payroll_allowance_sources(scope, company_id, as_of),
-         {:ok, mappings} <- list_attendance_allowance_mappings(scope, company_id) do
-      by_code = Map.new(mappings, &{&1.attendance_rule_code, &1.pay_item_code})
-      {:ok, Enum.map(sources, &Map.put(&1, :pay_item_code, by_code[&1.code]))}
-    end
-  end
-
-  def list_attendance_allowance_mappings(%Scope{} = scope, company_id) do
-    with {:ok, _sources} <- Attendance.list_allowance_rules(scope, company_id) do
-      {:ok,
-       Repo.all(
-         from(m in Tenancy.scope_query(AttendanceAllowanceMapping, scope),
-           where: m.company_id == ^company_id,
-           order_by: [asc: m.attendance_rule_code]
-         )
-       )}
-    end
-  end
-
-  def put_attendance_allowance_mapping(%Scope{} = scope, company_id, source_code, pay_item_code)
-      when is_binary(source_code) and is_binary(pay_item_code) do
-    with {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
-         true <- Enum.any?(rules, &(&1.code == String.trim(source_code))),
-         {:ok, result} <-
-           %AttendanceAllowanceMapping{
-             tenant_id: Scope.tenant_id(scope),
-             company_id: company_id
-           }
-           |> AttendanceAllowanceMapping.changeset(%{
-             attendance_rule_code: source_code,
-             pay_item_code: pay_item_code
-           })
-           |> Repo.insert(
-             on_conflict: {:replace, [:pay_item_code, :updated_at]},
-             conflict_target: [:company_id, :attendance_rule_code]
-           ) do
-      {:ok, result}
-    else
-      false -> {:error, :attendance_rule_not_found}
-      error -> error
-    end
-  end
-
-  def put_attendance_allowance_mapping(%Scope{}, _, _, _), do: {:error, :invalid_mapping}
 end

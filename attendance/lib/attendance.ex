@@ -425,9 +425,11 @@ defmodule Bilimbi.People.Attendance do
   defdelegate create_allowance_rule(scope, company_id, attrs), to: Allowances, as: :create
   defdelegate get_allowance_rule(scope, company_id, rule_id), to: Allowances, as: :get
 
-  defdelegate set_allowance_rule_status(scope, company_id, rule_id, status),
+  defdelegate retire_allowance_rule(scope, company_id, rule_id), to: Allowances, as: :retire
+
+  defdelegate end_allowance_rule(scope, company_id, rule_id, until_date),
     to: Allowances,
-    as: :set_status
+    as: :end_date
 
   @doc "Schema-free allowance catalog values for Payroll mapping and as-of reads."
   def payroll_allowance_sources(scope, company_id, as_of \\ Date.utc_today()),

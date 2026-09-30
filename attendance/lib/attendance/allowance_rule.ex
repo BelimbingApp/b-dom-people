@@ -57,8 +57,10 @@ defmodule Bilimbi.People.Attendance.AllowanceRule do
     )
   end
 
-  def status_changeset(rule, status) when status in ["active", "retired"],
-    do: change(rule, status: status)
+  def retire_changeset(rule), do: change(rule, status: "retired")
+
+  def end_changeset(rule, until_date),
+    do: rule |> change(effective_until: until_date) |> validate_date_order()
 
   defp validate_date_order(changeset) do
     from_date = get_field(changeset, :effective_from)

@@ -1,6 +1,9 @@
 defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
   use ExUnit.Case, async: false
 
+  import Ecto.Query
+
+  alias Bilimbi.Base.Audit.TestFixtures, as: AuditFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
@@ -31,6 +34,7 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
     SettingsFixtures.create_settings_table!()
+    AuditFixtures.create_audit_tables!()
     TestFixtures.create_attendance_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "First tenant"})
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Second tenant", is_platform_operator: false})
@@ -76,9 +80,43 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
     assert Decimal.equal?(value, Decimal.new("9.25"))
   end
 
-  test "rejects overlapping periods and invalid values", %{scope: scope} do
-    assert {:ok, _} =
+  test "a later version ends the open version the day before it starts, with an audit action",
+       %{scope: scope} do
+    assert {:ok, open} =
              Attendance.create_allowance_rule(scope, 73, attrs("overtime", ~D[2026-01-01], nil))
+
+    assert {:ok, later} =
+             Attendance.create_allowance_rule(scope, 73, attrs("overtime", ~D[2026-04-01], nil))
+
+    assert {:ok, %{id: id, effective_until: ~D[2026-03-31]}} =
+             Attendance.get_allowance_rule(scope, 73, open.id)
+
+    assert id == open.id
+
+    assert {:ok, [%{id: id}]} = Attendance.payroll_allowance_sources(scope, 73, ~D[2026-04-01])
+    assert id == later.id
+
+    assert [%{"rule_id" => rule_id, "effective_until" => "2026-03-31"}] =
+             Repo.all(
+               from(a in "base_audit_actions",
+                 where: a.event == "people.attendance.allowance_rule_ended",
+                 select: a.payload
+               )
+             )
+
+    assert rule_id == open.id
+  end
+
+  test "rejects overlapping active periods and invalid values", %{scope: scope} do
+    assert {:ok, _} =
+             Attendance.create_allowance_rule(scope, 73, attrs("overtime", ~D[2026-04-01], nil))
+
+    assert {:error, :effective_period_overlap} =
+             Attendance.create_allowance_rule(
+               scope,
+               73,
+               attrs("overtime", ~D[2026-01-01], ~D[2026-05-31])
+             )
 
     assert {:error, :effective_period_overlap} =
              Attendance.create_allowance_rule(scope, 73, attrs("overtime", ~D[2026-04-01], nil))
@@ -91,6 +129,39 @@ defmodule Bilimbi.People.Attendance.AllowanceRulesTest do
              )
 
     assert Keyword.has_key?(changeset.errors, :value)
+  end
+
+  test "retired versions do not block a new version of the code", %{scope: scope} do
+    assert {:ok, retired} =
+             Attendance.create_allowance_rule(
+               scope,
+               73,
+               attrs("shift", ~D[2026-01-01], ~D[2026-12-31])
+             )
+
+    assert {:ok, _} = Attendance.retire_allowance_rule(scope, 73, retired.id)
+
+    assert {:ok, _} =
+             Attendance.create_allowance_rule(scope, 73, attrs("shift", ~D[2026-06-01], nil))
+  end
+
+  test "an active version can only be ended earlier and within its period", %{scope: scope} do
+    assert {:ok, rule} =
+             Attendance.create_allowance_rule(scope, 73, attrs("shift", ~D[2026-01-01], nil))
+
+    assert {:error, %Ecto.Changeset{}} =
+             Attendance.end_allowance_rule(scope, 73, rule.id, ~D[2025-12-31])
+
+    assert {:ok, %{effective_until: ~D[2026-06-30]}} =
+             Attendance.end_allowance_rule(scope, 73, rule.id, ~D[2026-06-30])
+
+    assert {:error, :invalid_end_date} =
+             Attendance.end_allowance_rule(scope, 73, rule.id, ~D[2026-09-30])
+
+    assert {:ok, _} = Attendance.retire_allowance_rule(scope, 73, rule.id)
+
+    assert {:error, :not_found} =
+             Attendance.end_allowance_rule(scope, 73, rule.id, ~D[2026-03-31])
   end
 
   defp attrs(code, from, until_date, value \\ "5.5000") do
