@@ -150,7 +150,8 @@ defmodule BilimbiWeb.LeaveLiveTest do
       )
       |> render_submit()
 
-      assert render(my) =~ "Another pending or approved request already covers part of these dates."
+      assert render(my) =~
+               "Another pending or approved request already covers part of these dates."
 
       {:ok, own_queue, _} = live(employee_conn, "/people/leave/requests")
       [request] = elem(Leave.pending_requests(scope, 73), 1)
@@ -227,6 +228,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
       assert has_element?(view, "#leave-carried-count", "2 balances")
+      refute has_element?(view, "#leave-carry-skipped")
     end
   end
 end

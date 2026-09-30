@@ -500,7 +500,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert {:ok, _} = request(scope, requester, type, ctx.first_next, ctx.first_next)
     end
 
-    test "refuses to carry into a next year already closed", ctx do
+    test "closes years in order per employee and reports who is skipped", ctx do
       %{scope: scope, employee: employee, type: type, year: year} = ctx
 
       {:ok, _} =
@@ -510,12 +510,25 @@ defmodule Bilimbi.People.LeaveRequestsTest do
           carry_forward_cap: "4"
         })
 
-      {:ok, %{granted: 2}} = Leave.grant_entitlements(scope, 73, year - 1)
-      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
+      {:ok, rules} = Leave.rules(scope, 73)
+      {first_day, _} = Leave.year_range(rules, year)
+      fund(scope, employee, type, Date.add(first_day, -1), 6)
 
-      assert {:error, :next_year_closed} = Leave.carry_forward(scope, 73, year - 1, 92)
-      assert {:ok, 0} = Leave.carried_forward_count(scope, 73, year - 1)
-      assert Decimal.equal?(balance(scope, employee, year).carried_forward, 0)
+      assert {:ok, %{carried: 1, previous_year_open: 1}} =
+               Leave.carry_forward(scope, 73, year, 92)
+
+      assert {:ok, [%{employee_id: employee_id, reason: :previous_year_open}]} =
+               Leave.carry_forward_skipped(scope, 73, year)
+
+      assert employee_id == employee.id
+
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year - 1)
+      assert Decimal.equal?(balance(scope, employee, year).carried_forward, 4)
+
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
+      assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
 
     test "a late grant skips a year already carried forward", ctx do
@@ -567,8 +580,14 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       {:ok, pending} = request(scope, requester, type, ctx.last_day, ctx.last_day)
       assert {:ok, %{carried: 1, pending: 1}} = Leave.carry_forward(scope, 73, year)
 
+      assert {:ok, [%{leave_type_id: type_id, reason: :pending}]} =
+               Leave.carry_forward_skipped(scope, 73, year)
+
+      assert type_id == type.id
+
       {:ok, _} = Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year)
+      assert {:ok, []} = Leave.carry_forward_skipped(scope, 73, year)
       assert Decimal.equal?(balance_for(scope, employee, type, year + 1).carried_forward, 2)
       assert Decimal.equal?(balance_for(scope, employee, uncapped, year + 1).carried_forward, 0)
       assert Decimal.equal?(balance_for(scope, employee, uncapped, year).balance, 3)

@@ -84,17 +84,24 @@ requests release their slots. Each transition is an append-only row in
 type whose policy in force on the year's last day has a cap, each current
 employee's closing balance up to the cap becomes a `carried_forward` entry on
 the first day of the next year, and any excess becomes an `expired` entry on
-the last day. A negative balance carries nothing. Employees with pending
-requests in that year are skipped and reported until those are decided.
+the last day. A negative balance carries nothing.
 
 Each processed employee and type gets one `carried_forward` entry, even of
 zero, keyed by type, employee and year. That entry closes the year for them:
 a repeated run changes nothing, and new requests, approvals, cancellations and
 `record_entry/4` entries in that year are refused with `:year_closed`, so no
 quantity is spent twice. Carried balances do not expire later in this slice.
-Years close in order: when the next year is already closed for an employee and
-type the run would carry, the whole run is refused with `:next_year_closed`
-and writes nothing.
+
+Years close in order per employee and type, so no year is stranded. A run
+skips an employee and type with pending requests in the year (`pending`), with
+a previous year still open (`previous_year_open`: a capped type with ledger
+entries or pending requests in that year and no carry-forward), or whose next
+year is already closed while this year has ledger entries
+(`next_year_closed`). An employee without entries in the year, such as one
+hired later, is not held back. The run returns a count per reason, and
+`carry_forward_skipped/3` lists the skipped employees, types and reasons from
+the current ledger and requests, so the Policies page shows them after the
+queued run. Running the year again once the cause is resolved carries them.
 
 `enqueue_carry_forward/3` queues `Bilimbi.People.Leave.CarryForwardWorker`
 (worker ID `people-leave/carry-forward`) through Base Queue as the signed-in

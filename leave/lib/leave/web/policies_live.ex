@@ -222,10 +222,18 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         types: types,
         policies: policies,
         current_year: current_year,
-        carried_count: carried
+        carried_count: carried,
+        carry_skipped: carry_skipped(scope(socket), company_id, current_year - 1)
       )
     else
       _ -> assign(socket, empty_assigns())
+    end
+  end
+
+  defp carry_skipped(scope, company_id, from_year) do
+    case Leave.carry_forward_skipped(scope, company_id, from_year) do
+      {:ok, skipped} -> skipped
+      _ -> []
     end
   end
 
@@ -236,10 +244,15 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
       types: [],
       policies: [],
       current_year: nil,
-      carried_count: 0
+      carried_count: 0,
+      carry_skipped: []
     ]
 
   defp type_name(types, id), do: Enum.find_value(types, "Leave", &(&1.id == id && &1.name))
+  defp skip_reason(:pending), do: "has a pending request in that year"
+  defp skip_reason(:previous_year_open), do: "the previous leave year is not carried forward yet"
+  defp skip_reason(:next_year_closed), do: "the next leave year is already carried forward"
+
   defp unit_label("hour"), do: "hours"
   defp unit_label(_), do: "days"
 
@@ -329,11 +342,19 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
             <p id="leave-carried-count" class="mt-2 text-sm text-ink-muted">
               {@carried_count} balances from leave year {@current_year - 1} have been carried forward.
             </p>
+            <ul :if={@carry_skipped != []} id="leave-carry-skipped"
+              class="mt-2 space-y-1 text-sm text-ink-muted">
+              <li :for={skip <- @carry_skipped}
+                id={"leave-carry-skipped-#{skip.employee_id}-#{skip.leave_type_id}"}>
+                Skipped: {skip.employee_name} · {skip.leave_type_name} · {skip_reason(skip.reason)}
+              </li>
+            </ul>
             <p class="mt-2 text-sm text-ink-muted">
               For each type whose policy on the year's last day sets a cap, each current employee's
               closing balance up to the cap moves into the next year and the rest expires. The year
-              must have ended; employees with pending requests in it are skipped until those are
-              decided. A carried year is closed to new requests and entries.
+              must have ended, and years are carried in order. Employees with pending requests in it,
+              or whose previous year is not carried yet, are skipped and listed until run again. A
+              carried year is closed to new requests and entries.
             </p>
           </section>
 
