@@ -156,11 +156,12 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
              parse_integer(year),
              actor_user_id(socket)
            ) do
-        {:ok, %{granted: granted, existing: existing}} ->
+        {:ok, %{granted: granted, existing: existing, closed: closed}} ->
           put_flash(
             socket,
             :success,
-            "#{granted} entitlements granted; #{existing} were already granted."
+            "#{granted} entitlements granted; #{existing} were already granted; " <>
+              "#{closed} skipped because the year is carried forward."
           )
 
         _ ->

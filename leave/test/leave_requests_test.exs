@@ -311,6 +311,42 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     assert {:ok, []} = Leave.pending_requests(scope, 73)
   end
 
+  test "an approver whose user cannot be resolved is refused", ctx do
+    %{scope: scope, employee: employee, type: type, requester: requester} = ctx
+
+    fund(scope, employee, type, @monday, 5)
+    {:ok, pending} = request(scope, requester, type, @monday, @monday)
+
+    assert {:error, :self_approval} =
+             Leave.decide_request(
+               scope,
+               73,
+               %{type: :user, id: 999, company_id: 73},
+               pending.id,
+               :approve,
+               nil
+             )
+
+    assert {:ok, [%{id: id}]} = Leave.pending_requests(scope, 73)
+    assert id == pending.id
+  end
+
+  test "operator entries cannot use the module's own ledger sources", ctx do
+    %{scope: scope, employee: employee, type: type} = ctx
+
+    for source <- ~w(policy request carry_forward) do
+      assert {:error, :invalid_entry} =
+               Leave.record_entry(scope, 73, employee.id, %{
+                 leave_type_id: type.id,
+                 entry_type: "adjustment",
+                 quantity: 1,
+                 occurred_on: @monday,
+                 source: source,
+                 entry_key: "carry:#{type.id}:#{employee.id}:2099"
+               })
+    end
+  end
+
   test "rejection needs a note and frees the dates", ctx do
     %{scope: scope, employee: employee, type: type, requester: requester, approver: approver} =
       ctx
@@ -462,6 +498,24 @@ defmodule Bilimbi.People.LeaveRequestsTest do
                })
 
       assert {:ok, _} = request(scope, requester, type, ctx.first_next, ctx.first_next)
+    end
+
+    test "a late grant skips a year already carried forward", ctx do
+      %{scope: scope, employee: employee, type: type, year: year} = ctx
+
+      {:ok, _} =
+        Leave.add_policy(scope, 73, type.id, %{
+          effective_from: Date.new!(1990, 1, 1),
+          entitlement: 10,
+          carry_forward_cap: "4"
+        })
+
+      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
+
+      assert {:ok, %{granted: 0, existing: 0, closed: 2}} =
+               Leave.grant_entitlements(scope, 73, year)
+
+      assert Decimal.equal?(balance(scope, employee, year).balance, 0)
     end
 
     test "skips pending requests and types without a cap", ctx do

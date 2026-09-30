@@ -257,16 +257,12 @@ defmodule Bilimbi.People.Leave.Requests do
   end
 
   defp independent(scope, %{type: :user, id: user_id} = actor, request) do
-    linked =
-      case User.get_user(scope, actor.company_id, user_id) do
-        {:ok, user} -> user.employee_id
-        _ -> nil
-      end
-
-    cond do
-      user_id == request.requested_by_user_id -> {:error, :self_approval}
-      linked == request.employee_id -> {:error, :self_approval}
-      true -> :ok
+    with {:ok, user} <- User.get_user(scope, actor.company_id, user_id),
+         false <- user_id == request.requested_by_user_id,
+         false <- user.employee_id == request.employee_id do
+      :ok
+    else
+      _ -> {:error, :self_approval}
     end
   end
 

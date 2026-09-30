@@ -31,9 +31,11 @@ cross-tenant records are indistinguishable.
   corrections are new entries. `grant_entitlements/4` gives every current
   workforce employee each active type's entitlement from the version in force
   on the first day of the leave year, once per employee, type and year, and
-  records the policy version. `record_entry/4` writes `opening` and
-  `adjustment` entries, idempotent by company, source and key; a conflicting
-  replay is refused. Quantities are in the type's unit with two decimals.
+  records the policy version; it skips, and counts as `closed`, an employee and
+  type whose year is already carried forward. `record_entry/4` writes `opening`
+  and `adjustment` entries, idempotent by company, source and key; a conflicting
+  replay is refused, and so are the module's own sources `policy`, `request`
+  and `carry_forward`. Quantities are in the type's unit with two decimals.
   `balances/4` sums entries per type and also reports the quantity `pending`
   requests reserve and the `available` balance after that reservation.
 
@@ -67,7 +69,7 @@ only while that employee is current in the workforce seam.
 Every write for one employee takes Core Employee's affiliation lock, so
 balance and overlap checks cannot race. `decide_request/6` approves or
 rejects a pending request. The requester and the request's own employee are
-refused (`:self_approval`), and a rejection needs a note. Approval rechecks the
+refused (`:self_approval`), as is an approver whose user cannot be resolved, and a rejection needs a note. Approval rechecks the
 employee, the type and the balance, then writes a `taken` ledger entry of the
 negative quantity with the approver as actor. `cancel_request/4` lets the
 employee cancel a pending request, or an approved one before its start date,

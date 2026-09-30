@@ -34,6 +34,7 @@ defmodule Bilimbi.People.Leave do
 
   @year_start_key "people.leave.year_start_month"
   @grant_source "policy"
+  @reserved_sources ~w(policy request carry_forward)
 
   ## Company leave year
 
@@ -205,7 +206,9 @@ defmodule Bilimbi.People.Leave do
   @doc """
   Grants each current workforce employee the entitlement of every active type
   whose policy is effective on the first day of `leave_year`. A grant happens
-  once per employee, type and year; a repeated run skips existing grants.
+  once per employee, type and year; a repeated run skips existing grants, and
+  an employee and type whose year is already carried forward is counted as
+  `closed` and not granted.
   """
   def grant_entitlements(scope, company_id, leave_year, actor_user_id \\ nil)
 
@@ -221,7 +224,7 @@ defmodule Bilimbi.People.Leave do
             policy = effective_policy(scope, company_id, type.id, first_day),
             policy != nil,
             employee <- employees,
-            reduce: %{granted: 0, existing: 0} do
+            reduce: %{granted: 0, existing: 0, closed: 0} do
           counts ->
             employee_id = String.to_integer(employee.reference.stable_id)
             key = "entitlement:#{type.id}:#{employee_id}:#{leave_year}"
@@ -249,10 +252,13 @@ defmodule Bilimbi.People.Leave do
             # Checking first keeps a repeated grant from issuing a no-op insert;
             # the savepoint absorbs a concurrent run that wins the unique key.
             with nil <- find_entry(scope, company_id, @grant_source, key),
+                 false <-
+                   CarryForward.closed?(scope, company_id, employee_id, type.id, leave_year),
                  {:ok, _entry} <- Repo.insert(changeset, mode: :savepoint) do
               Map.update!(counts, :granted, &(&1 + 1))
             else
               %LedgerEntry{} -> Map.update!(counts, :existing, &(&1 + 1))
+              true -> Map.update!(counts, :closed, &(&1 + 1))
               {:error, changeset} -> replayed_grant(scope, company_id, key, changeset, counts)
             end
         end
@@ -612,7 +618,8 @@ defmodule Bilimbi.People.Leave do
 
     with true <- entry_type in ~w(opening adjustment),
          true <- is_integer(field(attrs, :leave_type_id)),
-         true <- is_binary(source) and byte_size(source) in 1..32 and source != @grant_source,
+         true <-
+           is_binary(source) and byte_size(source) in 1..32 and source not in @reserved_sources,
          true <- is_binary(key) and byte_size(key) in 1..160,
          true <- is_nil(note) or (is_binary(note) and String.length(note) <= 500),
          {:ok, occurred_on} <- parse_date(field(attrs, :occurred_on)),
