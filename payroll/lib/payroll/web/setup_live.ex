@@ -23,6 +23,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
        companies: companies,
        company: nil,
        can_manage?: false,
+       can_map_attendance?: false,
        data: nil,
        sources: [],
        forms: forms(),
@@ -118,7 +119,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   end
 
   defp load(%{assigns: %{company: nil}} = socket),
-    do: assign(socket, can_manage?: false, data: nil, sources: [])
+    do: assign(socket, can_manage?: false, can_map_attendance?: false, data: nil, sources: [])
 
   defp load(socket) do
     case Payroll.setup(scope(socket), id(socket)) do
@@ -140,11 +141,23 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
         assign(socket,
           data: data,
           sources: sources,
-          can_manage?: Payroll.allowed?(scope(socket), id(socket), "people.payroll.manage")
+          can_manage?: Payroll.allowed?(scope(socket), id(socket), "people.payroll.manage"),
+          can_map_attendance?:
+            Payroll.allowed?(
+              scope(socket),
+              id(socket),
+              "people.payroll.attendance-mappings.manage"
+            )
         )
 
       _ ->
-        assign(socket, company: nil, data: nil, sources: [], can_manage?: false)
+        assign(socket,
+          company: nil,
+          data: nil,
+          sources: [],
+          can_manage?: false,
+          can_map_attendance?: false
+        )
     end
   end
 
@@ -347,8 +360,15 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-mappings" title="Pay-item mappings" />
-            <p id="attendance-mapping-unavailable" class="mt-2 text-sm text-ink-muted">
-              Attendance — not available yet. Allowance rules are not available for mapping.
+            <p :if={@can_map_attendance?} id="attendance-mapping-link" class="mt-2 text-sm text-ink-muted">
+              Attendance allowance mappings are managed on the
+              <.link
+                navigate={~p"/people/payroll/attendance-mappings?company_id=#{@company.id}"}
+                class="underline"
+              >
+                Attendance mappings
+              </.link>
+              page.
             </p>
             <.empty_state
               :if={@data.mappings == []}

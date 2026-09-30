@@ -38,9 +38,9 @@ item's dates. Dates are inclusive. Periods cannot overlap and their explicit pay
 date must be on or after the end date.
 
 Leave and Claims choices are read through the owning modules' public catalogs.
-A submitted source key must belong to the selected company. Attendance is
-labelled **not available yet** in these setup mappings and cannot be mapped
-here; attendance allowance rules use the separate mapping below. Clocking
+A submitted source key must belong to the selected company. Attendance
+allowance rules cannot be mapped here; operators with the attendance mapping
+capability see a link to the separate mapping page described below. Clocking
 settings are not allowance rules.
 
 Freeze setup for a period and currency. The snapshot stores period, applicable

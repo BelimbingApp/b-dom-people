@@ -73,7 +73,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
           ~w(#classifications-empty #items-empty #periods-empty #mappings-empty #runs-empty),
         do: assert(has_element?(view, selector))
 
-    assert has_element?(view, "#attendance-mapping-unavailable", "not available yet")
+    refute has_element?(view, "#attendance-mapping-link")
     refute has_element?(view, "#classification-form")
 
     for event <-
@@ -83,6 +83,17 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
     assert {:ok, %{classifications: []}} = Payroll.setup(scope, 73)
     assert {:error, :unauthorized} = Payroll.create_classification(scope, 73, version("denied"))
+  end
+
+  test "attendance mapping holders are pointed to the Attendance mappings page", %{conn: conn} do
+    grant_capabilities!(["people.payroll.view", "people.payroll.attendance-mappings.manage"])
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/payroll/setup")
+
+    assert has_element?(
+             view,
+             ~s(#attendance-mapping-link a[href="/people/payroll/attendance-mappings?company_id=73"]),
+             "Attendance mappings"
+           )
   end
 
   test "operator creates governed settings and catalog through the page", %{
