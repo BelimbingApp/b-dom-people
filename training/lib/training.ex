@@ -55,9 +55,9 @@ defmodule Bilimbi.People.Training do
     to: Governance,
     as: :decide_plan
 
-  defdelegate learning_history(scope, company_id, kind, id, audience),
+  defdelegate learning_histories(scope, company_id, kind, ids, audience),
     to: Governance,
-    as: :history
+    as: :histories
 
   def allowed?(%Scope{} = scope, company_id, capability),
     do: match?({:ok, _}, authorize(scope, company_id, capability))

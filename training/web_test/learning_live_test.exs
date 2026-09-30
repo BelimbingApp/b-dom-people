@@ -177,9 +177,16 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
 
     live |> element("#learning-decision-confirm-confirm") |> render_click()
     assert has_element?(live, "#learning-records", "pending_hod")
-    {:ok, history} = Training.learning_history(s[91], 73, :request, r.id, :self)
+    {:ok, %{r.id => history}} = Training.learning_histories(s[91], 73, :request, [r.id], :self)
     assert Enum.map(history, & &1.action) == ["create", "submit"]
     assert Enum.all?(history, &(&1.actor_user_id == 91))
+
+    assert {:ok, %{r.id => ^history}} =
+             Training.learning_histories(s[92], 73, :request, [r.id], :team)
+
+    grant(95, ~w(requests.submit requests.recommend))
+    assert {:ok, %{}} == Training.learning_histories(s[95], 73, :request, [r.id], :self)
+    assert {:ok, %{}} == Training.learning_histories(s[95], 73, :request, [r.id], :team)
   end
 
   test "budget viewer cannot forge allocation or currency writes", %{conn: conn, scopes: s} do
@@ -323,6 +330,22 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
 
     assert {:ok, [only]} = Training.learning_budgets(s[93], 73)
     assert only.id == policy.id and is_nil(only.superseded_by)
+
+    {:ok, same} =
+      Training.supersede_budget_policy(s[93], 73, policy.id, %{below | amount: "100"})
+
+    narrowed = %{below | effective_from: "2026-10-13", amount: "100"}
+
+    assert {:error, :commitments_outside_period} =
+             Training.supersede_budget_policy(s[93], 73, same.id, narrowed)
+
+    assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
+             SQL.query(
+               Repo,
+               "INSERT INTO people_training_budget_policies (tenant_id, company_id, actor_user_id, currency, effective_from, effective_to, amount, reason, supersedes_id, inserted_at, updated_at) VALUES (41, 73, 93, 'AAA', '2026-10-13', '2026-10-31', 100, 'Bypass', $1, now(), now())",
+               [same.id],
+               mode: :savepoint
+             )
   end
 
   test "HR HOD employee company and system refusal precede writes", %{scopes: s} do
@@ -400,7 +423,7 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     assert {:error, :currency_unavailable} =
              Training.decide_learning_request(s[94], 73, r3.id, "approve", "Disabled currency")
 
-    {:ok, history} = Training.learning_history(s[93], 73, :request, r1.id, :hr)
+    {:ok, %{r1.id => history}} = Training.learning_histories(s[93], 73, :request, [r1.id], :hr)
     assert Enum.map(history, & &1.actor_user_id) == [91, 91, 92, 93, 94]
   end
 

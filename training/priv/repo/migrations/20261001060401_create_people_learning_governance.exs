@@ -155,7 +155,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
         END IF;
         IF NEW.supersedes_id IS NOT NULL AND (
           NOT EXISTS (SELECT 1 FROM people_training_budget_policies p WHERE p.id = NEW.supersedes_id AND p.tenant_id = NEW.tenant_id AND p.company_id = NEW.company_id AND p.currency = NEW.currency) OR
-          EXISTS (SELECT 1 FROM people_training_requests r WHERE r.budget_policy_id = NEW.supersedes_id AND r.proposed_on NOT BETWEEN NEW.effective_from AND NEW.effective_to)
+          EXISTS (SELECT 1 FROM people_training_requests r JOIN people_training_budget_policies p ON p.id = NEW.supersedes_id WHERE r.tenant_id = NEW.tenant_id AND r.company_id = NEW.company_id AND r.currency = NEW.currency AND r.status = 'approved' AND r.proposed_on BETWEEN p.effective_from AND p.effective_to AND r.proposed_on NOT BETWEEN NEW.effective_from AND NEW.effective_to)
         ) THEN
           RAISE EXCEPTION 'Invalid budget correction' USING ERRCODE = '23514';
         END IF;

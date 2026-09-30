@@ -57,10 +57,10 @@ defmodule Bilimbi.People.Training.Governance do
         attrs =
           stringify(attrs) |> Map.take(~w(currency effective_from effective_to amount reason))
 
-        attrs =
-          if prior_id do
-            prior = fetch!(BudgetPolicy, scope, company_id, prior_id)
+        prior = prior_id && fetch!(BudgetPolicy, scope, company_id, prior_id)
 
+        attrs =
+          if prior do
             require!(
               Repo.exists?(
                 from(p in active_budgets(scope, company_id), where: p.id == ^prior.id)
@@ -88,12 +88,14 @@ defmodule Bilimbi.People.Training.Governance do
 
         require!(not overlap, :overlapping_policy)
 
-        if prior_id do
+        if prior do
           require!(
             not Repo.exists?(
               from(r in scoped(Request, scope, company_id),
                 where:
-                  r.budget_policy_id == ^prior_id and
+                  r.status == "approved" and r.currency == ^prior.currency and
+                    r.proposed_on >= ^prior.effective_from and
+                    r.proposed_on <= ^prior.effective_to and
                     (r.proposed_on < ^row.effective_from or r.proposed_on > ^row.effective_to)
               )
             ),
@@ -329,12 +331,12 @@ defmodule Bilimbi.People.Training.Governance do
       if audience == :hr do
         {:ok,
          Repo.all(from(p in query, order_by: [desc: p.id]))
-         |> Enum.map(&plan_view(scope, company_id, &1))}
+         |> then(&plan_views(scope, company_id, &1))}
       else
         with {:ok, id} <- self_employee(scope, company_id) do
           {:ok,
            Repo.all(from(p in query, where: p.manager_employee_id == ^id, order_by: [desc: p.id]))
-           |> Enum.map(&plan_view(scope, company_id, &1))}
+           |> then(&plan_views(scope, company_id, &1))}
         end
       end
     end
@@ -393,7 +395,8 @@ defmodule Bilimbi.People.Training.Governance do
     end
   end
 
-  def history(%Scope{} = scope, company_id, kind, id, audience) when kind in [:request, :plan] do
+  def histories(%Scope{} = scope, company_id, kind, ids, audience)
+      when kind in [:request, :plan] and is_list(ids) do
     {schema, decisions, key, cap} =
       case {kind, audience} do
         {:request, :self} -> {Request, RequestDecision, :request_id, "requests.submit"}
@@ -403,36 +406,35 @@ defmodule Bilimbi.People.Training.Governance do
         {:plan, :hr} -> {Plan, PlanDecision, :plan_id, "plans.view"}
       end
 
+    ids = Enum.filter(ids, &(is_integer(&1) and &1 > 0 and &1 <= 9_223_372_036_854_775_807))
+
     with :ok <- auth(scope, company_id, cap),
-         true <- is_integer(id) and id > 0 and id <= 9_223_372_036_854_775_807,
-         row when not is_nil(row) <-
-           Repo.one(from(r in scoped(schema, scope, company_id), where: r.id == ^id)),
-         true <- visible_history?(scope, company_id, kind, row, audience) do
+         {:ok, visible} <- visible(scope, company_id, kind, audience) do
+      rows = from(r in scoped(schema, scope, company_id), where: r.id in ^ids, select: r.id)
+
+      rows =
+        case {kind, visible} do
+          {_, :company} -> rows
+          {:request, employees} -> from(r in rows, where: r.employee_id in ^employees)
+          {:plan, managers} -> from(r in rows, where: r.manager_employee_id in ^managers)
+        end
+
       {:ok,
        Repo.all(
          from(d in scoped(decisions, scope, company_id),
-           where: field(d, ^key) == ^id,
+           where: field(d, ^key) in subquery(rows),
            order_by: [asc: d.id]
          )
        )
-       |> Enum.map(&view/1)}
-    else
-      false -> {:error, :not_found}
-      nil -> {:error, :not_found}
-      error -> error
+       |> Enum.group_by(&Map.fetch!(&1, key), &view/1)}
     end
   end
 
-  defp visible_history?(_, _, _, _, :hr), do: true
+  defp visible(scope, company_id, :request, audience),
+    do: audience_ids(scope, company_id, audience)
 
-  defp visible_history?(scope, company_id, :request, row, :self),
-    do: self_employee(scope, company_id) == {:ok, row.employee_id}
-
-  defp visible_history?(scope, company_id, :request, row, :team),
-    do: team_member?(scope, company_id, row.employee_id)
-
-  defp visible_history?(scope, company_id, :plan, row, :team),
-    do: self_employee(scope, company_id) == {:ok, row.manager_employee_id}
+  defp visible(scope, company_id, :plan, :team), do: audience_ids(scope, company_id, :self)
+  defp visible(_scope, _company_id, :plan, :hr), do: {:ok, :company}
 
   defp write_items!(scope, company_id, row, items) do
     require!(Date.compare(row.period_end, row.period_start) != :lt, :invalid_period)
@@ -544,19 +546,22 @@ defmodule Bilimbi.People.Training.Governance do
     ) || Decimal.new(0)
   end
 
-  defp plan_view(scope, company_id, row),
-    do:
-      Map.put(
-        view(row),
-        :items,
-        Repo.all(
-          from(i in scoped(PlanItem, scope, company_id),
-            where: i.plan_id == ^row.id,
-            order_by: i.id
-          )
+  defp plan_view(scope, company_id, row), do: hd(plan_views(scope, company_id, [row]))
+
+  defp plan_views(scope, company_id, rows) do
+    ids = Enum.map(rows, & &1.id)
+
+    items =
+      Repo.all(
+        from(i in scoped(PlanItem, scope, company_id),
+          where: i.plan_id in ^ids,
+          order_by: i.id
         )
-        |> Enum.map(&view/1)
       )
+      |> Enum.group_by(& &1.plan_id, &view/1)
+
+    Enum.map(rows, &Map.put(view(&1), :items, Map.get(items, &1.id, [])))
+  end
 
   defp decision!(schema, key, row, scope, action, from, to, reason),
     do:

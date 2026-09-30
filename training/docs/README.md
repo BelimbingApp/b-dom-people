@@ -33,7 +33,8 @@ rejects it; independent HR reviewers and approvers decide their stages with
 Rejection and cancellation are terminal; a corrected need is a new request.
 Both authored and subject self-approval are refused even with a decision grant.
 The public read `learning_requests/3` accepts `:self`, `:team` or `:hr` and checks
-the corresponding capability. `learning_history/5` uses the same audience rule.
+the corresponding capability. `learning_histories/5` returns decision history
+for a page of record IDs under the same audience rule and omits IDs outside it.
 
 `create_learning_plan/4` takes period, objectives, reason and a nonempty list of
 items. Each item records its need, expected result, target cohort, responsible
@@ -61,8 +62,8 @@ operator gives a reason and the corrected period and amount, and a new row in th
 same currency records `supersedes_id`. The original row stays unchanged and is
 listed as superseded; overlap checks, approvals and committed totals use only
 current policies. A correction is refused when approved commitments in its
-period exceed the new amount, or when requests approved under the original
-policy would fall outside the corrected period. Requests and allocations require an enabled currency. Approval
+period exceed the new amount, or when approved requests inside the replaced
+policy's period would fall outside the corrected period. Requests and allocations require an enabled currency. Approval
 requires a policy covering the request's proposed date, snapshots its ID and
 the approved amount, and refuses spending above that allocation. Missing
 policy is unavailable, not an unlimited budget. There is no implicit currency

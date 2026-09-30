@@ -285,19 +285,22 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
         &{&1, can.(&1)}
       )
 
-    histories =
-      if a.kind == :budget,
-        do: %{},
-        else:
-          Map.new(records, fn r ->
-            history =
-              case Training.learning_history(scope, a.company.id, a.kind, r.id, a.audience) do
-                {:ok, rows} -> rows
-                _ -> []
-              end
+    record_page = Support.page(records, a.params)
 
-            {r.id, history}
-          end)
+    histories =
+      with true <- a.kind != :budget and a.company != nil,
+           {:ok, histories} <-
+             Training.learning_histories(
+               scope,
+               a.company.id,
+               a.kind,
+               Enum.map(record_page.entries, & &1.id),
+               a.audience
+             ) do
+        histories
+      else
+        _ -> %{}
+      end
 
     currencies =
       if a.kind == :budget and a.company do
@@ -311,7 +314,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
 
     assign(socket,
       records: records,
-      record_page: Support.page(records, a.params),
+      record_page: record_page,
       histories: histories,
       error: error,
       can_create?: create?,
@@ -408,7 +411,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
             <div :if={@kind == :budget}><p>Allocation {r.amount}</p><p>Committed {r.committed}</p><p>Remaining {r.remaining}</p></div>
           </:col>
           <:col :let={r} label="Decisions">
-            <details :if={@kind != :budget}><summary>History</summary><p :for={d <- @histories[r.id]}>{d.action} · User {d.actor_user_id}<span :if={d.impersonator_id}> · Impersonator {d.impersonator_id}</span> · {d.reason} · <.datetime id={"learning-decision-#{@kind}-#{d.id}"} value={d.inserted_at} /></p></details>
+            <details :if={@kind != :budget}><summary>History</summary><p :for={d <- Map.get(@histories, r.id, [])}>{d.action} · User {d.actor_user_id}<span :if={d.impersonator_id}> · Impersonator {d.impersonator_id}</span> · {d.reason} · <.datetime id={"learning-decision-#{@kind}-#{d.id}"} value={d.inserted_at} /></p></details>
             <.form :if={actions(r, @kind, @audience, @flags) != []} for={@decision_form} id={"decision-#{r.id}"} phx-submit="decide" class="space-y-2">
               <input type="hidden" name="decision[id]" value={r.id} />
               <.input field={@decision_form[:action]} type="select" label="Action" options={actions(r, @kind, @audience, @flags)} />
