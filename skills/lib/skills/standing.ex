@@ -139,11 +139,15 @@ defmodule Bilimbi.People.Skills.Standing do
   holders reach the company's backup minimum. Company-wide holders only.
   """
   def coverage(actor, company_id, as_of \\ Date.utc_today()) do
-    scope = actor.scope
-
     with {:ok, _company} <- Access.authorize(actor, company_id, @view),
          {:ok, :company} <- coverage_reach(actor, company_id),
-         {:ok, policy} <- Policy.get(scope, company_id),
+         do: critical_coverage(actor.scope, company_id, as_of)
+  end
+
+  @doc false
+  # Unauthorized: callers must have authorized the actor another way.
+  def critical_coverage(scope, company_id, as_of) do
+    with {:ok, policy} <- Policy.get(scope, company_id),
          {:ok, employees} <- Access.current_employees(scope, company_id) do
       working = MapSet.new(employees, &Access.employee_id/1)
 

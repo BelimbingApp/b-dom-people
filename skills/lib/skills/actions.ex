@@ -568,14 +568,37 @@ defmodule Bilimbi.People.Skills.Actions do
     end
   end
 
-  @doc "Actions filtered by status group (`:open` or `:closed`) for viewers."
+  @doc """
+  Actions filtered by status group (`:open` or `:closed`) that the viewer may
+  see: every action for managers, otherwise the actions they own and those of
+  the people who report to them.
+  """
   def list(actor, company_id, group \\ :open) do
     scope = actor.scope
 
-    with {:ok, _company} <- Access.authorize(actor, company_id, @view) do
-      {:ok, scope |> query(company_id, group) |> Repo.all() |> present(scope, company_id)}
+    with {:ok, _company} <- Access.authorize(actor, company_id, @view),
+         {:ok, reach} <- Access.reach(actor, company_id, @manage) do
+      {:ok,
+       scope
+       |> query(company_id, group)
+       |> visible(reach, Access.linked_employee_id(scope, company_id, actor))
+       |> Repo.all()
+       |> present(scope, company_id)}
     end
   end
+
+  defp visible(query, :company, _own), do: query
+
+  defp visible(query, {:team, team}, {:ok, own}),
+    do:
+      where(
+        query,
+        [a],
+        a.employee_id in ^MapSet.to_list(team) or a.owner_employee_id == ^own
+      )
+
+  defp visible(query, {:team, team}, :none),
+    do: where(query, [a], a.employee_id in ^MapSet.to_list(team))
 
   @doc "Actions the signed-in employee owns."
   def owned(actor, company_id, group \\ :open) do
@@ -619,9 +642,17 @@ defmodule Bilimbi.People.Skills.Actions do
   end
 
   defp may_read(scope, company_id, actor, action) do
-    if Access.allowed?(actor, company_id, @view),
-      do: :ok,
-      else: may_progress(scope, company_id, actor, action)
+    cond do
+      may_progress(scope, company_id, actor, action) == :ok -> :ok
+      Access.allowed?(actor, company_id, @view) -> in_reach(actor, company_id, action)
+      true -> {:error, :not_found}
+    end
+  end
+
+  defp in_reach(actor, company_id, action) do
+    with {:ok, reach} <- Access.reach(actor, company_id, @manage) do
+      if Access.within?(reach, action.employee_id), do: :ok, else: {:error, :not_found}
+    end
   end
 
   defp query(scope, company_id, group) do
@@ -664,16 +695,44 @@ defmodule Bilimbi.People.Skills.Actions do
         _ -> %{}
       end
 
+    reassessments = reassessments(scope, company_id, rows)
+
     Enum.map(rows, fn row ->
       row
       |> view()
       |> Map.merge(%{
         skill_name: skills |> Map.get(row.skill_id, %{}) |> Map.get(:name),
+        reassessments: Map.get(reassessments, row.id, []),
         type_name: Map.get(types, row.action_type_id),
         owner_name: Map.get(names, row.owner_employee_id, "Employee ##{row.owner_employee_id}"),
         coordinator_name:
           Map.get(names, row.coordinator_employee_id, "Employee ##{row.coordinator_employee_id}")
       })
+    end)
+  end
+
+  # The finalized assessments each pending action could be closed against.
+  defp reassessments(scope, company_id, rows) do
+    pending = Enum.filter(rows, &(&1.status == "pending_reassessment"))
+
+    candidates =
+      Repo.all(
+        from(a in Tenancy.scope_query(Assessment, scope),
+          where:
+            a.company_id == ^company_id and a.status == "finalized" and
+              a.employee_id in ^Enum.map(pending, & &1.employee_id) and
+              a.skill_id in ^Enum.map(pending, & &1.skill_id),
+          order_by: [desc: a.assessed_on, desc: a.id]
+        )
+      )
+
+    Map.new(pending, fn action ->
+      {action.id,
+       for(
+         assessment <- candidates,
+         follows?(assessment, action),
+         do: Map.take(assessment, [:id, :assessed_on, :assessed_level])
+       )}
     end)
   end
 

@@ -173,27 +173,10 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
           ),
         people:
           if(can_propose?, do: optional(Skills.action_people(actor, company_id), []), else: []),
-        reassessments: reassessments(actor, company_id, actions),
         request_key: socket.assigns[:request_key] || Support.new_key()
       )
     else
       _ -> assign_empty(socket)
-    end
-  end
-
-  defp reassessments(actor, company_id, actions) do
-    for action <- actions, action.status == "pending_reassessment", into: %{} do
-      found =
-        case Skills.list_assessments(actor, company_id, %{
-               employee_id: action.employee_id,
-               skill_id: action.skill_id,
-               status: "finalized"
-             }) do
-          {:ok, rows} -> Enum.filter(rows, &(&1.id != action.source_assessment_id))
-          _ -> []
-        end
-
-      {action.id, found}
     end
   end
 
@@ -212,7 +195,6 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
         gaps: [],
         skills: [],
         people: [],
-        reassessments: %{},
         request_key: Support.new_key()
       )
 
@@ -293,7 +275,7 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
                     class="flex items-center gap-2">
                     <input type="hidden" name="target" value={action.id} />
                     <select name="assessment_id" aria-label="Finalized reassessment" class={input_class()}>
-                      <option :for={row <- Map.get(@reassessments, action.id, [])} value={row.id}>
+                      <option :for={row <- action.reassessments} value={row.id}>
                         {row.assessed_on} · level {row.assessed_level}
                       </option>
                     </select>

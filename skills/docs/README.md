@@ -68,8 +68,9 @@ key is refused.
 
 - **Reach.** Holders of `people.skills.assessments.manage` reach every
   employee of the company. Anyone else reaches only the employees below them
-  in the workforce supervisor chain, directly or through others. Nobody assesses
-  themselves. A sibling company is refused by company authorization.
+  in the workforce supervisor chain, directly or through others; an actor with
+  no linked working employee reaches nobody. Nobody assesses themselves. A
+  sibling company is refused by company authorization.
 - **Review and finalization.** A submission is `pending_review`. A reviewer
   (`...assessments.review`, within reach) verifies it or returns it with a note;
   a finalizer (`...assessments.approve`) finalizes a verified assessment. The
@@ -122,6 +123,11 @@ completion closes it as competent (at or above target) or as needing further
 action. Every change is an append-only `people_skill_action_events` row, and
 completed and cancelled actions are immutable in the database.
 
+Actions follow the assessment reach. A holder of `people.skills.actions.view`
+sees, with its history, every action they own and every action for the
+employees below them in the supervisor chain; seeing every action in the
+company needs `people.skills.actions.manage`.
+
 ## Reminders
 
 `due_reminders/3` lists what is due and who would be told: overdue
@@ -132,7 +138,8 @@ assessment holders. `issue_reminders/3` writes a ledger row per item, recipient
 and period before it sends an in-app Core User notification. The period is the
 ISO week, or the month for coverage. The unique key makes a second run in the
 same period lose the insert, so nobody is told twice, and `retry_reminders/3`
-resends failed rows. An item nobody can be found for writes nothing and is
+resends failed rows and rows left pending for more than fifteen minutes by an
+interrupted send. An item nobody can be found for writes nothing and is
 counted as unaddressed. `enqueue_reminders/2` queues
 `Bilimbi.People.Skills.ReminderWorker`, which re-checks the operator's
 capability and can be scheduled with Base Schedule. Mail delivery policy is not
@@ -153,8 +160,9 @@ action types; `people.skills.profiles.publish` publishes and retires profiles.
 Assessments use `people.skills.assessments.view` (the **Assessments** page and
 its register, gaps and queue), `.submit`, `.review`, `.approve` (finalize) and
 `.manage` (reach across the company), plus `people.skills.reassessments.submit`
-and `.execute`. **Development actions** needs `people.skills.actions.view`, with
-`.manage`, `.approve` and `.update` for the write steps. **My skills** under My
+and `.execute`. **Development actions** needs `people.skills.actions.view`
+(owned and in-reach actions), with `.manage` (every action, and proposing),
+`.approve` and `.update` (progressing owned actions) for the write steps. **My skills** under My
 work needs `people.skills.self.view`. `people.skills.reminders.send` runs
 reminders and `people.skills.policy.manage` opens **Skills policy** under
 Settings. Split these across roles when the duties need separate people. All

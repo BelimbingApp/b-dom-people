@@ -4,9 +4,11 @@ defmodule Bilimbi.People.Skills.Reminders do
   #
   # A ledger row is written before the notification is sent. Its unique key
   # (rule, employee, skill, action, period, recipient) makes a second run in
-  # the same period lose the insert instead of notifying twice, and a crash
-  # between the insert and the send leaves a visible failed row that a retry
-  # picks up. A due item nobody can be found for writes nothing and is counted.
+  # the same period lose the insert instead of notifying twice. A failed send
+  # leaves a visible failed row, and a crash between the insert and the send
+  # leaves a pending row; a retry picks up both once the pending row is older
+  # than a short grace period. A due item nobody can be found for writes
+  # nothing and is counted.
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
@@ -18,6 +20,7 @@ defmodule Bilimbi.People.Skills.Reminders do
   @send "people.skills.reminders.send"
   @wide "people.skills.assessments.manage"
   @pursued ~w(not_started scheduled in_progress pending_reassessment)
+  @stalled_after_seconds 15 * 60
 
   @titles %{
     "overdue_reassessment" => "Skill reassessment overdue",
@@ -50,17 +53,19 @@ defmodule Bilimbi.People.Skills.Reminders do
     end
   end
 
-  @doc "Retries this period's failed reminders; sent ones are never touched."
+  @doc "Retries this period's failed and stalled reminders; sent ones are never touched."
   def retry(actor, company_id, as_of \\ nil) do
     scope = actor.scope
     as_of = as_of || Date.utc_today()
     keys = Enum.uniq([week_key(as_of), month_key(as_of)])
+    stalled = NaiveDateTime.add(Assessments.now(), -@stalled_after_seconds)
 
     with {:ok, _company} <- Access.authorize(actor, company_id, @send) do
       rows =
         Repo.all(
           from(r in Tenancy.scope_query(Reminder, scope),
-            where: r.company_id == ^company_id and r.state == "failed" and r.period_key in ^keys,
+            where: r.company_id == ^company_id and r.period_key in ^keys,
+            where: r.state == "failed" or (r.state == "pending" and r.inserted_at < ^stalled),
             order_by: [asc: r.id]
           )
         )
@@ -111,7 +116,8 @@ defmodule Bilimbi.People.Skills.Reminders do
     scope = actor.scope
 
     with {:ok, policy} <- Policy.get(scope, company_id),
-         {:ok, employees} <- Access.current_employees(scope, company_id) do
+         {:ok, employees} <- Access.current_employees(scope, company_id),
+         {:ok, coverage} <- Standing.critical_coverage(scope, company_id, as_of) do
       supervisors = Map.new(employees, &{Access.employee_id(&1), Access.supervisor_id(&1)})
       users = Access.users_by_employee(scope, company_id)
       horizon = Date.add(as_of, policy.reminder_window_days)
@@ -173,21 +179,18 @@ defmodule Bilimbi.People.Skills.Reminders do
           )
         end)
 
-      {:ok, overdue ++ expiring ++ actions ++ coverage_items(actor, company_id, as_of)}
+      {:ok, overdue ++ expiring ++ actions ++ coverage_items(scope, company_id, coverage, as_of)}
     end
   end
 
-  defp coverage_items(actor, company_id, as_of) do
-    case Standing.coverage(actor, company_id, as_of) do
-      {:ok, rows} ->
-        holders = Access.capability_holders(actor.scope, company_id, @wide)
-
-        for row <- rows, not row.covered do
-          item("coverage_gap", nil, row.skill_id, nil, as_of, holders)
-        end
-
-      _ ->
+  defp coverage_items(scope, company_id, coverage, as_of) do
+    case Enum.reject(coverage, & &1.covered) do
+      [] ->
         []
+
+      gaps ->
+        holders = Access.capability_holders(scope, company_id, @wide)
+        for row <- gaps, do: item("coverage_gap", nil, row.skill_id, nil, as_of, holders)
     end
   end
 
@@ -249,10 +252,12 @@ defmodule Bilimbi.People.Skills.Reminders do
     skill =
       row.skill_id |> List.wrap() |> then(&Assessments.skills(scope, &1)) |> Map.get(row.skill_id)
 
+    body = body(row.rule, (skill && skill.name) || "A skill", row.due_on)
+
     attrs = %{
       type: "people.skills.reminder",
       title: Map.fetch!(@titles, row.rule),
-      body: "#{(skill && skill.name) || "A skill"} was due on #{row.due_on}.",
+      body: body,
       url: url(row.rule),
       data: %{
         "rule" => row.rule,
@@ -261,7 +266,7 @@ defmodule Bilimbi.People.Skills.Reminders do
         "action_id" => row.action_id,
         "due_on" => Date.to_iso8601(row.due_on),
         "title" => Map.fetch!(@titles, row.rule),
-        "body" => "#{(skill && skill.name) || "A skill"} was due on #{row.due_on}.",
+        "body" => body,
         "url" => url(row.rule)
       }
     }
@@ -282,6 +287,17 @@ defmodule Bilimbi.People.Skills.Reminders do
         :failed
     end
   end
+
+  defp body("overdue_reassessment", skill, date),
+    do: "#{skill} reassessment was due on #{date}."
+
+  defp body("expiring_certificate", skill, date), do: "#{skill} validity ends on #{date}."
+
+  defp body("overdue_action", skill, date),
+    do: "#{skill} development action was due on #{date}."
+
+  defp body("coverage_gap", skill, date),
+    do: "#{skill} has fewer qualified holders than the backup minimum as of #{date}."
 
   defp failure(:user_not_found), do: "recipient not found"
   defp failure(_reason), do: "notification could not be created"

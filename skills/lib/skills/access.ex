@@ -97,15 +97,20 @@ defmodule Bilimbi.People.Skills.Access do
   @doc """
   The people an actor may act on. A holder of the company-wide capability
   reaches everyone; any other actor reaches only the people who report to
-  them, directly or through others, in the workforce supervisor chain.
+  them, directly or through others, in the workforce supervisor chain. An
+  actor with no working linked employee reaches nobody.
   """
   def reach(%Actor{} = actor, company_id, wide_capability) do
     if allowed?(actor, company_id, wide_capability) do
       {:ok, :company}
     else
-      with {:ok, employee_id} <- self_employee(actor.scope, company_id, actor),
-           {:ok, team} <- team(actor.scope, company_id, employee_id) do
-        {:ok, {:team, team}}
+      case linked_employee_id(actor.scope, company_id, actor) do
+        {:ok, employee_id} ->
+          with {:ok, team} <- team(actor.scope, company_id, employee_id),
+               do: {:ok, {:team, team}}
+
+        :none ->
+          {:ok, {:team, MapSet.new()}}
       end
     end
   end
@@ -123,7 +128,9 @@ defmodule Bilimbi.People.Skills.Access do
           &employee_id/1
         )
 
-      {:ok, descend(reports, [manager_id], MapSet.new([manager_id]), MapSet.new(), 0)}
+      if Enum.any?(employees, &(employee_id(&1) == manager_id)),
+        do: {:ok, descend(reports, [manager_id], MapSet.new([manager_id]), MapSet.new(), 0)},
+        else: {:ok, MapSet.new()}
     end
   end
 

@@ -413,25 +413,29 @@ defmodule Bilimbi.People.Skills.Assessments do
   end
 
   # The current score is the newest finalized assessment that no finalized
-  # correction supersedes.
+  # correction supersedes, directly or through a chain of corrections.
   defp refresh_score!(scope, %Assessment{} = row) do
-    latest =
-      Repo.one!(
+    rows =
+      Repo.all(
         from(a in Tenancy.scope_query(Assessment, scope),
           where:
             a.company_id == ^row.company_id and a.employee_id == ^row.employee_id and
-              a.skill_id == ^row.skill_id and a.status == "finalized",
-          where:
-            not exists(
-              from(s in Assessment,
-                where:
-                  s.supersedes_assessment_id == parent_as(:scoped).id and s.status == "finalized"
-              )
-            ),
-          order_by: [desc: a.assessed_on, desc: a.id],
-          limit: 1
+              a.skill_id == ^row.skill_id,
+          order_by: [desc: a.assessed_on, desc: a.id]
         )
       )
+
+    by_id = Map.new(rows, &{&1.id, &1})
+
+    replaced =
+      for a <- rows,
+          a.status == "finalized",
+          id <- ancestors(by_id, a.supersedes_assessment_id),
+          into: MapSet.new(),
+          do: id
+
+    latest =
+      Enum.find(rows, &(&1.status == "finalized" and not MapSet.member?(replaced, &1.id)))
 
     Repo.insert!(
       %Score{
@@ -470,6 +474,11 @@ defmodule Bilimbi.People.Skills.Assessments do
       conflict_target: [:company_id, :employee_id, :skill_id]
     )
   end
+
+  defp ancestors(_by_id, nil), do: []
+
+  defp ancestors(by_id, id),
+    do: [id | ancestors(by_id, by_id |> Map.fetch!(id) |> Map.get(:supersedes_assessment_id))]
 
   ## Reads
 
