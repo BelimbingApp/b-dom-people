@@ -63,8 +63,9 @@ snapshots.
 ## Attendance allowance mappings
 
 Attendance allowance rules are read through
-`Bilimbi.People.Attendance.payroll_allowance_sources/3` and
-`list_allowance_rules/2`; Payroll does not read Attendance tables. Operators
+`Bilimbi.People.Attendance.list_allowance_rules/2`; Payroll does not read
+Attendance tables. The mapping page offers every active rule version that has
+not ended, including future-effective versions. Operators
 with `people.payroll.attendance-mappings.manage` map an allowance rule code to
 an existing company pay item at `/people/payroll/attendance-mappings`. Every
 facade function checks that capability, a signed-in non-impersonated user and
@@ -81,6 +82,9 @@ freezes the effective attendance mappings for its currency under
 `attendance_mappings` in the snapshot. Active allowance rules in the run
 currency that are effective in the period but have no mapping are reported in
 `unmapped_sources` with source kind `attendance` and the rule code as key.
+When a rule version effective in the run period and mapping dates has another
+currency, the run leaves that mapping out and reports the rule code under
+`unmapped_sources` with reason `currency mismatch`.
 
 ## Schema and validation
 

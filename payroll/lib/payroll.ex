@@ -147,13 +147,16 @@ defmodule Bilimbi.People.Payroll do
     end)
   end
 
-  @doc "Current Attendance allowance sources, company pay items and attendance mapping versions."
+  @doc "Active allowance rule versions not ended by `as_of`, company pay items and attendance mapping versions."
   def attendance_allowances(%Scope{} = scope, company_id, as_of \\ Date.utc_today()) do
     with {:ok, _} <- authorize(scope, company_id, @attendance),
-         {:ok, sources} <- Attendance.payroll_allowance_sources(scope, company_id, as_of) do
+         {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id) do
       {:ok,
        %{
-         sources: sources,
+         sources:
+           rules
+           |> active_rules(as_of, nil)
+           |> Enum.sort_by(&{&1.code, Date.to_gregorian_days(&1.effective_from)}),
          items: rows(Item, scope, company_id),
          mappings: rows(AttendanceAllowanceMapping, scope, company_id)
        }}
@@ -207,21 +210,46 @@ defmodule Bilimbi.People.Payroll do
             effective_rows(Mapping, scope, company_id, period)
             |> Enum.filter(&(&1.item_id in item_ids))
 
-          attendance_mappings =
+          period_rules = active_rules(rules, period.starts_on, period.ends_on)
+
+          {attendance_mappings, mismatched} =
             effective_rows(AttendanceAllowanceMapping, scope, company_id, period)
             |> Enum.filter(&(&1.item_id in item_ids))
+            |> Enum.split_with(fn mapping ->
+              period_rules
+              |> Enum.filter(&(&1.code == mapping.attendance_rule_code))
+              |> active_rules(mapping.effective_from, mapping.effective_to)
+              |> Enum.all?(&(&1.currency == currency))
+            end)
+
+          mismatched_codes = mismatched |> Enum.map(& &1.attendance_rule_code) |> Enum.uniq()
 
           mapped =
             MapSet.new(mappings, &{&1.source_kind, &1.source_key})
             |> MapSet.union(
-              MapSet.new(attendance_mappings, &{"attendance", &1.attendance_rule_code})
+              MapSet.new(
+                Enum.map(attendance_mappings, & &1.attendance_rule_code) ++ mismatched_codes,
+                &{"attendance", &1}
+              )
             )
+
+          currency_mismatches =
+            for code <- Enum.sort(mismatched_codes) do
+              rule = Enum.find(period_rules, &(&1.code == code and &1.currency != currency))
+
+              %{
+                "source_kind" => "attendance",
+                "source_key" => code,
+                "name" => rule.name,
+                "reason" => "currency mismatch"
+              }
+            end
 
           sources =
             Map.put(
               sources,
               "attendance",
-              active_rules(rules, period.starts_on, period.ends_on)
+              period_rules
               |> Enum.filter(&(&1.currency == currency))
               |> Enum.sort_by(& &1.code)
               |> Enum.uniq_by(& &1.code)
@@ -241,7 +269,7 @@ defmodule Bilimbi.People.Payroll do
                   choice.active or MapSet.member?(requested, {kind, choice.key}),
                   not MapSet.member?(mapped, {kind, choice.key}) do
                 %{"source_kind" => kind, "source_key" => choice.key, "name" => choice.name}
-              end
+              end ++ currency_mismatches
           }
 
           %Run{

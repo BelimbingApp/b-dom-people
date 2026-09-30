@@ -241,7 +241,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     assert {:ok, %{sources: sources, items: [_], mappings: [%{id: id}]}} =
              Payroll.attendance_allowances(scope, 73, ~D[2026-01-15])
 
-    assert Enum.map(sources, & &1.code) == ["rule-a", "rule-b", "rule-e"]
+    assert Enum.map(sources, & &1.code) == ["rule-a", "rule-b", "rule-d", "rule-e"]
 
     assert id == mapping.id
 
@@ -258,6 +258,64 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
            ) == [
              %{"source_kind" => "attendance", "source_key" => "rule-e", "name" => "Rule rule-e"}
            ]
+  end
+
+  test "a run leaves out and reports an attendance mapping whose rule changed currency", %{
+    scope: scope
+  } do
+    grant_capabilities!([
+      "people.payroll.view",
+      "people.payroll.manage",
+      "people.payroll.attendance-mappings.manage"
+    ])
+
+    %{item: item, period: january} = catalog(scope)
+
+    rule = fn currency, from ->
+      {:ok, _} =
+        Bilimbi.People.Attendance.create_allowance_rule(scope, 73, %{
+          code: "shift",
+          name: "Shift #{currency}",
+          unit: "hour",
+          value: "2",
+          currency: currency,
+          effective_from: from
+        })
+    end
+
+    rule.("AAA", ~D[2026-01-01])
+
+    {:ok, mapping} =
+      Payroll.create_attendance_allowance_mapping(scope, 73, %{
+        attendance_rule_code: "shift",
+        item_id: item.id,
+        effective_from: "2026-01-01",
+        effective_to: "2026-12-31"
+      })
+
+    rule.("BBB", ~D[2026-02-01])
+
+    {:ok, february} =
+      Payroll.create_period(scope, 73, %{
+        code: "period-b",
+        starts_on: "2026-02-01",
+        ends_on: "2026-02-28",
+        pay_on: "2026-03-01"
+      })
+
+    {:ok, january_run} = Payroll.create_run(scope, 73, january.id, "AAA")
+    assert [%{"id" => id}] = january_run.snapshot["attendance_mappings"]
+    assert id == mapping.id
+
+    {:ok, february_run} = Payroll.create_run(scope, 73, february.id, "AAA")
+    assert february_run.snapshot["attendance_mappings"] == []
+
+    assert %{
+             "source_kind" => "attendance",
+             "source_key" => "shift",
+             "name" => "Shift BBB",
+             "reason" => "currency mismatch"
+           } in february_run.snapshot["unmapped_sources"]
   end
 
   test "versions reject overlaps, foreign classification, invalid money and dates", %{

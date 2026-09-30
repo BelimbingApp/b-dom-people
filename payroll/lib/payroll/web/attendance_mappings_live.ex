@@ -124,14 +124,15 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
           title="Attendance allowance sources are unavailable for this company."
           reason="The company's workforce is not current." />
         <div :if={@data} class="space-y-6">
-          <div :if={@data.sources == []} class="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">No allowance rules are effective today.</div>
+          <div :if={@data.sources == []} class="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">No current or future allowance rules are configured.</div>
           <div :if={@data.sources != []} class="overflow-x-auto rounded-xl border border-line bg-surface">
             <table class="w-full text-sm">
-              <thead class="bg-surface-sunken text-left text-xs font-semibold text-ink-subtle"><tr><th class="px-2 py-1.5">Attendance rule</th><th class="px-2 py-1.5">Value</th><th class="px-2 py-1.5">Pay items today</th></tr></thead>
+              <thead class="bg-surface-sunken text-left text-xs font-semibold text-ink-subtle"><tr><th class="px-2 py-1.5">Attendance rule</th><th class="px-2 py-1.5">Value</th><th class="px-2 py-1.5">Effective</th><th class="px-2 py-1.5">Pay items today</th></tr></thead>
               <tbody>
                 <tr :for={source <- @data.sources} id={"payroll-attendance-rule-#{source.id}"} class="border-t border-line">
                   <td class="px-2 py-1"><span class="font-medium">{source.name}</span><span class="ml-2 text-ink-muted tabular-nums">{source.code}</span></td>
                   <td class="px-2 py-1 tabular-nums">{source.value} {source.currency} / {source.unit}</td>
+                  <td class="px-2 py-1 tabular-nums">{source.effective_from} to {source.effective_until || "open"}</td>
                   <td class="px-2 py-1">{current_items(@data, source.code)}</td>
                 </tr>
               </tbody>
@@ -143,7 +144,7 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
             <form id="payroll-attendance-mapping-form" phx-submit="create" class="mt-4 grid gap-3 sm:grid-cols-2">
               <label class="text-sm">Attendance rule
                 <select name="mapping[attendance_rule_code]" required class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5">
-                  <option :for={source <- @data.sources} value={source.code}>{source.name} · {source.code}</option>
+                  <option :for={source <- Enum.uniq_by(@data.sources, & &1.code)} value={source.code}>{source.name} · {source.code}</option>
                 </select>
               </label>
               <label class="text-sm">Pay item

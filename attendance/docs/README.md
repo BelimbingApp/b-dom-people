@@ -113,8 +113,8 @@ currencies.
 `Attendance.payroll_allowance_sources/3` returns only active rules effective
 on the requested date as schema-free values (`id`, `code`, `name`, `unit`,
 `value`, `currency`, and effective dates). It validates the explicit company
-through Workforce before reading. Payroll uses that API to offer source rules
-for company pay-item mapping. The API exposes the allowance catalog; it does
+through Workforce before reading. Payroll maps rules by code through
+`list_allowance_rules/2`, which also returns future versions. The API exposes the allowance catalog; it does
 not calculate attendance quantities or payroll amounts.
 
 The allowance rule editor is available by its scoped route and setup tab; the
