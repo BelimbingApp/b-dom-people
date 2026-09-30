@@ -33,7 +33,7 @@ defmodule Bilimbi.People.Training.SchemaContract do
           "people_training_events_course_scope" =>
             foreign_key("course_id", "people_training_courses")
         },
-        %{"people_training_events_capacity" => %{expression: "capacity > 0"}}
+        %{"people_training_events_capacity" => check("capacity > 0")}
       ),
       table(
         "sessions",
@@ -54,8 +54,8 @@ defmodule Bilimbi.People.Training.SchemaContract do
             foreign_key("event_id", "people_training_events")
         },
         %{
-          "people_training_sessions_capacity" => %{expression: "capacity > 0"},
-          "people_training_sessions_times" => %{expression: "ends_at > starts_at"}
+          "people_training_sessions_capacity" => check("capacity > 0"),
+          "people_training_sessions_times" => check("ends_at > starts_at")
         }
       )
     ]
@@ -90,7 +90,8 @@ defmodule Bilimbi.People.Training.SchemaContract do
     do: %{
       columns: [column, "tenant_id", "company_id"],
       references: {target, ["id", "tenant_id", "company_id"]},
-      on_delete: :nothing,
-      on_update: :nothing
+      on_delete: :nothing
     }
+
+  defp check(expression), do: %{expression: expression, validated: true}
 end

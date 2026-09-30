@@ -157,6 +157,23 @@ defmodule Bilimbi.People.Training do
 
   def local_instant(_, _), do: {:error, :invalid_time_zone_or_time}
 
+  @doc "First UTC instant of a local calendar day, resolving midnight DST gaps and overlaps."
+  def day_start(%Date{} = date, zone) when is_binary(zone) do
+    case DateTime.new(date, ~T[00:00:00], zone, Bilimbi.Base.DateTime.time_zone_database()) do
+      {:ok, date_time} -> to_utc(date_time)
+      {:ambiguous, first, _} -> to_utc(first)
+      {:gap, _, first_after} -> to_utc(first_after)
+      _ -> {:error, :invalid_time_zone_or_time}
+    end
+  end
+
+  defp to_utc(date_time) do
+    case DateTime.shift_zone(date_time, "Etc/UTC", Bilimbi.Base.DateTime.time_zone_database()) do
+      {:ok, utc} -> {:ok, DateTime.truncate(utc, :second)}
+      _ -> {:error, :invalid_time_zone_or_time}
+    end
+  end
+
   defp authorize(%Scope{} = scope, company_id, capability)
        when is_integer(company_id) and company_id > 0 and company_id <= 9_223_372_036_854_775_807 do
     actor = Scope.actor(scope)

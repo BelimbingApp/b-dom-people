@@ -22,4 +22,24 @@ defmodule Bilimbi.People.Training.TimeZoneTest do
     assert {:error, :ambiguous_time} =
              Training.local_instant("2026-11-01T01:30", "America/New_York")
   end
+
+  test "calendar day starts resolve midnight DST overlaps and gaps" do
+    assert {:error, :ambiguous_time} =
+             Training.local_instant("2026-11-01T00:00", "America/Havana")
+
+    assert {:ok, ~U[2026-11-01 04:00:00Z]} =
+             Training.day_start(~D[2026-11-01], "America/Havana")
+
+    assert {:error, :nonexistent_time} =
+             Training.local_instant("2026-03-08T00:00", "America/Havana")
+
+    assert {:ok, ~U[2026-03-08 05:00:00Z]} =
+             Training.day_start(~D[2026-03-08], "America/Havana")
+
+    assert {:ok, ~U[2026-07-01 04:00:00Z]} =
+             Training.day_start(~D[2026-07-01], "America/New_York")
+
+    assert {:error, :invalid_time_zone_or_time} =
+             Training.day_start(~D[2026-07-01], "Invalid/Zone")
+  end
 end

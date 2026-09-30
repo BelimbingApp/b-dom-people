@@ -126,8 +126,8 @@ defmodule Bilimbi.People.Training.Web.SessionsLive do
 
     result =
       if company do
-        with {:ok, from} <- Training.local_instant("#{date}T00:00:00", zone),
-             {:ok, until} <- Training.local_instant("#{until}T00:00:00", zone),
+        with {:ok, from} <- Training.day_start(date, zone),
+             {:ok, until} <- Training.day_start(until, zone),
              {:ok, sessions} <- Training.calendar(scope, company.id, from, until),
              {:ok, events} <- Training.list_events(scope, company.id) do
           {:ok, sessions, events}

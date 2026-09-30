@@ -53,7 +53,8 @@ the selected window, orders by instant and ID, refuses windows exceeding 366
 days, and returns at most 500 rows. The page reports that bound when reached.
 The UI selects a month and list/calendar mode through URL filters. Calendar
 days use the selected company's operator-managed Base DateTime zone;
-multiday sessions appear on each intersected date. List timestamps use the
+`day_start/2` bounds each month at the first instant of its local day, so a
+DST gap or overlap at local midnight never blanks the page. Multiday sessions appear on each intersected date. List timestamps use the
 reader's saved clock through the shared `datetime` component and separately
 show the delivery zone. A session form starts with the company zone, which
 an operator can change for that delivery. Company timezone remains managed
