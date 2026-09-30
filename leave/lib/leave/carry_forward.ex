@@ -11,6 +11,8 @@ defmodule Bilimbi.People.Leave.CarryForward do
   # of zero, keyed by type, employee and year. That entry closes the year for
   # them: a replay skips it, and requests, approvals, cancellations and
   # entries into that year are refused, so no quantity is spent twice.
+  # Years close in order: a run that would carry into an already closed next
+  # year is refused as a whole.
   import Ecto.Query
 
   alias Bilimbi.Base.Repo
@@ -79,6 +81,9 @@ defmodule Bilimbi.People.Leave.CarryForward do
 
               Requests.pending_exists?(scope, company_id, type.id, employee_id, from_year) ->
                 Map.update!(counts, :pending, &(&1 + 1))
+
+              closed?(scope, company_id, employee_id, type.id, from_year + 1) ->
+                Repo.rollback(:next_year_closed)
 
               true ->
                 close(scope, company_id, employee_id, type, policy, from_year, actor_user_id, %{

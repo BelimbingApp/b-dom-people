@@ -500,6 +500,24 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert {:ok, _} = request(scope, requester, type, ctx.first_next, ctx.first_next)
     end
 
+    test "refuses to carry into a next year already closed", ctx do
+      %{scope: scope, employee: employee, type: type, year: year} = ctx
+
+      {:ok, _} =
+        Leave.add_policy(scope, 73, type.id, %{
+          effective_from: Date.new!(1990, 1, 1),
+          entitlement: 10,
+          carry_forward_cap: "4"
+        })
+
+      {:ok, %{granted: 2}} = Leave.grant_entitlements(scope, 73, year - 1)
+      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
+
+      assert {:error, :next_year_closed} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, 0} = Leave.carried_forward_count(scope, 73, year - 1)
+      assert Decimal.equal?(balance(scope, employee, year).carried_forward, 0)
+    end
+
     test "a late grant skips a year already carried forward", ctx do
       %{scope: scope, employee: employee, type: type, year: year} = ctx
 

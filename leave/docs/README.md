@@ -91,6 +91,9 @@ zero, keyed by type, employee and year. That entry closes the year for them:
 a repeated run changes nothing, and new requests, approvals, cancellations and
 `record_entry/4` entries in that year are refused with `:year_closed`, so no
 quantity is spent twice. Carried balances do not expire later in this slice.
+Years close in order: when the next year is already closed for an employee and
+type the run would carry, the whole run is refused with `:next_year_closed`
+and writes nothing.
 
 `enqueue_carry_forward/3` queues `Bilimbi.People.Leave.CarryForwardWorker`
 (worker ID `people-leave/carry-forward`) through Base Queue as the signed-in

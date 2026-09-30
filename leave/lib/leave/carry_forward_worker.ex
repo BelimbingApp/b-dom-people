@@ -32,6 +32,7 @@ defmodule Bilimbi.People.Leave.CarryForwardWorker do
         {:ok, _counts} -> :ok
         {:error, :not_current} -> {:retry, :workforce_not_current}
         {:error, :year_not_ended} -> {:cancel, :year_not_ended}
+        {:error, :next_year_closed} -> {:cancel, :next_year_closed}
         {:error, _reason} -> {:cancel, :carry_forward_refused}
       end
     else
