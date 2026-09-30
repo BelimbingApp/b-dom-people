@@ -30,7 +30,12 @@ composition-lock commands.
   use the task-based menu outline in the port plan when slices are ready.
   Hang leaves on the outline containers in
   `settings/lib/settings/contributions.ex` rather than declaring a container
-  in your module: Base Menu raises on duplicate IDs.
+  in your module: Base Menu raises on duplicate IDs. Pick menu icons from the
+  `hero-{...}` safelist in Bilimbi's `apps/web/assets/css/app.css`; any other
+  icon fails `MenuIconSafelistTest`. Refuse write-shaped LiveView events with
+  a first `handle_event` deny clause on a `can_*?` assign, as
+  `skills/lib/skills/web/catalog_live.ex` does; a hidden button fails Base
+  UI's `WriteHandlerGuardTest`.
 - Check a module's unregistered `SchemaContract` with
   `Bilimbi.Base.Database.SchemaVerifier.verify/2` against a freshly migrated
   database; write check and partial-index predicates in PostgreSQL's canonical

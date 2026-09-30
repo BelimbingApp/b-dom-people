@@ -14,7 +14,9 @@ The claims module owns the claim catalog, effective-dated claim policies,
 assignments, employee claim requests, approval, reimbursement, and hand-off
 batches.
 Organisation owns fresh position tables, versioned titles, assignments, a
-bounded explorer, and the Workforce position read. Other modules remain empty;
+bounded explorer, and the Workforce position read. Skills owns the skill
+catalog, versioned proficiency scales and versioned requirement profiles.
+Other modules remain empty;
 no sample rows are installed.
 
 | Module ID | Ownership |
@@ -27,7 +29,7 @@ no sample rows are installed.
 | `people/attendance` | Clock events, day facts, rules, rosters, clocking locations and adjustments |
 | `people/leave` | Leave types, entitlement policies and balance ledger |
 | `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
-| `people/skills` | Skills and development |
+| `people/skills` | Skill catalog, proficiency scales and requirement profiles |
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Performance reviews |
 | `people/progression` | Progression policy |
@@ -88,6 +90,11 @@ has no claim currency, so it accepts no claims until an operator sets one.
 People > Time and expenses > Claim operations opens `/people/claims/operations`
 for approvers: decide claims, record reimbursement, and hand approved claims
 off in per-currency batches with a CSV export. See `claims/docs/README.md`.
+
+People > Development > Skills opens `/people/skills`, where an operator
+maintains a company's skill categories, skills, proficiency scales and
+requirement profiles, and a publisher publishes or retires profile versions.
+See `skills/docs/README.md`.
 
 ## License
 
