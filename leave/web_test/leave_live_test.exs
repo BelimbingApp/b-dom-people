@@ -74,7 +74,9 @@ defmodule BilimbiWeb.LeaveLiveTest do
       {:ok, type} =
         Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
 
-      {:ok, _} = Leave.add_policy(scope, 73, type.id, %{effective_from: ~D[2020-01-01], entitlement: 5})
+      {:ok, _} =
+        Leave.add_policy(scope, 73, type.id, %{effective_from: ~D[2020-01-01], entitlement: 5})
+
       {:ok, _} = Leave.grant_entitlements(scope, 73, 2020)
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
