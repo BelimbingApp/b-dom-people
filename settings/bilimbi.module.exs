@@ -5,7 +5,7 @@
   required: false,
   otp_app: :bilimbi_people_settings,
   namespace: Bilimbi.People.Settings,
-  dependencies: ["base/module_registry"],
+  dependencies: ["base/menu", "base/module_registry"],
   migrations: nil,
   web: nil,
   schema_contract: nil,

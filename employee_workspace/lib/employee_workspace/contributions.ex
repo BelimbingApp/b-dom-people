@@ -24,14 +24,6 @@ defmodule Bilimbi.People.EmployeeWorkspace.Contributions do
       },
       menu: [
         %{
-          id: "people.team",
-          label: "Team",
-          parent: "people",
-          route: nil,
-          capability: nil,
-          order: 20
-        },
-        %{
           id: "people.team.employees",
           label: "Employees",
           parent: "people.team",

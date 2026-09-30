@@ -28,6 +28,7 @@ defmodule Bilimbi.People.Organisation.MixProject do
 
   def application do
     [
+      mod: {Bilimbi.People.Organisation.Application, []},
       extra_applications: [:logger],
       env: Bilimbi.Base.ModuleRegistry.MixDiscovery.application_env(__DIR__)
     ]

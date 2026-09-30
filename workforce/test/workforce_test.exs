@@ -184,6 +184,39 @@ defmodule Bilimbi.People.WorkforceTest do
     assert supervised_value.supervisor_reference == nil
   end
 
+  test "employees_by_ids exposes only working employees of the company among bounded IDs", %{
+    scope: scope,
+    other_scope: other_scope
+  } do
+    supervisor = create_employee!(scope, 73, "S-1", "active")
+    working = create_employee!(scope, 73, "E-1", "active", supervisor.id)
+    leaver = create_employee!(scope, 73, "E-2", "terminated")
+    sibling = create_employee!(scope, 74, "E-3", "active")
+
+    {:ok, agent} =
+      Employee.create_employee(scope, 73, %{
+        employee_number: "A-1",
+        full_name: "System Agent",
+        employee_type: "agent"
+      })
+
+    assert {:ok, %ReadResult{value: [value], freshness: :current}} =
+             Workforce.employees_by_ids(scope, 73, [working.id, leaver.id, sibling.id, agent.id])
+
+    assert value.reference.stable_id == Integer.to_string(working.id)
+    assert value.supervisor_reference.stable_id == Integer.to_string(supervisor.id)
+
+    assert {:ok, %ReadResult{value: [], freshness: :current}} =
+             Workforce.employees_by_ids(scope, 73, [])
+
+    assert {:error, :not_found} = Workforce.employees_by_ids(other_scope, 73, [working.id])
+
+    assert {:error, :invalid_options} =
+             Workforce.employees_by_ids(scope, 73, Enum.to_list(1..1_001))
+
+    assert {:error, :invalid_options} = Workforce.employees_by_ids(scope, 73, ["1"])
+  end
+
   test "working statuses are a per-company setting", %{scope: scope} do
     probation = create_employee!(scope, 73, "P-2", "probation")
     active = create_employee!(scope, 73, "A-2", "active", probation.id)

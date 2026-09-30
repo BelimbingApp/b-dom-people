@@ -9,16 +9,18 @@ The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules and self view.
 The claims module owns the claim catalog, effective-dated claim policies, and
-employee claim requests. Other modules remain empty; no sample rows are
-installed.
+employee claim requests.
+Organisation owns fresh position tables, versioned titles, assignments, a
+bounded explorer, and the Workforce position read. Other modules remain empty;
+no sample rows are installed.
 
-| Module ID | Future ownership |
+| Module ID | Ownership |
 | --- | --- |
 | `people/settings` | People navigation anchor and shared menu groups |
 | `people/reference_data` | Company-scoped People references and calendar exceptions |
-| `people/workforce` | Scoped native company and employee reads with per-company working statuses |
+| `people/workforce` | Scoped native company, employee and optional position reads with per-company working statuses |
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
-| `people/organisation` | Positions and assignments |
+| `people/organisation` | Versioned positions, assignments, and explorer |
 | `people/attendance` | Clock events, day facts, policy settings and self view |
 | `people/leave` | Leave policy and balances |
 | `people/claims` | Claim catalog, policies, currencies, and requests |

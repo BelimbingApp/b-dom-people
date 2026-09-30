@@ -25,6 +25,14 @@ defmodule Bilimbi.People.Settings.Contributions do
           order: 10
         },
         %{
+          id: "people.team",
+          label: "Team",
+          parent: "people",
+          route: nil,
+          capability: nil,
+          order: 20
+        },
+        %{
           id: "people.settings",
           label: "Settings",
           icon: "cog-6-tooth",

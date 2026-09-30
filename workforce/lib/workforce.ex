@@ -19,12 +19,39 @@ defmodule Bilimbi.People.Workforce do
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Reference
 
+  @position_reader_key {__MODULE__, :position_reader}
+
   @source_id "people/native"
   @working_statuses_key "people.workforce.working_statuses"
   @employee_statuses ~w(pending probation active inactive terminated)
+  @lookup_limit 1_000
 
   @spec source_id() :: String.t()
   def source_id, do: @source_id
+
+  @doc "Registers the mounted position owner at application startup."
+  def register_position_reader(module) when is_atom(module) do
+    :persistent_term.put(@position_reader_key, module)
+    :ok
+  end
+
+  @doc "Removes a position owner when its application stops."
+  def unregister_position_reader(module) do
+    if :persistent_term.get(@position_reader_key, nil) == module,
+      do: :persistent_term.erase(@position_reader_key)
+
+    :ok
+  end
+
+  @doc "Reads a bounded page of native positions when Organisation is mounted."
+  def positions(%Scope{} = scope, platform_company_id, as_of \\ Date.utc_today(), options \\ []) do
+    with {:ok, _company} <- live_company(scope, platform_company_id) do
+      case :persistent_term.get(@position_reader_key, nil) do
+        nil -> {:error, :unavailable}
+        reader -> current(reader.positions(scope, platform_company_id, as_of, options))
+      end
+    end
+  end
 
   @spec employee_statuses() :: [String.t()]
   def employee_statuses, do: @employee_statuses
@@ -86,6 +113,37 @@ defmodule Bilimbi.People.Workforce do
     end
   end
 
+  @doc "Returns the exposed employees among at most 1,000 IDs, without reading the workforce."
+  @spec employees_by_ids(Scope.t(), term(), term()) ::
+          {:ok, ReadResult.t()} | {:error, :not_found | :invalid_options}
+  def employees_by_ids(%Scope{} = scope, platform_company_id, employee_ids) do
+    with {:ok, core_company} <- live_company(scope, platform_company_id),
+         {:ok, ids} <- lookup_ids(employee_ids) do
+      statuses = company_working_statuses(core_company)
+      visible = available_employees(scope, core_company.id, ids, statuses)
+
+      supervisor_ids =
+        visible |> Enum.map(& &1.supervisor_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+      visible_supervisors =
+        scope
+        |> available_employees(core_company.id, supervisor_ids, statuses)
+        |> MapSet.new(& &1.id)
+
+      values =
+        Enum.map(visible, fn employee ->
+          supervisor_reference =
+            if MapSet.member?(visible_supervisors, employee.supervisor_id),
+              do: reference(:employee, employee.supervisor_id),
+              else: nil
+
+          project_employee(employee, supervisor_reference)
+        end)
+
+      {:ok, ReadResult.current(values)}
+    end
+  end
+
   @spec employee(Scope.t(), term(), term()) ::
           {:ok, ReadResult.t()} | {:error, :not_found}
   def employee(%Scope{} = scope, platform_company_id, employee_id)
@@ -110,6 +168,9 @@ defmodule Bilimbi.People.Workforce do
 
   def employee(%Scope{}, _platform_company_id, _employee_id), do: {:error, :not_found}
 
+  defp current({:ok, value}), do: {:ok, ReadResult.current(value)}
+  defp current(error), do: error
+
   defp live_company(scope, id) do
     with {:ok, company} <- Company.get_company(scope, id),
          true <- company.status == "active" do
@@ -117,6 +178,25 @@ defmodule Bilimbi.People.Workforce do
     else
       _ -> {:error, :not_found}
     end
+  end
+
+  defp lookup_ids(ids) when is_list(ids) and length(ids) <= @lookup_limit do
+    if Enum.all?(ids, &(is_integer(&1) and &1 > 0)),
+      do: {:ok, Enum.uniq(ids)},
+      else: {:error, :invalid_options}
+  end
+
+  defp lookup_ids(_ids), do: {:error, :invalid_options}
+
+  defp available_employees(_scope, _company_id, [], _statuses), do: []
+
+  defp available_employees(scope, company_id, ids, statuses) do
+    {:ok, employees} = Employee.get_tenant_employees(scope, ids)
+
+    employees
+    |> Map.values()
+    |> Enum.filter(&(&1.company_id == company_id and available_employee?(&1, statuses)))
+    |> Enum.sort_by(& &1.id)
   end
 
   defp company_working_statuses(core_company),
