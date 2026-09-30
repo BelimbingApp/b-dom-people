@@ -64,7 +64,7 @@ defmodule Bilimbi.People.Training.SchemaContract do
           "people_training_sessions_times" => check("ends_at > starts_at")
         }
       )
-    ]
+    ] ++ Bilimbi.People.Training.GovernanceContract.tables()
   end
 
   defp table(suffix, fields, indexes, keys \\ %{}, checks \\ %{}) do

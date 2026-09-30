@@ -20,40 +20,18 @@ defmodule Bilimbi.People.Training.TestFixtures do
     end
   end
 
-  def create_participation_tables! do
-    SQL.query!(
-      Repo,
-      "CREATE UNIQUE INDEX ON people_training_sessions(id, tenant_id, company_id)",
-      []
-    )
-
-    SQL.query!(
-      Repo,
-      """
-      CREATE TEMPORARY TABLE people_training_participation_facts (
-        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        session_id bigint NOT NULL, employee_id bigint NOT NULL, revision integer NOT NULL,
-        status varchar(20) NOT NULL, reason text NOT NULL, import_key varchar(160) NOT NULL,
-        actor_user_id bigint NOT NULL, impersonator_id bigint,
-        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_training_participation_facts_import UNIQUE(tenant_id, company_id, import_key),
-        UNIQUE(session_id, employee_id, revision), UNIQUE(id, tenant_id, company_id),
-        FOREIGN KEY(session_id, tenant_id, company_id) REFERENCES people_training_sessions(id, tenant_id, company_id))
-      """,
-      []
-    )
-
-    SQL.query!(
-      Repo,
-      """
-      CREATE TEMPORARY TABLE people_training_evidence (
-        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        fact_id bigint NOT NULL, artifact_id uuid NOT NULL UNIQUE,
-        actor_user_id bigint NOT NULL, impersonator_id bigint,
-        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        FOREIGN KEY(fact_id, tenant_id, company_id) REFERENCES people_training_participation_facts(id, tenant_id, company_id))
-      """,
-      []
-    )
   end
-end
+
+  def migrate_governance_tables! do
+    for {file, module, version} <- [
+          {"20261001060101_create_people_training_catalog.exs",
+           Bilimbi.People.Training.Migrations.CreateCatalog, 20_261_001_060_101},
+          {"20261001060401_create_people_learning_governance.exs",
+           Bilimbi.People.Training.Migrations.CreateLearningGovernance, 20_261_001_060_401}
+        ] do
+      Code.require_file(Path.expand("../../priv/repo/migrations/" <> file, __DIR__))
+
+      Ecto.Migration.Runner.run(Repo, Repo.config(), version, module, :forward, :change, :up,
+        log: false
+      )
+    end
