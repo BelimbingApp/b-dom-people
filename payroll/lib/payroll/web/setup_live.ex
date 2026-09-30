@@ -4,7 +4,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Payroll
 
-  @write_events ~w(save_settings create_classification create_item create_period create_mapping create_run lock_run)
+  @write_events ~w(save_settings create_classification create_item create_period create_mapping create_run prepare_lock lock_run)
 
   @impl true
   def mount(_params, _session, socket) do
@@ -24,7 +24,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
        company: nil,
        can_manage?: false,
        data: nil,
-       sources: []
+       sources: [],
+       forms: forms(),
+       pending_lock: nil
      )}
   end
 
@@ -34,7 +36,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
       Enum.find(socket.assigns.companies, &(to_string(&1.id) == params["company_id"])) ||
         List.first(socket.assigns.companies)
 
-    {:noreply, socket |> assign(:company, company) |> load()}
+    {:noreply, socket |> assign(company: company, pending_lock: nil) |> load()}
   end
 
   @impl true
@@ -86,8 +88,24 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   def handle_event("create_run", %{"period_id" => period, "currency" => currency}, socket),
     do: outcome(socket, Payroll.create_run(scope(socket), id(socket), integer(period), currency))
 
-  def handle_event("lock_run", %{"id" => run}, socket),
-    do: outcome(socket, Payroll.lock_run(scope(socket), id(socket), integer(run)))
+  def handle_event("prepare_lock", %{"id" => value}, socket) do
+    run = Enum.find(socket.assigns.data.runs, &(&1.id == integer(value) and is_nil(&1.locked_at)))
+    {:noreply, assign(socket, :pending_lock, run)}
+  end
+
+  def handle_event("cancel_lock", _params, socket),
+    do: {:noreply, assign(socket, :pending_lock, nil)}
+
+  def handle_event("lock_run", _params, %{assigns: %{pending_lock: run}} = socket)
+      when not is_nil(run),
+      do:
+        outcome(
+          assign(socket, :pending_lock, nil),
+          Payroll.lock_run(scope(socket), id(socket), run.id)
+        )
+
+  def handle_event("lock_run", _params, socket),
+    do: outcome(socket, {:error, :run_unavailable})
 
   defp scope(socket), do: socket.assigns.current_scope.scope
   defp id(socket), do: socket.assigns.company.id
@@ -181,18 +199,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
           title="No company is available for payroll setup."
         />
         <div :if={@data} class="mt-5 space-y-5">
-          <form id="payroll-company" phx-change="select_company" phx-submit="select_company">
-            <label for="company-select">Company</label>
-            <select id="company-select" name="company_id" class="rounded-md border border-line p-2">
-              <option
-                :for={company <- @companies}
-                value={company.id}
-                selected={company.id == @company.id}
-              >
-                {company.name}
-              </option>
-            </select>
-          </form>
+          <.form for={@forms.company} id="payroll-company" phx-change="select_company" phx-submit="select_company">
+            <.input field={@forms.company[:company_id]} type="select" label="Company" value={@company.id} options={Enum.map(@companies, &{&1.name, &1.id})} />
+          </.form>
           <p :if={!@can_manage?} class="text-sm text-ink-muted">
             You can view this company's setup. A payroll operator can add records.
           </p>
@@ -207,21 +216,20 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             <p :if={@data.country == "" or @data.currencies == []} class="mt-2 text-sm text-ink-muted">
               Choose a country and allowed currencies before creating runs. No statutory rules are activated here.
             </p>
-            <form
+            <.form for={@forms.settings}
               :if={@can_manage?}
               id="payroll-settings"
               phx-submit="save_settings"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.field name="country" label="Country identifier" value={@data.country} />
-              <.field
-                name="currencies"
+              <.input field={@forms.settings[:country]} label="Country identifier" value={@data.country} />
+              <.input field={@forms.settings[:currencies]}
                 label="Currency codes, comma separated"
                 value={Enum.join(@data.currencies, ", ")}
                 required={false}
               />
               <.button type="submit">Save settings</.button>
-            </form>
+            </.form>
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-classifications" title="Classifications" />
@@ -238,14 +246,14 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 {row.code} · {row.name} · {row.effective_from} to {row.effective_to || "open"}
               </li>
             </ul>
-            <form
+            <.form for={@forms.classification}
               :if={@can_manage?}
               id="classification-form"
               phx-submit="create_classification"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.catalog_fields /><.date_fields /><.button type="submit">Add classification version</.button>
-            </form>
+              <.catalog_fields form={@forms.classification} /><.date_fields form={@forms.classification} /><.button type="submit">Add classification version</.button>
+            </.form>
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-items" title="Pay items" />
@@ -262,28 +270,26 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             >
               Add classifications and currency settings to create pay items.
             </p>
-            <form
+            <.form for={@forms.item}
               :if={@can_manage? and @data.classifications != [] and @data.currencies != []}
               id="item-form"
               phx-submit="create_item"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.catalog_fields />
-              <.choice
-                name="record[classification_id]"
+              <.catalog_fields form={@forms.item} />
+              <.input type="select" field={@forms.item[:classification_id]}
                 label="Classification"
                 options={
-                  Enum.map(@data.classifications, &{&1.id, "#{&1.name} · #{&1.effective_from}"})
+                  Enum.map(@data.classifications, &{"#{&1.name} · #{&1.effective_from}", &1.id})
                 }
               />
-              <.choice
-                name="record[currency]"
+              <.input type="select" field={@forms.item[:currency]}
                 label="Item currency"
                 options={Enum.map(@data.currencies, &{&1, &1})}
               />
-              <.field name="record[amount]" label="Exact amount" />
-              <.date_fields /><.button type="submit">Add pay-item version</.button>
-            </form>
+              <.input field={@forms.item[:amount]} label="Exact amount" />
+              <.date_fields form={@forms.item} /><.button type="submit">Add pay-item version</.button>
+            </.form>
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-periods" title="Periods" />
@@ -297,18 +303,18 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 {row.code} · {row.starts_on} to {row.ends_on} · Pay on {row.pay_on}
               </li>
             </ul>
-            <form
+            <.form for={@forms.period}
               :if={@can_manage?}
               id="period-form"
               phx-submit="create_period"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.field name="record[code]" label="Period code" />
-              <.field name="record[starts_on]" label="From" type="date" />
-              <.field name="record[ends_on]" label="To" type="date" />
-              <.field name="record[pay_on]" label="Pay on" type="date" />
+              <.input field={@forms.period[:code]} label="Period code" />
+              <.input field={@forms.period[:starts_on]} label="From" type="date" />
+              <.input field={@forms.period[:ends_on]} label="To" type="date" />
+              <.input field={@forms.period[:pay_on]} label="Pay on" type="date" />
               <.button type="submit">Add period</.button>
-            </form>
+            </.form>
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-mappings" title="Pay-item mappings" />
@@ -329,24 +335,22 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             <p :if={@data.items == [] or @sources == []} class="mt-2 text-sm text-ink-muted">
               Add pay items and available Leave or Claims types before mapping.
             </p>
-            <form
+            <.form for={@forms.mapping}
               :if={@can_manage? and @data.items != [] and @sources != []}
               id="mapping-form"
               phx-submit="create_mapping"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.choice
-                name="record[source]"
+              <.input type="select" field={@forms.mapping[:source]}
                 label="Mapping source"
-                options={Enum.map(@sources, &{&1.value, &1.label})}
+                options={Enum.map(@sources, &{&1.label, &1.value})}
               />
-              <.choice
-                name="record[item_id]"
+              <.input type="select" field={@forms.mapping[:item_id]}
                 label="Mapped pay item"
-                options={Enum.map(@data.items, &{&1.id, "#{&1.name} · #{&1.effective_from}"})}
+                options={Enum.map(@data.items, &{"#{&1.name} · #{&1.effective_from}", &1.id})}
               />
-              <.date_fields /><.button type="submit">Add mapping version</.button>
-            </form>
+              <.date_fields form={@forms.mapping} /><.button type="submit">Add mapping version</.button>
+            </.form>
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-runs" title="Frozen setup" />
@@ -364,11 +368,11 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
               <.datetime id={"run-locked-#{run.id}"} value={run.locked_at} /></span>
               <.button
                 :if={@can_manage? and is_nil(run.locked_at)}
-                phx-click="lock_run"
+                phx-click="prepare_lock"
                 phx-value-id={run.id}
               >Lock permanently</.button>
             </div>
-            <form
+            <.form for={@forms.run}
               :if={
                 @can_manage? and @data.periods != [] and @data.currencies != [] and
                   @data.country != ""
@@ -377,20 +381,28 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
               phx-submit="create_run"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.choice
-                name="period_id"
+              <.input type="select" field={@forms.run[:period_id]}
                 label="Run period"
-                options={Enum.map(@data.periods, &{&1.id, &1.code})}
+                options={Enum.map(@data.periods, &{&1.code, &1.id})}
               />
-              <.choice
-                name="currency"
+              <.input type="select" field={@forms.run[:currency]}
                 label="Run currency"
                 options={Enum.map(@data.currencies, &{&1, &1})}
               />
               <.button type="submit">Freeze setup</.button>
-            </form>
+            </.form>
           </.card>
         </div>
+        <.confirm_dialog
+          :if={@pending_lock}
+          id="payroll-lock-confirm"
+          consequence={"Run #{@pending_lock.id} will be locked permanently."}
+          detail="Its frozen setup remains available. The run cannot be changed or deleted after locking."
+          confirm="Lock permanently"
+          working="Locking…"
+          on_confirm={JS.push("lock_run")}
+          on_cancel={JS.push("cancel_lock")}
+        />
       </.page>
     </Layouts.app>
     """
@@ -399,51 +411,28 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   defp item_name(rows, id),
     do: Enum.find_value(rows, "Unavailable item", &(&1.id == id && &1.name))
 
-  attr(:name, :string, required: true)
-  attr(:label, :string, required: true)
-  attr(:value, :string, default: "")
-  attr(:type, :string, default: "text")
-  attr(:required, :boolean, default: true)
-
-  defp field(assigns) do
-    ~H"""
-    <label class="flex flex-col gap-1 text-sm">{@label}<input
-      name={@name}
-      type={@type}
-      value={@value}
-      required={@required}
-      class="rounded-md border border-line bg-surface p-2"
-    /></label>
-    """
+  defp forms do
+    Map.new(~w(company settings classification item period mapping run)a, fn kind ->
+      name = if kind in [:classification, :item, :period, :mapping], do: "record", else: nil
+      {kind, to_form(%{}, as: name, id: "payroll-#{kind}")}
+    end)
   end
 
-  attr(:name, :string, required: true)
-  attr(:label, :string, required: true)
-  attr(:options, :list, required: true)
-
-  defp choice(assigns) do
-    ~H"""
-    <label class="flex flex-col gap-1 text-sm">{@label}<select
-      name={@name}
-      class="rounded-md border border-line bg-surface p-2"
-    ><option :for={{value, label} <- @options} value={value}>{label}</option></select></label>
-    """
-  end
+  attr(:form, Phoenix.HTML.Form, required: true)
 
   defp catalog_fields(assigns) do
     ~H"""
-    <.field name="record[code]" label="Code" /><.field name="record[name]" label="Name" />
+    <.input field={@form[:code]} label="Code" required />
+    <.input field={@form[:name]} label="Name" required />
     """
   end
 
+  attr(:form, Phoenix.HTML.Form, required: true)
+
   defp date_fields(assigns) do
     ~H"""
-    <.field name="record[effective_from]" label="Effective from" type="date" /><.field
-      name="record[effective_to]"
-      label="Effective to"
-      type="date"
-      required={false}
-    />
+    <.input field={@form[:effective_from]} label="Effective from" type="date" required />
+    <.input field={@form[:effective_to]} label="Effective to" type="date" />
     """
   end
 end

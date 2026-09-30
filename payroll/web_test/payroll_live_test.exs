@@ -77,7 +77,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     refute has_element?(view, "#classification-form")
 
     for event <-
-          ~w(save_settings create_classification create_item create_period create_mapping create_run lock_run) do
+          ~w(save_settings create_classification create_item create_period create_mapping create_run prepare_lock lock_run) do
       assert render_hook(view, event, %{}) =~ "You cannot change"
     end
 
@@ -127,6 +127,14 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     view |> form("#run-form", period_id: period.id, currency: "AAA") |> render_submit()
     assert {:ok, %{runs: [run]}} = Payroll.setup(scope, 73)
     view |> element("#run-#{run.id} button") |> render_click()
+    assert has_element?(view, "#payroll-lock-confirm")
+    assert {:ok, %{runs: [%{locked_at: nil}]}} = Payroll.setup(scope, 73)
+    view |> element("#payroll-lock-confirm-cancel") |> render_click()
+    refute has_element?(view, "#payroll-lock-confirm")
+    render_click(view, "lock_run", %{"id" => run.id})
+    assert {:ok, %{runs: [%{locked_at: nil}]}} = Payroll.setup(scope, 73)
+    view |> element("#run-#{run.id} button") |> render_click()
+    view |> element("#payroll-lock-confirm-confirm") |> render_click()
     assert has_element?(view, "#run-#{run.id}", "Locked")
     refute has_element?(view, "#run-#{run.id} button")
   end

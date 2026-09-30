@@ -15,7 +15,7 @@ defmodule Bilimbi.People.Payroll do
   @view "people.payroll.view"
   @manage "people.payroll.manage"
 
-  def allowed?(scope, company_id, capability) do
+  def allowed?(%Scope{} = scope, company_id, capability) do
     match?({:ok, _}, authorize(scope, company_id, capability))
   end
 
@@ -60,10 +60,10 @@ defmodule Bilimbi.People.Payroll do
     end
   end
 
-  def create_classification(scope, company_id, attrs),
+  def create_classification(%Scope{} = scope, company_id, attrs),
     do: create_version(scope, company_id, Classification, attrs, fn _ -> :ok end)
 
-  def create_item(scope, company_id, attrs) do
+  def create_item(%Scope{} = scope, company_id, attrs) do
     create_version(scope, company_id, Item, attrs, fn item ->
       with {:ok, company} <- Company.get_company(scope, company_id),
            true <-
@@ -119,7 +119,7 @@ defmodule Bilimbi.People.Payroll do
     end
   end
 
-  def create_mapping(scope, company_id, attrs) do
+  def create_mapping(%Scope{} = scope, company_id, attrs) do
     create_version(scope, company_id, Mapping, attrs, fn mapping ->
       with {:ok, sources} <- sources(scope, company_id),
            true <-
