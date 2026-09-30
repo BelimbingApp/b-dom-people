@@ -3,6 +3,7 @@ defmodule Bilimbi.People.Attendance.Web.Components do
   # Company selection and the rules-area tabs shared by attendance pages.
   use Phoenix.Component
 
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.DateTime, as: BaseDateTime
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Attendance.ShiftTemplate
@@ -61,19 +62,24 @@ defmodule Bilimbi.People.Attendance.Web.Components do
 
   attr(:current, :atom, required: true)
   attr(:company, :map, default: nil)
+  attr(:actor, :any, required: true)
 
   def rules_tabs(assigns) do
     assigns =
-      assign(
-        assigns,
-        :query,
-        if(assigns.company, do: "?company_id=#{assigns.company.id}", else: "")
+      assigns
+      |> assign(:query, if(assigns.company, do: "?company_id=#{assigns.company.id}", else: ""))
+      |> assign(
+        :show_allowances?,
+        Authz.can(assigns.actor, "people.attendance.allowances.manage").allowed
       )
 
     ~H"""
     <Bilimbi.Base.UI.Components.tabs id="attendance-rules-tabs" aria-label="Attendance rules" class="mt-4">
       <:tab id="attendance-rules-tab" href={"/people/attendance/rules#{@query}"} current={@current == :rules}>
         Rules
+      </:tab>
+      <:tab :if={@show_allowances?} id="attendance-allowances-tab" href={"/people/attendance/rules/allowances#{@query}"} current={@current == :allowances}>
+        Allowance rules
       </:tab>
       <:tab id="attendance-shifts-tab" href={"/people/attendance/rules/shifts#{@query}"} current={@current == :shifts}>
         Shift templates

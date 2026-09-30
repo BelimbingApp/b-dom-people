@@ -19,9 +19,9 @@ bounded explorer, and the Workforce position read. Skills owns the skill
 catalog, versioned proficiency scales and requirement profiles, evidence-backed
 assessments with independent review, reassessment requests, development actions
 and reminders.
-Payroll owns periods, effective-dated pay items and classifications, Leave/Claims
-mappings and immutable frozen setup runs. Its menu remains hidden pending the
-whole payroll area; attendance mappings are not available yet.
+Payroll owns periods, effective-dated pay items and classifications,
+Leave/Claims and Attendance allowance mappings, and immutable frozen setup
+runs. Its menu remains hidden pending the whole payroll area.
 Performance owns position-description versions, KPI definitions and governed
 individual targets, attributable observations, independently released reviews
 and employee responses.
@@ -44,7 +44,7 @@ no sample rows are installed.
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
 | `people/progression` | Progression policy |
-| `people/payroll` | Payroll periods, catalog versions, mappings and frozen setup |
+| `people/payroll` | Payroll periods, catalog versions, mappings, attendance allowance mappings and frozen setup |
 
 ## Mount and validate
 

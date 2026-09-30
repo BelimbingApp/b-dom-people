@@ -3,11 +3,16 @@ Code.require_file(
   __DIR__
 )
 
+Code.require_file(
+  "../priv/repo/migrations/20260930230502_create_people_payroll_attendance_rule_pay_items.exs",
+  __DIR__
+)
+
 defmodule Bilimbi.People.Payroll.MigrationTest do
   use ExUnit.Case, async: false
   alias Bilimbi.Base.Database.SchemaVerifier
   alias Bilimbi.Base.Repo
-  alias Bilimbi.People.Payroll.Migrations.CreateFoundation
+  alias Bilimbi.People.Payroll.Migrations.{CreateAttendanceRulePayItems, CreateFoundation}
   alias Bilimbi.People.Payroll.SchemaContract
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
@@ -34,6 +39,12 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
     )
 
     Ecto.Migrator.up(Repo, 20_260_930_230_501, CreateFoundation, log: false, dynamic_repo: repo)
+
+    Ecto.Migrator.up(Repo, 20_260_930_230_502, CreateAttendanceRulePayItems,
+      log: false,
+      dynamic_repo: repo
+    )
+
     %{repo: repo}
   end
 
@@ -75,13 +86,21 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
         effective_from: ~D[2026-01-01]
       })
 
+    attendance_mapping =
+      insert!(repo, "people_payroll_attendance_rule_pay_items", %{
+        attendance_rule_code: "rule-a",
+        item_id: item,
+        effective_from: ~D[2026-01-01]
+      })
+
     run = run!(repo, period, "AAA")
 
     for {table, id} <- [
           {"people_payroll_classifications", classification},
           {"people_payroll_items", item},
           {"people_payroll_periods", period},
-          {"people_payroll_mappings", mapping}
+          {"people_payroll_mappings", mapping},
+          {"people_payroll_attendance_rule_pay_items", attendance_mapping}
         ],
         sql <- [
           "UPDATE #{table} SET updated_at = updated_at WHERE id = $1",
@@ -103,6 +122,13 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
              insert(repo, "people_payroll_mappings", %{
                source_kind: "leave",
                source_key: "2",
+               item_id: -1,
+               effective_from: ~D[2026-01-01]
+             })
+
+    assert {:error, %Postgrex.Error{postgres: %{code: :foreign_key_violation}}} =
+             insert(repo, "people_payroll_attendance_rule_pay_items", %{
+               attendance_rule_code: "rule-b",
                item_id: -1,
                effective_from: ~D[2026-01-01]
              })

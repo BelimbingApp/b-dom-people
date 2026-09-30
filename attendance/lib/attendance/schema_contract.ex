@@ -218,6 +218,35 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
                 "((status)::text = 'approved'::text) = (applied_clock_event_id IS NOT NULL)"
             )
         }
+      },
+      %{
+        name: "people_attendance_allowance_rules",
+        columns:
+          common("people_attendance_allowance_rules")
+          |> Map.merge(%{
+            "code" => column({:varchar, 40}, false),
+            "name" => column({:varchar, 120}, false),
+            "unit" => column({:varchar, 32}, false),
+            "value" => column({:numeric, 14, 4}, false),
+            "currency" => column({:varchar, 3}, false),
+            "effective_from" => column(:date, false),
+            "effective_until" => column(:date, true),
+            "status" => column({:varchar, 16}, false, {:string, "active"})
+          }),
+        indexes: %{
+          "people_attendance_allowance_rules_pkey" => index(["id"], true),
+          "people_attendance_allowance_rules_company_code_from_unique" =>
+            index(["company_id", "code", "effective_from"], true),
+          "people_attendance_allowance_rules_company_effective_index" =>
+            index(["tenant_id", "company_id", "status", "effective_from"])
+        },
+        foreign_keys: %{},
+        checks: %{
+          "people_attendance_allowance_rules_status_check" => check(@active_retired),
+          "people_attendance_allowance_rules_value_check" => check("value > 0::numeric"),
+          "people_attendance_allowance_rules_period_check" =>
+            check("effective_until IS NULL OR effective_until >= effective_from")
+        }
       }
     ]
   end

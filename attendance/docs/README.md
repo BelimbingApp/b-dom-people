@@ -1,6 +1,7 @@
 # Attendance
 
-Module ID: `people/attendance`. Time and attendance.
+Module ID: `people/attendance`. Time and attendance, including allowance
+rule data used by Payroll.
 
 Every public function on `Bilimbi.People.Attendance` takes a validated
 `Bilimbi.Base.Tenancy.Scope` and an explicit platform company ID, and reads
@@ -94,6 +95,31 @@ The same page links to `/people/attendance/rules/shifts` and
 templates and clocking locations. No shifts, locations or roster rows are
 seeded.
 
+## Allowance rules and Payroll source
+
+Operators manage a company's effective-dated allowance catalog at
+`/people/attendance/rules/allowances` with the separate
+`people.attendance.allowances.manage` capability. Each version carries an
+operator code and name, a generic unit, a positive value, an explicit
+three-letter currency, and inclusive effective dates. Active versions of a
+code cannot overlap; retired versions are ignored by that check. Adding a later
+version ends the code's open-ended active version on the day before the new
+start. An operator can also end an active version explicitly, only ever
+earlier. Both end-dates record a `people.attendance.allowance_rule_ended` audit
+action. New versions preserve earlier values; an operator can retire a version
+without deleting its history. There are no seeded codes, units, rates, or
+currencies.
+
+Payroll maps rules by code through `list_allowance_rules/2`, which validates
+the explicit company through Workforce before reading and returns every
+version. The catalog does not calculate attendance quantities or payroll
+amounts.
+
+The allowance rule editor is available by its scoped route and setup tab; the
+tab shows only to holders of `people.attendance.allowances.manage`. It does not
+add a navigation menu leaf while the broader Payroll and Attendance
+allowance area remains under acceptance.
+
 ## Pages and capabilities
 
 | Route | Menu | Capability |
@@ -122,7 +148,7 @@ for `people_%` relations. The repository has no access to those environments;
 this change cannot certify their inventory. If unexpected rows exist, stop the
 deployment and obtain a migration decision. Run `mix bilimbi.migrate` only from
 the Bilimbi root after that check. `Bilimbi.People.Attendance.SchemaContract`
-describes both attendance migrations and verifies against a freshly migrated
+describes all attendance migrations and verifies against a freshly migrated
 database with `Bilimbi.Base.Database.SchemaVerifier.verify/2`; it is not
 registered in the descriptor, because pending Bilimbi-only migrations would
 otherwise fail compatibility verification.

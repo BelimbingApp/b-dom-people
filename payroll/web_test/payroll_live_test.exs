@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   setup do
     UserFixtures.create_user_tables!()
     Bilimbi.People.Payroll.TestFixtures.create_tables!()
+    Bilimbi.People.Attendance.TestFixtures.create_attendance_tables!()
     Bilimbi.People.Claims.TestFixtures.create_claim_tables!()
     Bilimbi.People.Leave.TestFixtures.create_leave_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})
@@ -72,7 +73,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
           ~w(#classifications-empty #items-empty #periods-empty #mappings-empty #runs-empty),
         do: assert(has_element?(view, selector))
 
-    assert has_element?(view, "#attendance-mapping-unavailable", "not available yet")
+    refute has_element?(view, "#attendance-mapping-link")
     refute has_element?(view, "#classification-form")
 
     for event <-
@@ -82,6 +83,17 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
     assert {:ok, %{classifications: []}} = Payroll.setup(scope, 73)
     assert {:error, :unauthorized} = Payroll.create_classification(scope, 73, version("denied"))
+  end
+
+  test "attendance mapping holders are pointed to the Attendance mappings page", %{conn: conn} do
+    grant_capabilities!(["people.payroll.view", "people.payroll.attendance-mappings.manage"])
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/payroll/setup")
+
+    assert has_element?(
+             view,
+             ~s(#attendance-mapping-link a[href="/people/payroll/attendance-mappings?company_id=73"]),
+             "Attendance mappings"
+           )
   end
 
   test "operator creates governed settings and catalog through the page", %{
@@ -160,6 +172,161 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
       )
 
     assert {:error, :unauthorized} = Payroll.create_classification(impersonated, 73, version("x"))
+  end
+
+  test "attendance mapping APIs require their own capability and a signed-in user", %{
+    scope: scope,
+    system: system
+  } do
+    grant()
+
+    attrs = %{attendance_rule_code: "rule-a", item_id: 1, effective_from: "2026-01-01"}
+
+    for actor_scope <- [scope, system] do
+      assert {:error, :unauthorized} = Payroll.attendance_allowances(actor_scope, 73)
+
+      assert {:error, :unauthorized} =
+               Payroll.create_attendance_allowance_mapping(actor_scope, 73, attrs)
+    end
+  end
+
+  test "attendance mappings are item-backed versions that runs freeze", %{scope: scope} do
+    grant_capabilities!([
+      "people.payroll.view",
+      "people.payroll.manage",
+      "people.payroll.attendance-mappings.manage"
+    ])
+
+    %{item: item, period: period} = catalog(scope)
+
+    rules =
+      for {code, currency, from} <- [
+            {"rule-a", "AAA", ~D[2026-01-01]},
+            {"rule-b", "BBB", ~D[2026-01-01]},
+            {"rule-c", "AAA", ~D[2026-01-01]},
+            {"rule-d", "AAA", ~D[2026-07-01]},
+            {"rule-e", "AAA", ~D[2026-01-01]}
+          ],
+          into: %{} do
+        {:ok, rule} =
+          Bilimbi.People.Attendance.create_allowance_rule(scope, 73, %{
+            code: code,
+            name: "Rule #{code}",
+            unit: "hour",
+            value: "2",
+            currency: currency,
+            effective_from: from
+          })
+
+        {code, rule}
+      end
+
+    {:ok, _} = Bilimbi.People.Attendance.retire_allowance_rule(scope, 73, rules["rule-c"].id)
+
+    attrs = %{
+      attendance_rule_code: "rule-a",
+      item_id: item.id,
+      effective_from: "2026-01-01",
+      effective_to: "2026-06-30"
+    }
+
+    assert {:ok, mapping} = Payroll.create_attendance_allowance_mapping(scope, 73, attrs)
+
+    assert {:error, :overlapping_version} =
+             Payroll.create_attendance_allowance_mapping(scope, 73, attrs)
+
+    later = %{attrs | effective_from: "2026-07-01", effective_to: "2026-12-31"}
+
+    for invalid <- [
+          %{later | attendance_rule_code: "missing"},
+          %{later | item_id: -1},
+          %{later | effective_to: nil},
+          %{later | attendance_rule_code: "rule-b"},
+          %{later | attendance_rule_code: "rule-c"},
+          %{attrs | attendance_rule_code: "rule-d"}
+        ] do
+      assert {:error, :invalid_mapping} =
+               Payroll.create_attendance_allowance_mapping(scope, 73, invalid)
+    end
+
+    assert {:ok, %{sources: sources, items: [_], mappings: [%{id: id}]}} =
+             Payroll.attendance_allowances(scope, 73, ~D[2026-01-15])
+
+    assert Enum.map(sources, & &1.code) == ["rule-a", "rule-b", "rule-d", "rule-e"]
+
+    assert id == mapping.id
+
+    {:ok, run} = Payroll.create_run(scope, 73, period.id, "AAA")
+
+    assert [%{"attendance_rule_code" => "rule-a", "item_id" => item_id}] =
+             run.snapshot["attendance_mappings"]
+
+    assert item_id == item.id
+
+    assert for(
+             %{"source_kind" => "attendance"} = unmapped <- run.snapshot["unmapped_sources"],
+             do: unmapped
+           ) == [
+             %{"source_kind" => "attendance", "source_key" => "rule-e", "name" => "Rule rule-e"}
+           ]
+  end
+
+  test "a run leaves out and reports an attendance mapping whose rule changed currency", %{
+    scope: scope
+  } do
+    grant_capabilities!([
+      "people.payroll.view",
+      "people.payroll.manage",
+      "people.payroll.attendance-mappings.manage"
+    ])
+
+    %{item: item, period: january} = catalog(scope)
+
+    rule = fn currency, from ->
+      {:ok, _} =
+        Bilimbi.People.Attendance.create_allowance_rule(scope, 73, %{
+          code: "shift",
+          name: "Shift #{currency}",
+          unit: "hour",
+          value: "2",
+          currency: currency,
+          effective_from: from
+        })
+    end
+
+    rule.("AAA", ~D[2026-01-01])
+
+    {:ok, mapping} =
+      Payroll.create_attendance_allowance_mapping(scope, 73, %{
+        attendance_rule_code: "shift",
+        item_id: item.id,
+        effective_from: "2026-01-01",
+        effective_to: "2026-12-31"
+      })
+
+    rule.("BBB", ~D[2026-02-01])
+
+    {:ok, february} =
+      Payroll.create_period(scope, 73, %{
+        code: "period-b",
+        starts_on: "2026-02-01",
+        ends_on: "2026-02-28",
+        pay_on: "2026-03-01"
+      })
+
+    {:ok, january_run} = Payroll.create_run(scope, 73, january.id, "AAA")
+    assert [%{"id" => id}] = january_run.snapshot["attendance_mappings"]
+    assert id == mapping.id
+
+    {:ok, february_run} = Payroll.create_run(scope, 73, february.id, "AAA")
+    assert february_run.snapshot["attendance_mappings"] == []
+
+    assert %{
+             "source_kind" => "attendance",
+             "source_key" => "shift",
+             "name" => "Shift BBB",
+             "reason" => "currency mismatch"
+           } in february_run.snapshot["unmapped_sources"]
   end
 
   test "versions reject overlaps, foreign classification, invalid money and dates", %{

@@ -9,11 +9,20 @@ defmodule Bilimbi.People.Payroll do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Core.Company
-  alias Bilimbi.People.{Claims, Leave}
-  alias Bilimbi.People.Payroll.{Classification, Item, Mapping, Period, Run}
+  alias Bilimbi.People.{Attendance, Claims, Leave}
+
+  alias Bilimbi.People.Payroll.{
+    AttendanceAllowanceMapping,
+    Classification,
+    Item,
+    Mapping,
+    Period,
+    Run
+  }
 
   @view "people.payroll.view"
   @manage "people.payroll.manage"
+  @attendance "people.payroll.attendance-mappings.manage"
 
   def allowed?(%Scope{} = scope, company_id, capability) do
     match?({:ok, _}, authorize(scope, company_id, capability))
@@ -61,10 +70,10 @@ defmodule Bilimbi.People.Payroll do
   end
 
   def create_classification(%Scope{} = scope, company_id, attrs),
-    do: create_version(scope, company_id, Classification, attrs, fn _ -> :ok end)
+    do: create_version(scope, company_id, Classification, attrs, @manage, fn _ -> :ok end)
 
   def create_item(%Scope{} = scope, company_id, attrs) do
-    create_version(scope, company_id, Item, attrs, fn item ->
+    create_version(scope, company_id, Item, attrs, @manage, fn item ->
       with {:ok, company} <- Company.get_company(scope, company_id),
            true <-
              item.currency in Settings.get("people.payroll.currencies", setting_scope(company)),
@@ -124,7 +133,7 @@ defmodule Bilimbi.People.Payroll do
   end
 
   def create_mapping(%Scope{} = scope, company_id, attrs) do
-    create_version(scope, company_id, Mapping, attrs, fn mapping ->
+    create_version(scope, company_id, Mapping, attrs, @manage, fn mapping ->
       with {:ok, sources} <- sources(scope, company_id),
            true <-
              Enum.any?(Map.get(sources, mapping.source_kind, []), &(&1.key == mapping.source_key)),
@@ -138,6 +147,41 @@ defmodule Bilimbi.People.Payroll do
     end)
   end
 
+  @doc "Active allowance rule versions not ended by `as_of`, company pay items and attendance mapping versions."
+  def attendance_allowances(%Scope{} = scope, company_id, as_of \\ Date.utc_today()) do
+    with {:ok, _} <- authorize(scope, company_id, @attendance),
+         {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id) do
+      {:ok,
+       %{
+         sources:
+           rules
+           |> active_rules(as_of, nil)
+           |> Enum.sort_by(&{&1.code, Date.to_gregorian_days(&1.effective_from)}),
+         items: rows(Item, scope, company_id),
+         mappings: rows(AttendanceAllowanceMapping, scope, company_id)
+       }}
+    end
+  end
+
+  def create_attendance_allowance_mapping(%Scope{} = scope, company_id, attrs) do
+    create_version(scope, company_id, AttendanceAllowanceMapping, attrs, @attendance, fn
+      mapping ->
+        with {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
+             %Item{} = item <- fetch(Item, scope, company_id, mapping.item_id),
+             true <- covers?(item, mapping),
+             versions =
+               rules
+               |> Enum.filter(&(&1.code == mapping.attendance_rule_code))
+               |> active_rules(mapping.effective_from, mapping.effective_to),
+             true <- versions != [] and Enum.all?(versions, &(&1.currency == item.currency)) do
+          :ok
+        else
+          {:error, _} = error -> error
+          _ -> {:error, :invalid_mapping}
+        end
+    end)
+  end
+
   @doc "Freezes all setup effective for the period, including decimal strings."
   def create_run(%Scope{} = scope, company_id, period_id, currency) do
     with {:ok, company} <- authorize(scope, company_id, @manage) do
@@ -147,6 +191,7 @@ defmodule Bilimbi.People.Payroll do
         with %Period{} = period <- fetch(Period, scope, company_id, period_id),
              {:ok, sources} <- sources(scope, company_id),
              {:ok, requested} <- requested_sources(scope, company_id, period),
+             {:ok, rules} <- Attendance.list_allowance_rules(scope, company_id),
              true <- is_binary(country) and String.trim(country) != "",
              true <- currency in Settings.get("people.payroll.currencies", setting_scope(company)),
              false <-
@@ -165,7 +210,51 @@ defmodule Bilimbi.People.Payroll do
             effective_rows(Mapping, scope, company_id, period)
             |> Enum.filter(&(&1.item_id in item_ids))
 
-          mapped = MapSet.new(mappings, &{&1.source_kind, &1.source_key})
+          period_rules = active_rules(rules, period.starts_on, period.ends_on)
+
+          {attendance_mappings, mismatched} =
+            effective_rows(AttendanceAllowanceMapping, scope, company_id, period)
+            |> Enum.filter(&(&1.item_id in item_ids))
+            |> Enum.split_with(fn mapping ->
+              period_rules
+              |> Enum.filter(&(&1.code == mapping.attendance_rule_code))
+              |> active_rules(mapping.effective_from, mapping.effective_to)
+              |> Enum.all?(&(&1.currency == currency))
+            end)
+
+          mismatched_codes = mismatched |> Enum.map(& &1.attendance_rule_code) |> Enum.uniq()
+
+          mapped =
+            MapSet.new(mappings, &{&1.source_kind, &1.source_key})
+            |> MapSet.union(
+              MapSet.new(
+                Enum.map(attendance_mappings, & &1.attendance_rule_code) ++ mismatched_codes,
+                &{"attendance", &1}
+              )
+            )
+
+          currency_mismatches =
+            for code <- Enum.sort(mismatched_codes) do
+              rule = Enum.find(period_rules, &(&1.code == code and &1.currency != currency))
+
+              %{
+                "source_kind" => "attendance",
+                "source_key" => code,
+                "name" => rule.name,
+                "reason" => "currency mismatch"
+              }
+            end
+
+          sources =
+            Map.put(
+              sources,
+              "attendance",
+              period_rules
+              |> Enum.filter(&(&1.currency == currency))
+              |> Enum.sort_by(& &1.code)
+              |> Enum.uniq_by(& &1.code)
+              |> Enum.map(&%{key: &1.code, name: &1.name, active: true})
+            )
 
           snapshot = %{
             "period" => json(period),
@@ -173,13 +262,14 @@ defmodule Bilimbi.People.Payroll do
             "classifications" =>
               effective_rows(Classification, scope, company_id, period) |> Enum.map(&json/1),
             "mappings" => Enum.map(mappings, &json/1),
+            "attendance_mappings" => Enum.map(attendance_mappings, &json/1),
             "unmapped_sources" =>
               for {kind, choices} <- Enum.sort(sources),
                   choice <- choices,
                   choice.active or MapSet.member?(requested, {kind, choice.key}),
                   not MapSet.member?(mapped, {kind, choice.key}) do
                 %{"source_kind" => kind, "source_key" => choice.key, "name" => choice.name}
-              end
+              end ++ currency_mismatches
           }
 
           %Run{
@@ -200,6 +290,14 @@ defmodule Bilimbi.People.Payroll do
         end
       end)
     end
+  end
+
+  defp active_rules(rules, from_date, to_date) do
+    Enum.filter(rules, fn rule ->
+      rule.status == "active" and
+        (is_nil(to_date) or Date.compare(rule.effective_from, to_date) != :gt) and
+        (is_nil(rule.effective_until) or Date.compare(rule.effective_until, from_date) != :lt)
+    end)
   end
 
   defp requested_sources(scope, company_id, period) do
@@ -242,8 +340,8 @@ defmodule Bilimbi.People.Payroll do
     end
   end
 
-  defp create_version(%Scope{} = scope, company_id, schema, attrs, validate) do
-    with {:ok, _} <- authorize(scope, company_id, @manage) do
+  defp create_version(%Scope{} = scope, company_id, schema, attrs, capability, validate) do
+    with {:ok, _} <- authorize(scope, company_id, capability) do
       transaction(scope, company_id, fn ->
         changeset =
           schema.changeset(
@@ -276,13 +374,12 @@ defmodule Bilimbi.People.Payroll do
     query =
       case row do
         %Mapping{} ->
-          from(r in query,
-            join: i in Item,
-            on: i.id == r.item_id,
-            join: n in Item,
-            on: n.id == ^row.item_id and n.currency == i.currency,
-            where: r.source_kind == ^row.source_kind and r.source_key == ^row.source_key
-          )
+          same_currency(query, row)
+          |> where([r], r.source_kind == ^row.source_kind and r.source_key == ^row.source_key)
+
+        %AttendanceAllowanceMapping{} ->
+          same_currency(query, row)
+          |> where([r], r.attendance_rule_code == ^row.attendance_rule_code)
 
         _ ->
           where(query, [r], r.code == ^row.code)
@@ -290,6 +387,15 @@ defmodule Bilimbi.People.Payroll do
 
     if Repo.exists?(query), do: {:error, :overlapping_version}, else: :ok
   end
+
+  defp same_currency(query, row),
+    do:
+      from(r in query,
+        join: i in Item,
+        on: i.id == r.item_id,
+        join: n in Item,
+        on: n.id == ^row.item_id and n.currency == i.currency
+      )
 
   defp covers?(parent, child),
     do:

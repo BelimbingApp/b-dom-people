@@ -157,6 +157,35 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
             validated: true
           }
         }
+      },
+      %{
+        name: "people_payroll_attendance_rule_pay_items",
+        columns:
+          common("people_payroll_attendance_rule_pay_items")
+          |> Map.merge(%{
+            "attendance_rule_code" => column({:varchar, 40}, false),
+            "item_id" => column(:bigint, false),
+            "effective_from" => column(:date, false),
+            "effective_to" => column(:date, true)
+          }),
+        indexes: %{
+          "people_payroll_attendance_rule_pay_items_pkey" => index(["id"], true),
+          "people_payroll_attendance_rule_pay_items_company_index" =>
+            index(["tenant_id", "company_id"], false)
+        },
+        foreign_keys: %{
+          "people_payroll_attendance_rule_pay_items_item_id_fkey" => %{
+            columns: ["item_id"],
+            references: {"people_payroll_items", ["id"]},
+            on_delete: :restrict
+          }
+        },
+        checks: %{
+          "people_payroll_attendance_rule_pay_items_dates" => %{
+            expression: "effective_to IS NULL OR effective_to >= effective_from",
+            validated: true
+          }
+        }
       }
     ]
   end

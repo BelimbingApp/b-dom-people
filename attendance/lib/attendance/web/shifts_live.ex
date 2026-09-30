@@ -102,7 +102,7 @@ defmodule Bilimbi.People.Attendance.Web.ShiftsLive do
           Attendance rules
           <:subtitle>Shift templates planners assign on the roster.</:subtitle>
         </.header>
-        <AttendanceComponents.rules_tabs current={:shifts} company={@company} />
+        <AttendanceComponents.rules_tabs current={:shifts} company={@company} actor={@current_scope.actor} />
         <.empty_state :if={@company == nil} id="attendance-shifts-no-company" class="mt-5"
           title="No active company is available for shift templates." />
         <div :if={@company} class="mt-5 space-y-5">

@@ -84,7 +84,7 @@ defmodule Bilimbi.People.Attendance.Web.RulesLive do
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page id="attendance-rules-page" variant={:form}>
         <.header>Attendance rules</.header>
-        <AttendanceComponents.rules_tabs current={:rules} company={@company} />
+        <AttendanceComponents.rules_tabs current={:rules} company={@company} actor={@current_scope.actor} />
         <.empty_state :if={@company == nil} id="attendance-rules-empty" class="mt-5"
           title="No active company is available for attendance rules." />
         <div :if={@company} class="mt-5">
