@@ -399,6 +399,17 @@ defmodule Bilimbi.People.Performance do
               &1.supervisor_reference.stable_id == own)
         )
 
+      report_ids = Enum.map(reports, &String.to_integer(&1.reference.stable_id))
+
+      targets =
+        if allowed?(actor.scope, company_id, @target) or
+             allowed?(actor.scope, company_id, @review),
+           do:
+             scoped(Target, actor.scope, company_id)
+             |> where([t], t.status == "published" and t.employee_id in ^report_ids)
+             |> records(),
+           else: []
+
       {:ok,
        %{
          employees:
@@ -406,6 +417,11 @@ defmodule Bilimbi.People.Performance do
              reports,
              &%{id: String.to_integer(&1.reference.stable_id), name: &1.display_name}
            ),
+         descriptions:
+           scoped(Description, actor.scope, company_id)
+           |> where([d], d.status == "published")
+           |> records(),
+         targets: targets,
          positions:
            Enum.map(
              positions,

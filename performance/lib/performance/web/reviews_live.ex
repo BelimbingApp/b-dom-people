@@ -278,7 +278,14 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
           drafts: [],
           prior_reviews: []
         })
-        |> assign(:choices, %{employees: [], positions: [], profiles: [], names: %{}})
+        |> assign(:choices, %{
+          employees: [],
+          positions: [],
+          profiles: [],
+          descriptions: [],
+          targets: [],
+          names: %{}
+        })
         |> stream(:reviews, [], reset: true)
     end
   end
@@ -466,13 +473,10 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
       | Enum.map(planning.definitions, &{"#{&1.name} · version #{&1.version}", &1.id})
     ]
 
-  defp options("description_id", _, planning, _),
+  defp options("description_id", _, _, choices),
     do: [
       {"Choose a published description", ""}
-      | Enum.map(
-          Enum.filter(planning.descriptions, &(&1.status == "published")),
-          &{"#{&1.code} · version #{&1.version}", &1.id}
-        )
+      | Enum.map(choices.descriptions, &{"#{&1.code} · version #{&1.version}", &1.id})
     ]
 
   defp options("observation_ids", _, planning, _),
@@ -482,12 +486,8 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
         &{"#{&1.source_reference} · #{&1.source_version}: #{&1.evidence}", &1.id}
       )
 
-  defp options("target_ids", _, planning, _),
-    do:
-      Enum.map(
-        Enum.filter(planning.targets, &(&1.status == "published")),
-        &{"#{&1.target} · version #{&1.version}", &1.id}
-      )
+  defp options("target_ids", _, _, choices),
+    do: Enum.map(choices.targets, &{"#{&1.target} · version #{&1.version}", &1.id})
 
   defp options("direction", _, _, _),
     do: [
@@ -498,20 +498,17 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
       {"Rubric", "rubric"}
     ]
 
-  defp options("supersedes_id", form, planning, _) do
+  defp options("supersedes_id", form, planning, choices) do
     records =
       case form do
         "review-form" ->
           Enum.map(
-            Enum.filter(planning.prior_reviews, &(&1.status == "released")),
+            planning.prior_reviews,
             &{"#{&1.period_start} · #{&1.outcome} · version #{&1.version}", &1.id}
           )
 
         "target-form" ->
-          Enum.map(
-            Enum.filter(planning.targets, &(&1.status == "published")),
-            &{"#{&1.target} · version #{&1.version}", &1.id}
-          )
+          Enum.map(choices.targets, &{"#{&1.target} · version #{&1.version}", &1.id})
 
         "observation-form" ->
           Enum.map(

@@ -447,8 +447,31 @@ defmodule Bilimbi.People.PerformanceTest do
       })
     end
 
+    for _ <- 1..100 do
+      Repo.insert!(%Target{
+        tenant_id: 41,
+        company_id: 73,
+        actor_user_id: 101,
+        status: "proposed",
+        version: 1,
+        definition_id: ctx.definition.id,
+        definition_version: ctx.definition.version,
+        employee_id: ctx.people.employee.id,
+        target: "Pending target",
+        period_start: ctx.target.period_start,
+        period_end: ctx.target.period_end,
+        effective_from: ctx.target.effective_from,
+        confidential: false
+      })
+    end
+
     assert {:ok, planning} = Performance.planning_records(actor(ctx, :viewer), 73)
     assert Enum.map(planning.descriptions, & &1.id) == [ctx.description.id]
+    assert {:ok, choices} = Performance.planning_choices(actor(ctx, :manager), 73)
+    assert Enum.map(choices.descriptions, & &1.id) == [ctx.description.id]
+    assert Enum.map(choices.targets, & &1.id) == [ctx.target.id]
+    assert {:ok, peer} = Performance.planning_choices(actor(ctx, :peer), 73)
+    assert peer.targets == []
   end
 
   test "a correction submitted without a cutoff keeps the prior cutoff", %{ctx: ctx} do
