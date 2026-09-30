@@ -355,7 +355,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     system: system
   } do
     grant()
-    catalog(scope)
+    %{period: past} = catalog(scope)
     Bilimbi.People.ReferenceData.TestFixtures.create_reference_tables!()
     :ok = Bilimbi.Core.Employee.ensure_system_types()
 
@@ -413,18 +413,45 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     {:ok, category} =
       Bilimbi.People.Claims.create_category(scope, 73, %{code: "category-a", name: "Category A"})
 
-    {:ok, claim} =
-      Bilimbi.People.Claims.create_claim_type(scope, 73, %{
-        code: "claim-a",
-        name: "Claim A",
-        category_id: category.id,
-        receipt_requirement: "never"
-      })
+    {:ok, ["AAA"]} = Bilimbi.People.Claims.put_currencies(scope, 73, ["AAA"])
 
-    {:ok, _} = Bilimbi.People.Claims.set_claim_type_active(scope, 73, claim.id, false)
-    {:ok, run} = Payroll.create_run(scope, 73, period.id, "AAA")
+    claims =
+      Map.new(~w(used idle), fn code ->
+        {:ok, claim} =
+          Bilimbi.People.Claims.create_claim_type(scope, 73, %{
+            code: code,
+            name: "Claim #{code}",
+            category_id: category.id,
+            receipt_requirement: "never"
+          })
 
-    assert Enum.sort(Enum.map(run.snapshot["unmapped_sources"], & &1["name"])) ==
-             ["Leave active", "Leave used"]
+        {:ok, _} =
+          Bilimbi.People.Claims.create_policy(scope, 73, %{
+            claim_type_id: claim.id,
+            effective_from: "2026-01-01",
+            currency: "AAA"
+          })
+
+        {code, claim}
+      end)
+
+    assert {:ok, _} =
+             Bilimbi.People.Claims.submit_request(system, 73, employee.id, 93, %{
+               claim_type_id: claims["used"].id,
+               incurred_on: "2026-01-15",
+               amount: "40",
+               currency: "AAA"
+             })
+
+    for {_, claim} <- claims,
+        do: {:ok, _} = Bilimbi.People.Claims.set_claim_type_active(scope, 73, claim.id, false)
+
+    for {run_period, names} <- [
+          {period, ["Leave active", "Leave used"]},
+          {past, ["Claim used", "Leave active"]}
+        ] do
+      {:ok, run} = Payroll.create_run(scope, 73, run_period.id, "AAA")
+      assert Enum.sort(Enum.map(run.snapshot["unmapped_sources"], & &1["name"])) == names
+    end
   end
 end

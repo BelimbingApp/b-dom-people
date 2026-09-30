@@ -168,7 +168,7 @@ defmodule Bilimbi.People.Claims do
        scoped(Request, scope, company_id)
        |> where(
          [r],
-         r.status not in ["withdrawn", "rejected"] and r.incurred_on >= ^from and
+         r.status not in ^@dead_statuses and r.incurred_on >= ^from and
            r.incurred_on <= ^to
        )
        |> distinct(true)
