@@ -122,7 +122,10 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
 
     assert has_element?(view, "#skills", "Welding")
 
-    view |> form("#skill-scale-form", scale: %{code: "standard", name: "Standard"}) |> render_submit()
+    view
+    |> form("#skill-scale-form", scale: %{code: "standard", name: "Standard"})
+    |> render_submit()
+
     {:ok, [scale]} = Skills.list_scales(scope, 73)
 
     for {level, name} <- [{"0", "Not trained"}, {"1", "Competent"}] do
@@ -153,7 +156,9 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     )
     |> render_submit()
 
-    page |> form("#skill-profile-selector-form", selector: %{target: "company"}) |> render_submit()
+    page
+    |> form("#skill-profile-selector-form", selector: %{target: "company"})
+    |> render_submit()
 
     page |> form("#skill-profile-publish-form", effective_from: "2026-01-01") |> render_submit()
     assert render(page) =~ "Requirement weights must total 100."
@@ -177,7 +182,10 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
   } do
     grant_capabilities!([@view, @manage])
     profile = profile_ready(scope)
-    {:ok, page, _} = conn |> log_in_as() |> live("/people/skills/profiles/#{profile.id}?company_id=73")
+
+    {:ok, page, _} =
+      conn |> log_in_as() |> live("/people/skills/profiles/#{profile.id}?company_id=73")
+
     refute has_element?(page, "#skill-profile-publish-form")
     assert {:error, :unauthorized} = Skills.publish_profile(actor, 73, profile.id, ~D[2026-01-01])
   end
@@ -188,7 +196,9 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
   } do
     grant_capabilities!([@view, @manage, @publish])
     v1 = profile_ready(scope)
-    assert {:ok, %{status: "published"}} = Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
+
+    assert {:ok, %{status: "published"}} =
+             Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
 
     assert {:ok, draft} = Skills.new_profile_version(scope, 73, v1.id)
     assert %{version: 2, status: "draft", items: [_], selectors: [_]} = draft
@@ -250,10 +260,13 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     assert {:error, :overlapping_profile} =
              Skills.publish_profile(actor, 73, wide.id, ~D[2026-02-01])
   end
+
   defp publish_new_scale_version(scope, scale, drop_levels \\ []) do
     {:ok, draft} = Skills.new_scale_version(scope, 73, scale.id)
+
     for level <- drop_levels,
         do: {:ok, :ok} = Skills.delete_scale_level(scope, 73, draft.id, level)
+
     {:ok, published} = Skills.publish_scale(scope, 73, draft.id)
     published
   end
@@ -271,6 +284,7 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
              Skills.new_profile_version(scope, 73, v1.id)
 
     assert scale_id == scale_v2.id
+
     assert {:ok, %{status: "published"}} =
              Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
   end
@@ -335,6 +349,7 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
 
     assert {:ok, %{scale_id: moved}} = Skills.get_profile(scope, 73, draft.id)
     assert moved == scale_v2.id
+
     assert {:ok, %{status: "published"}} =
              Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
   end
@@ -344,12 +359,14 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     scope: scope
   } do
     grant_capabilities!([@view, @manage])
+
     UserFixtures.insert_user!(%{
       id: 92,
       company_id: 73,
       name: "Publisher",
       email: "publisher@example.com"
     })
+
     grant_capabilities!([@publish], user_id: 92)
     publisher = %Actor{type: :user, id: 92, company_id: 73, scope: scope}
     published = profile_ready(scope)

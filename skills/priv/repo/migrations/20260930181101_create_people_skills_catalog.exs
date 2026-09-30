@@ -243,9 +243,7 @@ defmodule Bilimbi.People.Skills.Migrations.CreateCatalog do
   # At most one open draft and one published version per company and code.
   defp lifecycle_indexes(table) do
     create(
-      constraint(table, :"#{table}_status",
-        check: "status IN ('draft', 'published', 'retired')"
-      )
+      constraint(table, :"#{table}_status", check: "status IN ('draft', 'published', 'retired')")
     )
 
     create(
