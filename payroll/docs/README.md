@@ -29,8 +29,9 @@ and overflow are refused instead of silently rounded.
 
 Definitions and mappings are append-only. Versions of the same code must not
 overlap. A source may map once per currency: its mapping versions must not
-overlap for pay items in the same currency. Use bounded effective dates when future policy changes are
-expected; an open-ended version intentionally cannot be replaced. A pay item
+overlap for pay items in the same currency. Use bounded effective dates when
+future policy changes are expected; an open-ended version intentionally cannot
+be replaced. A pay item
 must fit within its classification's dates; a mapping must fit within its pay
 item's dates. Dates are inclusive. Periods cannot overlap and their explicit pay
 date must be on or after the end date.

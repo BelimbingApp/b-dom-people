@@ -202,8 +202,19 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
           title="No company is available for payroll setup."
         />
         <div :if={@data} class="mt-5 space-y-5">
-          <.form for={@forms.company} id="payroll-company" phx-change="select_company" phx-submit="select_company">
-            <.input field={@forms.company[:company_id]} type="select" label="Company" value={@company.id} options={Enum.map(@companies, &{&1.name, &1.id})} />
+          <.form
+            for={@forms.company}
+            id="payroll-company"
+            phx-change="select_company"
+            phx-submit="select_company"
+          >
+            <.input
+              field={@forms.company[:company_id]}
+              type="select"
+              label="Company"
+              value={@company.id}
+              options={Enum.map(@companies, &{&1.name, &1.id})}
+            />
           </.form>
           <p :if={!@can_manage?} class="text-sm text-ink-muted">
             You can view this company's setup. A payroll operator can add records.
@@ -219,14 +230,20 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             <p :if={@data.country == "" or @data.currencies == []} class="mt-2 text-sm text-ink-muted">
               Choose a country and allowed currencies before creating runs. No statutory rules are activated here.
             </p>
-            <.form for={@forms.settings}
+            <.form
               :if={@can_manage?}
+              for={@forms.settings}
               id="payroll-settings"
               phx-submit="save_settings"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.input field={@forms.settings[:country]} label="Country identifier" value={@data.country} />
-              <.input field={@forms.settings[:currencies]}
+              <.input
+                field={@forms.settings[:country]}
+                label="Country identifier"
+                value={@data.country}
+              />
+              <.input
+                field={@forms.settings[:currencies]}
                 label="Currency codes, comma separated"
                 value={Enum.join(@data.currencies, ", ")}
                 required={false}
@@ -249,13 +266,16 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 {row.code} · {row.name} · {row.effective_from} to {row.effective_to || "open"}
               </li>
             </ul>
-            <.form for={@forms.classification}
+            <.form
               :if={@can_manage?}
+              for={@forms.classification}
               id="classification-form"
               phx-submit="create_classification"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.catalog_fields form={@forms.classification} /><.date_fields form={@forms.classification} /><.button type="submit">Add classification version</.button>
+              <.catalog_fields form={@forms.classification} /><.date_fields form={
+                @forms.classification
+              } /><.button type="submit">Add classification version</.button>
             </.form>
           </.card>
           <.card inner_class="p-5">
@@ -273,20 +293,25 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             >
               Add classifications and currency settings to create pay items.
             </p>
-            <.form for={@forms.item}
+            <.form
               :if={@can_manage? and @data.classifications != [] and @data.currencies != []}
+              for={@forms.item}
               id="item-form"
               phx-submit="create_item"
               class="mt-3 flex flex-wrap gap-3"
             >
               <.catalog_fields form={@forms.item} />
-              <.input type="select" field={@forms.item[:classification_id]}
+              <.input
+                type="select"
+                field={@forms.item[:classification_id]}
                 label="Classification"
                 options={
                   Enum.map(@data.classifications, &{"#{&1.name} · #{&1.effective_from}", &1.id})
                 }
               />
-              <.input type="select" field={@forms.item[:currency]}
+              <.input
+                type="select"
+                field={@forms.item[:currency]}
                 label="Item currency"
                 options={Enum.map(@data.currencies, &{&1, &1})}
               />
@@ -306,8 +331,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 {row.code} · {row.starts_on} to {row.ends_on} · Pay on {row.pay_on}
               </li>
             </ul>
-            <.form for={@forms.period}
+            <.form
               :if={@can_manage?}
+              for={@forms.period}
               id="period-form"
               phx-submit="create_period"
               class="mt-3 flex flex-wrap gap-3"
@@ -338,17 +364,22 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
             <p :if={@data.items == [] or @sources == []} class="mt-2 text-sm text-ink-muted">
               Add pay items and available Leave or Claims types before mapping.
             </p>
-            <.form for={@forms.mapping}
+            <.form
               :if={@can_manage? and @data.items != [] and @sources != []}
+              for={@forms.mapping}
               id="mapping-form"
               phx-submit="create_mapping"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.input type="select" field={@forms.mapping[:source]}
+              <.input
+                type="select"
+                field={@forms.mapping[:source]}
                 label="Mapping source"
                 options={Enum.map(@sources, &{&1.label, &1.value})}
               />
-              <.input type="select" field={@forms.mapping[:item_id]}
+              <.input
+                type="select"
+                field={@forms.mapping[:item_id]}
                 label="Mapped pay item"
                 options={Enum.map(@data.items, &{"#{&1.name} · #{&1.effective_from}", &1.id})}
               />
@@ -372,7 +403,11 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 id={"run-unmapped-#{run.id}"}
                 class="text-ink-muted"
               >
-                Unmapped: {Enum.map_join(run.snapshot["unmapped_sources"], ", ", &"#{&1["source_kind"]} · #{&1["name"]}")}
+                Unmapped: {Enum.map_join(
+                  run.snapshot["unmapped_sources"],
+                  ", ",
+                  &"#{&1["source_kind"]} · #{&1["name"]}"
+                )}
               </span>
               <span :if={run.locked_at}>Locked
               <.datetime id={"run-locked-#{run.id}"} value={run.locked_at} /></span>
@@ -382,20 +417,25 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
                 phx-value-id={run.id}
               >Lock permanently</.button>
             </div>
-            <.form for={@forms.run}
+            <.form
               :if={
                 @can_manage? and @data.periods != [] and @data.currencies != [] and
                   @data.country != ""
               }
+              for={@forms.run}
               id="run-form"
               phx-submit="create_run"
               class="mt-3 flex flex-wrap gap-3"
             >
-              <.input type="select" field={@forms.run[:period_id]}
+              <.input
+                type="select"
+                field={@forms.run[:period_id]}
                 label="Run period"
                 options={Enum.map(@data.periods, &{&1.code, &1.id})}
               />
-              <.input type="select" field={@forms.run[:currency]}
+              <.input
+                type="select"
+                field={@forms.run[:currency]}
                 label="Run currency"
                 options={Enum.map(@data.currencies, &{&1, &1})}
               />
