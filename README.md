@@ -28,8 +28,7 @@ and employee responses.
 Training owns a company-scoped course catalog, delivery events and a session
 calendar with explicit capacity and IANA time zones.
 Progression owns published policy versions and an employee eligibility
-explanation. Other modules remain empty;
-no sample rows are installed.
+explanation. No sample rows are installed.
 
 | Module ID | Ownership |
 | --- | --- |

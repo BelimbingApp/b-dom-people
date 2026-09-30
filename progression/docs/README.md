@@ -21,8 +21,8 @@ is a same-day correction: the higher version governs that date. All prior
 publications remain readable. Each code is selected independently: its
 published version with the latest effective date on or before today, ties
 broken by the highest version, governs. A future publication does not remove
-the currently effective version. PostgreSQL refuses
-changes to published rows and deletion or content edits of any version.
+the currently effective version. PostgreSQL refuses changes to published rows
+and deletion or content edits of any version.
 Publication stores the actual login actor and time, and Base Audit captures the
 mutation. Writes during impersonation are refused.
 
@@ -47,10 +47,11 @@ evidence follows the policy's `unknown` or `not_met` choice. An omitted
 performance criterion produces no performance result.
 
 The explanation returns, for each governing policy code, individual
-met/not-met/unknown results and a combined status: a failed criterion is not met, otherwise any missing criterion is
-unknown, otherwise the declared criteria are met. This result is computed on
-read and makes no promotion or pay decision. Employee pages expose meaningful
-no-policy, employee-unavailable and permission/freshness states.
+met/not-met/unknown results and a combined status: a failed criterion is not
+met, otherwise any missing criterion is unknown, otherwise the declared
+criteria are met. This result is computed on read and makes no promotion or pay
+decision. Employee pages expose meaningful no-policy, employee-unavailable and
+permission/freshness states.
 
 Capabilities:
 
