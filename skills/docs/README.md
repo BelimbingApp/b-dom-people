@@ -33,7 +33,11 @@ sibling-company and cross-tenant records are indistinguishable.
   another code's published or retired version targets any of the same people
   from that date on; a company target overlaps everything. Retiring records the
   last effective day. Items and targets of a published or retired version are
-  immutable in the database; the next version is a copied draft.
+  immutable in the database; the next version is a copied draft. That draft
+  adopts the currently published version of its scale code when every
+  required level exists on it; otherwise it keeps the earlier scale and
+  reports the missing levels. A manager can move any draft to another
+  published scale once every required level exists there.
 - **Resolution.** `requirements/4` returns the single profile version in force
   on a date for the company, optionally for one position, or `nil`.
   Assessments and gaps belong to the assessment slice.

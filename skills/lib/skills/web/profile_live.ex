@@ -9,7 +9,8 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   @capability "people.skills.catalog.view"
   @manage_capability "people.skills.catalog.manage"
   @write_events ~w(put_item remove_item move_item add_selector remove_selector new_version
-                   discard)
+                   discard move_scale)
+  @decision_events ~w(publish retire)
 
   @impl true
   def mount(_params, _session, socket) do
@@ -45,6 +46,10 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   def handle_event(event, _params, %{assigns: %{can_manage?: false}} = socket)
       when event in @write_events,
       do: {:noreply, put_flash(socket, :error, "You cannot change this company's skills.")}
+
+  def handle_event(event, _params, %{assigns: %{can_publish?: false}} = socket)
+      when event in @decision_events,
+      do: {:noreply, put_flash(socket, :error, error_message(:unauthorized))}
 
   def handle_event("put_item", %{"item" => attrs}, socket) do
     attrs = Map.put(attrs, "mandatory", Map.get(attrs, "mandatory") == "true")
@@ -86,10 +91,16 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
     end)
   end
 
+  def handle_event("move_scale", %{"scale_id" => scale_id}, socket) do
+    draft(socket, "Scale changed.", fn scope, company_id, id ->
+      Skills.update_profile(scope, company_id, id, %{scale_id: scale_id})
+    end)
+  end
+
   def handle_event("new_version", _params, socket) do
     draft(socket, "New draft version added.", fn scope, company_id, id ->
       with {:ok, draft} <- Skills.new_profile_version(scope, company_id, id) do
-        send(self(), {:open, draft.id})
+        send(self(), {:open, draft.id, draft.missing_levels})
         {:ok, draft}
       end
     end)
@@ -122,12 +133,23 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   end
 
   @impl true
-  def handle_info({:open, id}, socket),
-    do:
-      {:noreply,
-       push_patch(socket,
-         to: ~p"/people/skills/profiles/#{id}?company_id=#{socket.assigns.company.id}"
-       )}
+  def handle_info({:open, id, missing_levels}, socket) do
+    socket =
+      if missing_levels == [],
+        do: socket,
+        else:
+          put_flash(
+            socket,
+            :error,
+            "The current scale version lacks required levels #{Enum.join(missing_levels, ", ")}; " <>
+              "the draft keeps its previous scale until those requirements change."
+          )
+
+    {:noreply,
+     push_patch(socket,
+       to: ~p"/people/skills/profiles/#{id}?company_id=#{socket.assigns.company.id}"
+     )}
+  end
 
   defp draft(socket, success, fun) do
     actor = socket.assigns.current_scope.actor
@@ -161,7 +183,7 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   defp error_message(:weights_not_100), do: "Requirement weights must total 100."
 
   defp error_message(:level_not_on_scale),
-    do: "Each required level must exist on the profile's scale."
+    do: "Each required level must exist on the scale; change those requirements first."
 
   defp error_message(:skill_unavailable), do: "Every skill must be active in this company."
   defp error_message(:scale_unavailable), do: "The profile's scale is no longer published."
@@ -205,6 +227,7 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
         profile: profile,
         skills: skills,
         scale: scale,
+        published_scales: Enum.filter(scales, &(&1.status == "published")),
         positions: positions,
         total_weight:
           Enum.reduce(profile.items, Decimal.new(0), &Decimal.add(&1.weight_percent, &2))
@@ -268,8 +291,17 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
           </.header>
           <p class="text-sm">
             <.link navigate={~p"/people/skills?company_id=#{@company.id}"} class="underline">Back to skills</.link>
-            <span :if={@scale}> · Scale: {@scale.name} v{@scale.version}</span>
+            <span :if={@scale}> · Scale: {@scale.name} v{@scale.version} ({@scale.status})</span>
           </p>
+          <form :if={@can_manage? and @profile.status == "draft" and @published_scales != []}
+            id="skill-profile-scale-form" phx-submit="move_scale" class="mt-3 flex flex-wrap items-end gap-2">
+            <select name="scale_id" aria-label="Scale" class={input_class()}>
+              <option :for={scale <- @published_scales} value={scale.id} selected={scale.id == @profile.scale_id}>
+                {scale.name} ({scale.code}) v{scale.version}
+              </option>
+            </select>
+            <.button type="submit">Change scale</.button>
+          </form>
 
           <section class="mt-5 rounded-xl border border-line bg-surface p-5">
             <h2 class="text-base font-semibold text-ink">Skill requirements</h2>

@@ -250,4 +250,119 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     assert {:error, :overlapping_profile} =
              Skills.publish_profile(actor, 73, wide.id, ~D[2026-02-01])
   end
+  defp publish_new_scale_version(scope, scale, drop_levels \\ []) do
+    {:ok, draft} = Skills.new_scale_version(scope, 73, scale.id)
+    for level <- drop_levels,
+        do: {:ok, :ok} = Skills.delete_scale_level(scope, 73, draft.id, level)
+    {:ok, published} = Skills.publish_scale(scope, 73, draft.id)
+    published
+  end
+
+  test "a new profile version adopts the revised scale and publishes", %{
+    scope: scope,
+    actor: actor
+  } do
+    grant_capabilities!([@view, @manage, @publish])
+    v1 = profile_ready(scope)
+    {:ok, _} = Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
+    scale_v2 = publish_new_scale_version(scope, %{id: v1.scale_id})
+
+    assert {:ok, %{scale_id: scale_id, missing_levels: []} = draft} =
+             Skills.new_profile_version(scope, 73, v1.id)
+
+    assert scale_id == scale_v2.id
+    assert {:ok, %{status: "published"}} =
+             Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
+  end
+
+  test "a draft keeps its scale until required levels exist on the revised scale", %{
+    conn: conn,
+    scope: scope,
+    actor: actor
+  } do
+    grant_capabilities!([@view, @manage, @publish])
+    {:ok, category} = Skills.create_category(scope, 73, %{code: "cat", name: "Category"})
+
+    {:ok, skill} =
+      Skills.create_skill(scope, 73, %{
+        code: "skill",
+        name: "Skill",
+        definition: "Defined",
+        category_id: category.id
+      })
+
+    {:ok, scale} = Skills.create_scale(scope, 73, %{code: "deep", name: "Deep"})
+
+    for level <- 0..2 do
+      {:ok, _} =
+        Skills.put_scale_level(scope, 73, scale.id, %{
+          level: level,
+          name: "Level #{level}",
+          anchor: "Anchor",
+          authority: "Authority"
+        })
+    end
+
+    {:ok, scale} = Skills.publish_scale(scope, 73, scale.id)
+
+    {:ok, v1} =
+      Skills.create_profile(scope, 73, %{code: "deep", name: "Deep", scale_id: scale.id})
+
+    item = %{skill_id: skill.id, criticality: "critical", weight_percent: "100"}
+    {:ok, _} = Skills.put_item(scope, 73, v1.id, Map.put(item, :required_level, 2))
+    {:ok, _} = Skills.add_selector(scope, 73, v1.id, :company)
+    {:ok, _} = Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
+    scale_v2 = publish_new_scale_version(scope, scale, [2])
+
+    assert {:ok, %{scale_id: scale_id, missing_levels: [2]} = draft} =
+             Skills.new_profile_version(scope, 73, v1.id)
+
+    assert scale_id == scale.id
+
+    {:ok, page, _} =
+      conn |> log_in_as() |> live("/people/skills/profiles/#{draft.id}?company_id=73")
+
+    assert page |> form("#skill-profile-scale-form", scale_id: scale_v2.id) |> render_submit() =~
+             "Each required level must exist on the scale"
+
+    assert {:error, :level_not_on_scale} =
+             Skills.update_profile(scope, 73, draft.id, %{scale_id: scale_v2.id})
+
+    {:ok, _} = Skills.put_item(scope, 73, draft.id, Map.put(item, :required_level, 1))
+
+    assert page |> form("#skill-profile-scale-form", scale_id: scale_v2.id) |> render_submit() =~
+             "Scale changed."
+
+    assert {:ok, %{scale_id: moved}} = Skills.get_profile(scope, 73, draft.id)
+    assert moved == scale_v2.id
+    assert {:ok, %{status: "published"}} =
+             Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
+  end
+
+  test "publish and retire events are refused without the publish capability", %{
+    conn: conn,
+    scope: scope
+  } do
+    grant_capabilities!([@view, @manage])
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Publisher"})
+    grant_capabilities!([@publish], user_id: 92)
+    publisher = %Actor{type: :user, id: 92, company_id: 73, scope: scope}
+    published = profile_ready(scope)
+    {:ok, _} = Skills.publish_profile(publisher, 73, published.id, ~D[2026-01-01])
+    draft = profile_ready(scope, "other", :company)
+    conn = log_in_as(conn)
+
+    {:ok, page, _} = live(conn, "/people/skills/profiles/#{draft.id}?company_id=73")
+
+    assert render_hook(page, "publish", %{"effective_from" => "2027-01-01"}) =~
+             "You cannot publish or retire this company&#39;s profiles."
+
+    {:ok, page, _} = live(conn, "/people/skills/profiles/#{published.id}?company_id=73")
+
+    assert render_hook(page, "retire", %{"effective_to" => "2026-12-31"}) =~
+             "You cannot publish or retire this company&#39;s profiles."
+
+    assert {:ok, %{status: "draft"}} = Skills.get_profile(scope, 73, draft.id)
+    assert {:ok, %{status: "published"}} = Skills.get_profile(scope, 73, published.id)
+  end
 end

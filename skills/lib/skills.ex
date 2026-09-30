@@ -437,13 +437,20 @@ defmodule Bilimbi.People.Skills do
     end
   end
 
-  @doc "Drafts the next version of a profile code, copying items and selectors."
+  @doc """
+  Drafts the next version of a profile code, copying items and selectors.
+  The draft adopts the published version of the source's scale code when
+  every required level exists on it; otherwise it keeps the source's scale
+  and `missing_levels` lists the required levels that version lacks.
+  """
   def new_profile_version(%Scope{} = scope, company_id, profile_id) do
     with {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
         source = get(Profile, scope, company_id, profile_id) || Repo.rollback(:not_found)
         if open_draft?(Profile, scope, company_id, source.code), do: Repo.rollback(:draft_exists)
+        source_items = items(scope, source.id)
+        {scale_id, missing} = current_scale(scope, company_id, source.scale_id, source_items)
 
         draft =
           Repo.insert!(%Profile{
@@ -453,13 +460,13 @@ defmodule Bilimbi.People.Skills do
             name: source.name,
             version: next_version(Profile, scope, company_id, source.code),
             status: "draft",
-            scale_id: source.scale_id
+            scale_id: scale_id
           })
 
-        for record <- items(scope, source.id) ++ selectors(scope, source.id),
+        for record <- source_items ++ selectors(scope, source.id),
             do: Repo.insert!(copy(record, draft.id))
 
-        full_profile_view(scope, draft)
+        scope |> full_profile_view(draft) |> Map.put(:missing_levels, missing)
       end)
     end
   end
@@ -892,6 +899,23 @@ defmodule Bilimbi.People.Skills do
       )
     )
     |> Enum.group_by(& &1.scale_id)
+  end
+
+  defp current_scale(scope, company_id, scale_id, items) do
+    source = get(Scale, scope, company_id, scale_id)
+
+    case source && published(Scale, scope, company_id, source.code) do
+      [current] ->
+        levels = scale_level_numbers(scope, current.id)
+        missing = items |> Enum.map(& &1.required_level) |> Enum.reject(&(&1 in levels))
+
+        if missing == [],
+          do: {current.id, []},
+          else: {scale_id, missing |> Enum.uniq() |> Enum.sort()}
+
+      _ ->
+        {scale_id, []}
+    end
   end
 
   defp scale_level_numbers(scope, scale_id),
