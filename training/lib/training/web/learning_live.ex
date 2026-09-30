@@ -116,7 +116,9 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
           Training.create_learning_request(scope, a.company.id, attrs)
 
         :budget ->
-          Training.create_budget_policy(scope, a.company.id, attrs)
+          if a.prior_id,
+            do: Training.supersede_budget_policy(scope, a.company.id, a.prior_id, attrs),
+            else: Training.create_budget_policy(scope, a.company.id, attrs)
 
         :plan ->
           if a.prior_id,
@@ -203,6 +205,17 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
 
   defp message(:overlapping_policy),
     do: "A budget policy already covers part of that period for this currency."
+
+  defp message(:superseded_budget),
+    do: "Another correction has already replaced this budget policy."
+
+  defp message(:budget_below_commitments),
+    do:
+      "Approved requests in that period already exceed this allocation. Enter an allocation at least equal to the committed amount."
+
+  defp message(:commitments_outside_period),
+    do:
+      "Requests approved under this policy fall outside the corrected period. Keep their proposed dates within it."
 
   defp message(:outside_team), do: "This employee is outside your current reporting line."
 
@@ -386,10 +399,11 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
             <div :if={@kind == :plan}><strong>{r.objectives}</strong><span> · Version {r.version}</span><p>{r.period_start} – {r.period_end}</p>
               <details><summary>Learning items</summary><dl :for={item <- r.items} class="py-2"><dt>{item.need}</dt><dd>{item.expected_result}</dd><dd>{item.target_cohort} · {item.responsible_owner}</dd><dd>{item.intended_timing} · {item.evaluation_approach}</dd></dl></details>
             </div>
-            <div :if={@kind == :budget}><strong>{r.currency}</strong><p>{r.effective_from} – {r.effective_to}</p><p>{r.reason}</p></div>
+            <div :if={@kind == :budget}><strong>{r.currency}</strong><p>{r.effective_from} – {r.effective_to}</p><p>{r.reason}</p><p :if={r.supersedes_id}>Corrects policy {r.supersedes_id}</p></div>
           </:col>
           <:col :let={r} label="Status / budget">
             <span :if={@kind != :budget}>{r.status}</span>
+            <span :if={@kind == :budget and r.superseded_by}>Superseded by policy {r.superseded_by}</span>
             <p :if={@kind == :request}>{r.estimated_cost} {r.currency} · {r.proposed_on}</p>
             <div :if={@kind == :budget}><p>Allocation {r.amount}</p><p>Committed {r.committed}</p><p>Remaining {r.remaining}</p></div>
           </:col>
@@ -402,6 +416,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
               <.button type="submit" phx-disable-with="Recording…">Record decision</.button>
             </.form>
             <.button :if={@kind == :plan and r.status == "approved" and @can_create?} phx-click="open_entry" phx-value-prior_id={r.id}>Amend</.button>
+            <.button :if={@kind == :budget and is_nil(r.superseded_by) and @can_create?} phx-click="open_entry" phx-value-prior_id={r.id}>Correct</.button>
           </:col>
           <:empty title="No learning records yet" reason="Choose a company and add a request, plan or budget when you have the required access." />
         </.table>
@@ -410,7 +425,11 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
           consequence={"Record #{@pending_decision["action"]} for this learning record?"}
           detail="The decision and your reason will remain in history. A terminal request cannot be reopened; an approved plan needs a reasoned amendment."
           confirm="Record decision" working="Recording…" on_confirm={JS.push("confirm_decision")} on_cancel={JS.push("cancel_decision")} />
-        <.modal :if={@modal} id="learning-entry" title={if @prior_id, do: "Amend plan", else: "Add #{@kind}"} on_cancel={JS.push("close_modal")} flash={@flash}>
+        <.modal :if={@modal} id="learning-entry" title={cond do
+          @prior_id && @kind == :budget -> "Correct budget policy"
+          @prior_id -> "Amend plan"
+          true -> "Add #{@kind}"
+        end} on_cancel={JS.push("close_modal")} flash={@flash}>
           <.form for={@form} id="learning-entry-form" phx-submit="save_entry" class="space-y-3">
             <div :if={@kind == :request} class="space-y-3">
               <.input field={@form[:need]} label="Learning need" required maxlength="4000" />
@@ -421,11 +440,11 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
               <.input field={@form[:currency]} label="Currency" required maxlength="3" />
             </div>
             <div :if={@kind == :budget} class="space-y-3">
-              <.input field={@form[:currency]} label="Currency" required maxlength="3" />
+              <.input :if={is_nil(@prior_id)} field={@form[:currency]} label="Currency" required maxlength="3" />
               <.input field={@form[:effective_from]} type="date" label="Effective from" required />
               <.input field={@form[:effective_to]} type="date" label="Effective through" required />
               <.input field={@form[:amount]} type="number" label="Allocation" min="0" step="0.0001" required />
-              <.input field={@form[:reason]} type="textarea" label="Allocation reason" required maxlength="4000" />
+              <.input field={@form[:reason]} type="textarea" label={if @prior_id, do: "Correction reason", else: "Allocation reason"} required maxlength="4000" />
             </div>
             <div :if={@kind == :plan} class="space-y-3">
               <.input field={@form[:objectives]} type="textarea" label="Objectives" required maxlength="4000" />

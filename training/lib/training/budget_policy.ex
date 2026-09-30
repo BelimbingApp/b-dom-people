@@ -13,12 +13,13 @@ defmodule Bilimbi.People.Training.BudgetPolicy do
     field(:effective_to, :date)
     field(:amount, :decimal)
     field(:reason, :string)
+    field(:supersedes_id, :integer)
     timestamps()
   end
 
   def changeset(row, attrs) do
     row
-    |> cast(attrs, ~w(currency effective_from effective_to amount reason)a)
+    |> cast(attrs, ~w(currency effective_from effective_to amount reason supersedes_id)a)
     |> validate_required(
       ~w(tenant_id company_id actor_user_id currency effective_from effective_to amount reason)a
     )
@@ -31,5 +32,6 @@ defmodule Bilimbi.People.Training.BudgetPolicy do
       if value.exp < -4, do: [{field, "must have at most four decimal places"}], else: []
     end)
     |> check_constraint(:effective_to, name: :people_training_budget_policies_dates)
+    |> unique_constraint(:supersedes_id)
   end
 end

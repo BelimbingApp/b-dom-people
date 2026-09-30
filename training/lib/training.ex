@@ -24,6 +24,11 @@ defmodule Bilimbi.People.Training do
     as: :put_currencies
 
   defdelegate create_budget_policy(scope, company_id, attrs), to: Governance, as: :create_budget
+
+  defdelegate supersede_budget_policy(scope, company_id, id, attrs),
+    to: Governance,
+    as: :supersede_budget
+
   defdelegate learning_budgets(scope, company_id), to: Governance, as: :budgets
 
   defdelegate create_learning_request(scope, company_id, attrs),

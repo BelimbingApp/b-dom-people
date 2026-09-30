@@ -56,7 +56,13 @@ an empty default. The budget page supplies its operator editor; only
 `create_budget_policy/3` records immutable, reasoned allocations with explicit
 currency and inclusive effective dates. Periods for the same currency may not
 overlap. A new effective period is a new policy, never a rewrite of an earlier
-allocation. Requests and allocations require an enabled currency. Approval
+allocation. `supersede_budget_policy/4` corrects a mistaken allocation: the
+operator gives a reason and the corrected period and amount, and a new row in the
+same currency records `supersedes_id`. The original row stays unchanged and is
+listed as superseded; overlap checks, approvals and committed totals use only
+current policies. A correction is refused when approved commitments in its
+period exceed the new amount, or when requests approved under the original
+policy would fall outside the corrected period. Requests and allocations require an enabled currency. Approval
 requires a policy covering the request's proposed date, snapshots its ID and
 the approved amount, and refuses spending above that allocation. Missing
 policy is unavailable, not an unlimited budget. There is no implicit currency

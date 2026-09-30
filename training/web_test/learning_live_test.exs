@@ -227,6 +227,104 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     assert {:ok, [_]} = Training.learning_budgets(s[93], 73)
   end
 
+  test "budget correction supersedes a mistyped allocation and keeps both rows", %{
+    conn: conn,
+    scopes: s
+  } do
+    {:ok, typo} = allocation(s, "10.0000")
+    r = ready(s)
+
+    assert {:error, :budget_exceeded} =
+             Training.decide_learning_request(s[94], 73, r.id, "approve", "Over typo")
+
+    correction = %{
+      effective_from: "2026-10-01",
+      effective_to: "2026-10-31",
+      amount: "1000.0000",
+      reason: "Allocation typo"
+    }
+
+    assert {:error, %Ecto.Changeset{}} =
+             Training.supersede_budget_policy(s[93], 73, typo.id, %{correction | reason: " "})
+
+    assert {:error, :unauthorized} =
+             Training.supersede_budget_policy(s[95], 73, typo.id, correction)
+
+    assert {:ok, fixed} = Training.supersede_budget_policy(s[93], 73, typo.id, correction)
+    assert fixed.supersedes_id == typo.id and fixed.currency == "AAA"
+
+    assert {:error, :superseded_budget} =
+             Training.supersede_budget_policy(s[93], 73, typo.id, correction)
+
+    assert {:ok, approved} = Training.decide_learning_request(s[94], 73, r.id, "approve", "Fits")
+    assert approved.budget_policy_id == fixed.id
+
+    assert {:ok, [current, original]} = Training.learning_budgets(s[93], 73)
+    assert {current.id, current.superseded_by} == {fixed.id, nil}
+    assert {original.id, original.superseded_by} == {typo.id, fixed.id}
+    assert Decimal.equal?(original.amount, "10") and original.reason == "Approved allocation"
+
+    assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
+             SQL.query(
+               Repo,
+               "UPDATE people_training_budget_policies SET amount = 999 WHERE id = $1",
+               [typo.id],
+               mode: :savepoint
+             )
+
+    {:ok, live, _} =
+      conn |> log_in_as(session_user(%{"user_id" => 93})) |> live("/people/training/budgets")
+
+    assert has_element?(live, "#learning-#{typo.id}", "Superseded by policy #{fixed.id}")
+    assert has_element?(live, "#learning-#{fixed.id}", "Corrects policy #{typo.id}")
+    refute has_element?(live, "#learning-#{typo.id} button", "Correct")
+
+    live |> element("#learning-#{fixed.id} button", "Correct") |> render_click()
+
+    live
+    |> form("#learning-entry-form",
+      entry: %{correction | amount: "500.0000", reason: "Reduced allocation"}
+    )
+    |> render_submit()
+
+    assert {:ok, [latest | _]} = Training.learning_budgets(s[93], 73)
+    assert latest.supersedes_id == fixed.id and Decimal.equal?(latest.amount, "500")
+  end
+
+  test "budget correction refuses allocations below approved commitments", %{scopes: s} do
+    {:ok, policy} = allocation(s)
+    r = ready(s)
+    {:ok, _} = Training.decide_learning_request(s[94], 73, r.id, "approve", "Approval")
+
+    below = %{
+      effective_from: "2026-10-01",
+      effective_to: "2026-10-31",
+      amount: "39.9999",
+      reason: "Too small"
+    }
+
+    assert {:error, :budget_below_commitments} =
+             Training.supersede_budget_policy(s[93], 73, policy.id, below)
+
+    assert {:error, :commitments_outside_period} =
+             Training.supersede_budget_policy(s[93], 73, policy.id, %{
+               below
+               | effective_from: "2026-10-13",
+                 amount: "100"
+             })
+
+    assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
+             SQL.query(
+               Repo,
+               "INSERT INTO people_training_budget_policies (tenant_id, company_id, actor_user_id, currency, effective_from, effective_to, amount, reason, supersedes_id, inserted_at, updated_at) VALUES (41, 73, 93, 'AAA', '2026-10-01', '2026-10-31', 1, 'Bypass', $1, now(), now())",
+               [policy.id],
+               mode: :savepoint
+             )
+
+    assert {:ok, [only]} = Training.learning_budgets(s[93], 73)
+    assert only.id == policy.id and is_nil(only.superseded_by)
+  end
+
   test "HR HOD employee company and system refusal precede writes", %{scopes: s} do
     {:ok, _} = allocation(s)
 

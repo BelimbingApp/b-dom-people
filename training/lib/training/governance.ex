@@ -45,23 +45,67 @@ defmodule Bilimbi.People.Training.Governance do
     end
   end
 
-  def create_budget(%Scope{} = scope, company_id, attrs) do
+  def create_budget(%Scope{} = scope, company_id, attrs),
+    do: put_budget(scope, company_id, nil, attrs)
+
+  def supersede_budget(%Scope{} = scope, company_id, id, attrs),
+    do: put_budget(scope, company_id, id, attrs)
+
+  defp put_budget(scope, company_id, prior_id, attrs) do
     with :ok <- auth(scope, company_id, "budgets.manage") do
       tx(scope, company_id, fn ->
+        attrs =
+          stringify(attrs) |> Map.take(~w(currency effective_from effective_to amount reason))
+
+        attrs =
+          if prior_id do
+            prior = fetch!(BudgetPolicy, scope, company_id, prior_id)
+
+            require!(
+              Repo.exists?(
+                from(p in active_budgets(scope, company_id), where: p.id == ^prior.id)
+              ),
+              :superseded_budget
+            )
+
+            Map.merge(attrs, %{"currency" => prior.currency, "supersedes_id" => prior.id})
+          else
+            attrs
+          end
+
         row = prepare!(BudgetPolicy, scope, company_id, attrs)
         currency!(scope, company_id, row.currency)
         require!(Date.compare(row.effective_to, row.effective_from) != :lt, :invalid_period)
 
         overlap =
           Repo.exists?(
-            from(p in scoped(BudgetPolicy, scope, company_id),
+            from(p in active_budgets(scope, company_id),
               where:
                 p.currency == ^row.currency and p.effective_from <= ^row.effective_to and
-                  p.effective_to >= ^row.effective_from
+                  p.effective_to >= ^row.effective_from and p.id != ^(prior_id || 0)
             )
           )
 
         require!(not overlap, :overlapping_policy)
+
+        if prior_id do
+          require!(
+            not Repo.exists?(
+              from(r in scoped(Request, scope, company_id),
+                where:
+                  r.budget_policy_id == ^prior_id and
+                    (r.proposed_on < ^row.effective_from or r.proposed_on > ^row.effective_to)
+              )
+            ),
+            :commitments_outside_period
+          )
+        end
+
+        require!(
+          Decimal.compare(spent(scope, company_id, row), row.amount) != :gt,
+          :budget_below_commitments
+        )
+
         view(insert!(BudgetPolicy, scope, company_id, attrs))
       end)
     end
@@ -69,16 +113,26 @@ defmodule Bilimbi.People.Training.Governance do
 
   def budgets(%Scope{} = scope, company_id) do
     with :ok <- auth(scope, company_id, "budgets.view") do
+      rows =
+        Repo.all(
+          from(p in scoped(BudgetPolicy, scope, company_id),
+            order_by: [desc: p.effective_from, desc: p.id]
+          )
+        )
+
+      successors = Map.new(rows, &{&1.supersedes_id, &1.id})
+
       {:ok,
-       Enum.map(
-         Repo.all(
-           from(p in scoped(BudgetPolicy, scope, company_id), order_by: [desc: p.effective_from])
-         ),
-         fn p ->
-           spent = spent(scope, company_id, p)
-           view(p) |> Map.merge(%{committed: spent, remaining: Decimal.sub(p.amount, spent)})
-         end
-       )}
+       Enum.map(rows, fn p ->
+         spent = spent(scope, company_id, p)
+
+         view(p)
+         |> Map.merge(%{
+           superseded_by: successors[p.id],
+           committed: spent,
+           remaining: Decimal.sub(p.amount, spent)
+         })
+       end)}
     end
   end
 
@@ -157,7 +211,7 @@ defmodule Bilimbi.People.Training.Governance do
 
             policy =
               Repo.one(
-                from(p in scoped(BudgetPolicy, scope, company_id),
+                from(p in active_budgets(scope, company_id),
                   where:
                     p.currency == ^row.currency and p.effective_from <= ^row.proposed_on and
                       p.effective_to >= ^row.proposed_on
@@ -466,6 +520,18 @@ defmodule Bilimbi.People.Training.Governance do
       _ -> Repo.rollback(:employee_unavailable)
     end
   end
+
+  defp active_budgets(scope, company_id),
+    do:
+      from(p in scoped(BudgetPolicy, scope, company_id),
+        where:
+          p.id not in subquery(
+            from(s in BudgetPolicy,
+              where: not is_nil(s.supersedes_id),
+              select: s.supersedes_id
+            )
+          )
+      )
 
   defp spent(scope, company_id, p) do
     Repo.one(

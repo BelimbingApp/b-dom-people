@@ -10,14 +10,19 @@ defmodule Bilimbi.People.Training.GovernanceContract do
             "effective_from" => column(:date, false),
             "effective_to" => column(:date, false),
             "amount" => column({:numeric, 18, 4}, false),
-            "reason" => column(:text, false)
+            "reason" => column(:text, false),
+            "supersedes_id" => column(:bigint, true)
           }),
         indexes: %{
           "people_training_budget_policies_pkey" => index(["id"], true),
           "people_training_budget_policies_id_tenant_id_company_id_index" =>
-            index(["id", "tenant_id", "company_id"], true)
+            index(["id", "tenant_id", "company_id"], true),
+          "people_training_budget_policies_supersedes_id_index" => index(["supersedes_id"], true)
         },
-        foreign_keys: %{},
+        foreign_keys: %{
+          "people_training_budget_policies_supersedes_id_scope" =>
+            fk("supersedes_id", "people_training_budget_policies")
+        },
         checks: %{
           "people_training_budget_policies_dates" => %{
             expression: "effective_to >= effective_from",
