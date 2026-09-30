@@ -94,6 +94,7 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
   @doc "Employee-facing text for a submission refusal."
   def refusal(:employee_unavailable), do: "You are not a working employee of this company."
   def refusal(:claim_type_unavailable), do: "Choose a claim type that is open for claims."
+  def refusal(:claim_type_not_assigned), do: "This claim type is not assigned to you."
   def refusal(:future_incurred_on), do: "The expense date cannot be in the future."
   def refusal(:no_effective_policy), do: "No claim policy covers this type on the expense date."
   def refusal(:currency_not_allowed), do: "Use the currency shown for this claim type."
@@ -116,7 +117,8 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
     scope = scope(socket)
     company_id = socket.assigns.company_id
 
-    with {:ok, open_types} <- Claims.open_claim_types(scope, company_id),
+    with {:ok, open_types} <-
+           Claims.open_claim_types(scope, company_id, nil, employee_id: socket.assigns.employee.id),
          {:ok, all_types} <- Claims.claim_types(scope, company_id),
          {:ok, requests} <-
            Claims.employee_requests(scope, company_id, socket.assigns.employee.id) do
@@ -140,6 +142,19 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
     ]
     |> Enum.reject(fn {_label, limit} -> is_nil(limit) end)
     |> Enum.map_join(" · ", fn {label, limit} -> "#{Decimal.to_string(limit)} #{label}" end)
+  end
+
+  defp decision(%{status: "approved"} = request), do: approved_text(request)
+
+  defp decision(%{status: "reimbursed"} = request),
+    do: "#{approved_text(request)}, paid #{Date.to_iso8601(NaiveDateTime.to_date(request.reimbursed_at))}"
+
+  defp decision(%{status: "rejected", decision_reason: reason}), do: reason
+  defp decision(_request), do: "—"
+
+  defp approved_text(request) do
+    text = "Approved #{Decimal.to_string(request.approved_amount)} #{request.currency}"
+    if request.decision_reason, do: "#{text}: #{request.decision_reason}", else: text
   end
 
   defp receipt_rule(%{receipt_requirement: "always"}), do: "Receipt required"
@@ -270,6 +285,7 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
                     <th class="px-2 py-1.5 text-right">Amount</th>
                     <th class="px-2 py-1.5">Receipt</th>
                     <th class="px-2 py-1.5">Status</th>
+                    <th class="px-2 py-1.5">Decision</th>
                     <th class="px-2 py-1.5"><span class="sr-only">Actions</span></th>
                   </tr>
                 </thead>
@@ -282,6 +298,7 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
                     </td>
                     <td class="px-2 py-0.5">{request.receipt_number || "—"}</td>
                     <td class="px-2 py-0.5">{String.capitalize(request.status)}</td>
+                    <td class="px-2 py-0.5">{decision(request)}</td>
                     <td class="px-2 py-0.5">
                       <button
                         :if={request.status == "submitted"}

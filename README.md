@@ -9,8 +9,9 @@ The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules and self view.
 Leave owns types, effective-dated entitlement policies and a balance ledger.
-The claims module owns the claim catalog, effective-dated claim policies, and
-employee claim requests.
+The claims module owns the claim catalog, effective-dated claim policies,
+assignments, employee claim requests, approval, reimbursement, and hand-off
+batches.
 Organisation owns fresh position tables, versioned titles, assignments, a
 bounded explorer, and the Workforce position read. Other modules remain empty;
 no sample rows are installed.
@@ -24,7 +25,7 @@ no sample rows are installed.
 | `people/organisation` | Versioned positions, assignments, and explorer |
 | `people/attendance` | Clock events, day facts, policy settings and self view |
 | `people/leave` | Leave types, entitlement policies and balance ledger |
-| `people/claims` | Claim catalog, policies, currencies, and requests |
+| `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
 | `people/skills` | Skills and development |
 | `people/training` | Courses, sessions, and learning records |
 | `people/performance` | Performance reviews |
@@ -80,8 +81,11 @@ Settings for each company's leave year, types, policy versions and grants. See
 People > My work > My claims opens `/people/claims` for the signed-in actor's
 linked working employee. People > Settings > Claim policies opens
 `/people/claims/setup`, where an operator chooses a company's claim currencies,
-categories, claim types, and effective-dated limits. A new company has no claim
-currency, so it accepts no claims until an operator sets one.
+categories, claim types, assignments, and effective-dated limits. A new company
+has no claim currency, so it accepts no claims until an operator sets one.
+People > Time and expenses > Claim operations opens `/people/claims/operations`
+for approvers: decide claims, record reimbursement, and hand approved claims
+off in per-currency batches with a CSV export. See `claims/docs/README.md`.
 
 ## License
 

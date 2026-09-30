@@ -33,6 +33,15 @@ defmodule Bilimbi.People.Settings.Contributions do
           order: 20
         },
         %{
+          id: "people.time_and_expenses",
+          label: "Time and expenses",
+          icon: "clock",
+          parent: "people",
+          route: nil,
+          capability: nil,
+          order: 30
+        },
+        %{
           id: "people.settings",
           label: "Settings",
           icon: "cog-6-tooth",
