@@ -344,7 +344,12 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     scope: scope
   } do
     grant_capabilities!([@view, @manage])
-    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Publisher"})
+    UserFixtures.insert_user!(%{
+      id: 92,
+      company_id: 73,
+      name: "Publisher",
+      email: "publisher@example.com"
+    })
     grant_capabilities!([@publish], user_id: 92)
     publisher = %Actor{type: :user, id: 92, company_id: 73, scope: scope}
     published = profile_ready(scope)
