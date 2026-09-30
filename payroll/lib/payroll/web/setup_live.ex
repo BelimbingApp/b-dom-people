@@ -360,7 +360,11 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-mappings" title="Pay-item mappings" />
-            <p :if={@can_map_attendance?} id="attendance-mapping-link" class="mt-2 text-sm text-ink-muted">
+            <p
+              :if={@can_map_attendance?}
+              id="attendance-mapping-link"
+              class="mt-2 text-sm text-ink-muted"
+            >
               Attendance allowance mappings are managed on the
               <.link
                 navigate={~p"/people/payroll/attendance-mappings?company_id=#{@company.id}"}

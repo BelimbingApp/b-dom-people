@@ -112,56 +112,143 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page id="payroll-attendance-mappings-page" variant={:list}>
         <.header>Attendance pay-item mappings</.header>
-        <p class="mb-4 text-sm text-ink-muted">Map each Attendance allowance rule code to a company pay item for an effective period. Versions are append-only.</p>
-        <form :if={@companies != []} id="payroll-mapping-company-form" phx-change="select_company" class="mb-4">
+        <p class="mb-4 text-sm text-ink-muted">
+          Map each Attendance allowance rule code to a company pay item for an effective period. Versions are append-only.
+        </p>
+        <form
+          :if={@companies != []}
+          id="payroll-mapping-company-form"
+          phx-change="select_company"
+          class="mb-4"
+        >
           <label for="payroll-mapping-company" class="block text-sm font-medium text-ink-strong">Company</label>
-          <select id="payroll-mapping-company" name="company_id" class="mt-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
-            <option :for={company <- @companies} value={company.id} selected={@company && company.id == @company.id}>{company.name}</option>
+          <select
+            id="payroll-mapping-company"
+            name="company_id"
+            class="mt-1 rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
+          >
+            <option
+              :for={company <- @companies}
+              value={company.id}
+              selected={@company && company.id == @company.id}
+            >
+              {company.name}
+            </option>
           </select>
         </form>
-        <.empty_state :if={@company == nil} id="payroll-mappings-no-company" title="No active company is available for pay-item mappings." />
-        <.empty_state :if={@company && @data == nil} id="payroll-mappings-unavailable"
+        <.empty_state
+          :if={@company == nil}
+          id="payroll-mappings-no-company"
+          title="No active company is available for pay-item mappings."
+        />
+        <.empty_state
+          :if={@company && @data == nil}
+          id="payroll-mappings-unavailable"
           title="Attendance allowance sources are unavailable for this company."
-          reason="The company's workforce is not current." />
+          reason="The company's workforce is not current."
+        />
         <div :if={@data} class="space-y-6">
-          <div :if={@data.sources == []} class="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">No current or future allowance rules are configured.</div>
-          <div :if={@data.sources != []} class="overflow-x-auto rounded-xl border border-line bg-surface">
+          <div
+            :if={@data.sources == []}
+            class="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted"
+          >
+            No current or future allowance rules are configured.
+          </div>
+          <div
+            :if={@data.sources != []}
+            class="overflow-x-auto rounded-xl border border-line bg-surface"
+          >
             <table class="w-full text-sm">
-              <thead class="bg-surface-sunken text-left text-xs font-semibold text-ink-subtle"><tr><th class="px-2 py-1.5">Attendance rule</th><th class="px-2 py-1.5">Value</th><th class="px-2 py-1.5">Effective</th><th class="px-2 py-1.5">Pay items today</th></tr></thead>
+              <thead class="bg-surface-sunken text-left text-xs font-semibold text-ink-subtle">
+                <tr>
+                  <th class="px-2 py-1.5">Attendance rule</th><th class="px-2 py-1.5">Value</th><th class="px-2 py-1.5">
+                    Effective
+                  </th><th class="px-2 py-1.5">Pay items today</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr :for={source <- @data.sources} id={"payroll-attendance-rule-#{source.id}"} class="border-t border-line">
-                  <td class="px-2 py-1"><span class="font-medium">{source.name}</span><span class="ml-2 text-ink-muted tabular-nums">{source.code}</span></td>
-                  <td class="px-2 py-1 tabular-nums">{source.value} {source.currency} / {source.unit}</td>
-                  <td class="px-2 py-1 tabular-nums">{source.effective_from} to {source.effective_until || "open"}</td>
+                <tr
+                  :for={source <- @data.sources}
+                  id={"payroll-attendance-rule-#{source.id}"}
+                  class="border-t border-line"
+                >
+                  <td class="px-2 py-1">
+                    <span class="font-medium">{source.name}</span><span class="ml-2 text-ink-muted tabular-nums">{source.code}</span>
+                  </td>
+                  <td class="px-2 py-1 tabular-nums">
+                    {source.value} {source.currency} / {source.unit}
+                  </td>
+                  <td class="px-2 py-1 tabular-nums">
+                    {source.effective_from} to {source.effective_until || "open"}
+                  </td>
                   <td class="px-2 py-1">{current_items(@data, source.code)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-          <p :if={@data.sources != [] and @data.items == []} id="payroll-mappings-no-items" class="text-sm text-ink-muted">Add a pay item in Payroll setup before mapping allowance rules.</p>
-          <section :if={@data.sources != [] and @data.items != []} class="rounded-xl border border-line bg-surface p-4">
+          <p
+            :if={@data.sources != [] and @data.items == []}
+            id="payroll-mappings-no-items"
+            class="text-sm text-ink-muted"
+          >
+            Add a pay item in Payroll setup before mapping allowance rules.
+          </p>
+          <section
+            :if={@data.sources != [] and @data.items != []}
+            class="rounded-xl border border-line bg-surface p-4"
+          >
             <h2 class="font-semibold text-ink-strong">Add mapping version</h2>
-            <form id="payroll-attendance-mapping-form" phx-submit="create" class="mt-4 grid gap-3 sm:grid-cols-2">
-              <label class="text-sm">Attendance rule
-                <select name="mapping[attendance_rule_code]" required class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5">
-                  <option :for={source <- Enum.uniq_by(@data.sources, & &1.code)} value={source.code}>{source.name} · {source.code}</option>
+            <form
+              id="payroll-attendance-mapping-form"
+              phx-submit="create"
+              class="mt-4 grid gap-3 sm:grid-cols-2"
+            >
+              <label class="text-sm">
+                Attendance rule
+                <select
+                  name="mapping[attendance_rule_code]"
+                  required
+                  class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5"
+                >
+                  <option :for={source <- Enum.uniq_by(@data.sources, & &1.code)} value={source.code}>
+                    {source.name} · {source.code}
+                  </option>
                 </select>
               </label>
-              <label class="text-sm">Pay item
-                <select name="mapping[item_id]" required class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5">
-                  <option :for={{label, id} <- Enum.map(@data.items, &item_option/1)} value={id}>{label}</option>
+              <label class="text-sm">
+                Pay item
+                <select
+                  name="mapping[item_id]"
+                  required
+                  class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5"
+                >
+                  <option :for={{label, id} <- Enum.map(@data.items, &item_option/1)} value={id}>
+                    {label}
+                  </option>
                 </select>
               </label>
-              <label class="text-sm">Effective from<input name="mapping[effective_from]" required type="date" class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5" /></label>
-              <label class="text-sm">Effective to<input name="mapping[effective_to]" type="date" class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5" /></label>
-              <div class="sm:col-span-2"><.button type="submit" variant="primary">Add mapping</.button></div>
+              <label class="text-sm">Effective from<input
+                name="mapping[effective_from]"
+                required
+                type="date"
+                class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5"
+              /></label>
+              <label class="text-sm">Effective to<input
+                name="mapping[effective_to]"
+                type="date"
+                class="mt-1 w-full rounded-md border border-line bg-surface px-3 py-1.5"
+              /></label>
+              <div class="sm:col-span-2">
+                <.button type="submit" variant="primary">Add mapping</.button>
+              </div>
             </form>
           </section>
           <section :if={@data.mappings != []}>
             <h2 class="mb-2 font-semibold text-ink-strong">Mapping history</h2>
             <ul class="space-y-1 text-sm">
               <li :for={mapping <- @data.mappings} id={"payroll-attendance-mapping-#{mapping.id}"}>
-                {mapping.attendance_rule_code} → {item_label(@data.items, mapping.item_id)} · {mapping.effective_from} to {mapping.effective_to || "open"}
+                {mapping.attendance_rule_code} → {item_label(@data.items, mapping.item_id)} · {mapping.effective_from} to {mapping.effective_to ||
+                  "open"}
               </li>
             </ul>
           </section>
