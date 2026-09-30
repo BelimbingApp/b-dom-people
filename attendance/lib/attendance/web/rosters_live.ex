@@ -195,8 +195,8 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
             <div class="flex flex-wrap items-center gap-3">
               <p id="attendance-roster-pending" class="text-sm text-ink-muted">
                 {if @roster.pending == 0,
-                  do: "No unpublished changes this week.",
-                  else: "#{@roster.pending} unpublished #{if @roster.pending == 1, do: "change", else: "changes"} this week."}
+                  do: "No unpublished changes this week for this company.",
+                  else: "#{@roster.pending} unpublished #{if @roster.pending == 1, do: "change", else: "changes"} this week across the company. Publish week releases all of them, including employees outside this list."}
               </p>
               <.button :if={@roster.pending > 0} id="attendance-roster-publish" phx-click="publish" variant="primary">
                 Publish week

@@ -44,8 +44,10 @@ entry removes it. `publish_roster/5` copies every pending working value in a
 period of at most 31 days into the published value in one transaction and
 records a `people.attendance.roster_published` Base Audit action. `roster/5`
 returns a planner's grid for up to 31 days and 200 employees, with an optional
-name or number search. `self_roster/5` returns only published entries for the
-signed-in actor's linked employee.
+name or number search. Its pending count covers every pending entry of the
+company in the period, including employees the grid does not show, because
+publishing releases all of them. `self_roster/5` returns only published entries
+for the signed-in actor's linked employee.
 
 ## Adjustment requests
 
@@ -63,6 +65,16 @@ ingestion path with source `adjustment`, key `request:<id>`, and the approver
 as actor, so the day is re-projected. The approver's decision is the evidence,
 so an approved adjustment is exempt from the location requirement. Each
 decision records a `people.attendance.adjustment_<status>` Base Audit action.
+
+## Read bounds
+
+These fixed bounds keep one page render or transaction small; they are
+engineering limits, not operator settings. A roster read or publish covers at
+most 31 days (`@max_days`) and the planner grid shows at most 200 employees
+(`@max_employees`, with a notice to search). My attendance shows the next 14
+days of published shifts (`@roster_days`) and the 20 most recent adjustment
+requests (`@self_limit`). The approvals queue loads the 200 oldest pending
+requests (`@queue_limit`).
 
 ## Company rules
 

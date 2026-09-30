@@ -116,6 +116,17 @@ defmodule Bilimbi.People.Attendance.RostersTest do
                })
 
       assert Keyword.has_key?(long_break.errors, :break_minutes)
+
+      assert {:error, %Ecto.Changeset{} = blank_break} =
+               Attendance.create_shift_template(scope, 73, %{
+                 "code" => "blank",
+                 "name" => "Blank",
+                 "starts_at" => "08:00",
+                 "ends_at" => "17:00",
+                 "break_minutes" => ""
+               })
+
+      assert Keyword.has_key?(blank_break.errors, :break_minutes)
       assert {:ok, []} = Attendance.list_shift_templates(scope, 74)
       assert {:error, :not_found} = Attendance.list_shift_templates(other, 73)
 
@@ -144,6 +155,9 @@ defmodule Bilimbi.People.Attendance.RostersTest do
 
       assert {:ok, []} = Attendance.self_roster(scope, 73, @employee_actor, date, 7)
       assert {:ok, %{pending: 1}} = Attendance.roster(scope, 73, date, 7)
+
+      assert {:ok, %{employees: [], pending: 1}} =
+               Attendance.roster(scope, 73, date, 7, query: "no such employee")
 
       assert {:ok, 1} =
                Attendance.publish_roster(scope, 73, @approver_actor, date, Date.add(date, 6))

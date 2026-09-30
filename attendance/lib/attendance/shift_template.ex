@@ -23,7 +23,15 @@ defmodule Bilimbi.People.Attendance.ShiftTemplate do
     |> cast(attrs, [:code, :name, :starts_at, :ends_at, :break_minutes])
     |> update_change(:code, &String.trim/1)
     |> update_change(:name, &String.trim/1)
-    |> validate_required([:tenant_id, :company_id, :code, :name, :starts_at, :ends_at])
+    |> validate_required([
+      :tenant_id,
+      :company_id,
+      :code,
+      :name,
+      :starts_at,
+      :ends_at,
+      :break_minutes
+    ])
     |> validate_length(:code, min: 1, max: 40)
     |> validate_format(:code, ~r/^[A-Za-z0-9][A-Za-z0-9_.-]*$/)
     |> validate_length(:name, min: 1, max: 120)
@@ -59,10 +67,10 @@ defmodule Bilimbi.People.Attendance.ShiftTemplate do
   defp validate_span(changeset) do
     start_minute = get_field(changeset, :start_minute)
     end_minute = get_field(changeset, :end_minute)
-    break_minutes = get_field(changeset, :break_minutes) || 0
+    break_minutes = get_field(changeset, :break_minutes)
 
     cond do
-      is_nil(start_minute) or is_nil(end_minute) ->
+      is_nil(start_minute) or is_nil(end_minute) or is_nil(break_minutes) ->
         changeset
 
       start_minute == end_minute ->

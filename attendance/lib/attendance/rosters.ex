@@ -10,8 +10,9 @@ defmodule Bilimbi.People.Attendance.Rosters do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Attendance.{Access, RosterEntry, ShiftTemplate}
 
-  # Bounds of one roster read or publish, and of the employee rows shown.
+  # Keeps one roster read or publish transaction to about a month of rows.
   @max_days 31
+  # Keeps the planner grid renderable; search narrows larger companies.
   @max_employees 200
 
   def list_shift_templates(%Scope{} = scope, company_id) do
@@ -94,7 +95,7 @@ defmodule Bilimbi.People.Attendance.Rosters do
          truncated?: length(matching) > @max_employees,
          templates: templates,
          entries: entries,
-         pending: Enum.count(entries, fn {_, entry} -> entry.pending? end)
+         pending: scope |> period_entries(company_id, from, to) |> pending_entries() |> length()
        }}
     end
   end
@@ -168,13 +169,10 @@ defmodule Bilimbi.People.Attendance.Rosters do
 
       Access.transact(fn ->
         pending =
-          from(e in Tenancy.scope_query(RosterEntry, scope),
-            where: e.company_id == ^company_id and e.on_date >= ^from and e.on_date <= ^to,
-            order_by: [asc: e.id],
-            lock: "FOR UPDATE"
-          )
-          |> Repo.all()
-          |> Enum.filter(&RosterEntry.pending?/1)
+          scope
+          |> period_entries(company_id, from, to)
+          |> lock("FOR UPDATE")
+          |> pending_entries()
 
         Enum.each(pending, &publish_entry(&1, actor, now))
 
@@ -195,6 +193,15 @@ defmodule Bilimbi.People.Attendance.Rosters do
       end)
     end
   end
+
+  defp period_entries(scope, company_id, from, to) do
+    from(e in Tenancy.scope_query(RosterEntry, scope),
+      where: e.company_id == ^company_id and e.on_date >= ^from and e.on_date <= ^to,
+      order_by: [asc: e.id]
+    )
+  end
+
+  defp pending_entries(query), do: query |> Repo.all() |> Enum.filter(&RosterEntry.pending?/1)
 
   @doc "The actor's own published roster for up to #{@max_days} days from `from`."
   def self_roster(%Scope{} = scope, company_id, actor, %Date{} = from, days)

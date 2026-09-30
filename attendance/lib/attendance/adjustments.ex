@@ -13,7 +13,9 @@ defmodule Bilimbi.People.Attendance.Adjustments do
   alias Bilimbi.People.Attendance
   alias Bilimbi.People.Attendance.{Access, AdjustmentRequest}
 
+  # Recent requests shown on one employee's My attendance page.
   @self_limit 20
+  # Oldest pending requests loaded into one approvals page render.
   @queue_limit 200
 
   def submit_adjustment(%Scope{} = scope, company_id, actor, attrs) when is_map(attrs) do

@@ -4,7 +4,7 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
   alias Bilimbi.People.Attendance
   alias Bilimbi.People.Attendance.Web.Components, as: AttendanceComponents
 
-  # Published shifts shown ahead of today.
+  # Published shifts shown ahead of today, kept short for a mobile page.
   @roster_days 14
 
   @impl true
