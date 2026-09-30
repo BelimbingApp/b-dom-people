@@ -69,7 +69,8 @@ and absent compositions.
 This is fresh Bilimbi schema work. Future module migrations must have globally
 unique versions and declare `:bilimbi_only`; no source People tables or data are
 adopted. Add a visible menu leaf only with an implemented route, capability,
-scoped behavior, and meaningful empty state. The later Training slices remain work in progress.
+scoped behavior, and meaningful empty state. The later Training slices remain
+work in progress.
 
 After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
 operator can open `/people/companies/:company_id/references` for an accessible
