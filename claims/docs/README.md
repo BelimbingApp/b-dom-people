@@ -42,8 +42,8 @@ Refusals are explicit atoms, listed in the function documentation.
 Duplicates:
 
 - a receipt reference already on any live claim of the same employee in the
-  company, whatever its type, is refused, comparing case-insensitively and ignoring extra spaces; a partial
-  unique index enforces the same rule;
+  company, whatever its type, is refused, comparing case-insensitively and
+  ignoring extra spaces; a partial unique index enforces the same rule;
 - a live claim with the same type, date, amount, and currency is refused as a
   possible duplicate unless the submitter confirms it, which is recorded.
 

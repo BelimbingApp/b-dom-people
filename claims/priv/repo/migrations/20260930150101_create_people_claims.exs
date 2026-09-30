@@ -25,9 +25,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
 
-      add(:category_id, references(:people_claim_categories, on_delete: :restrict),
-        null: false
-      )
+      add(:category_id, references(:people_claim_categories, on_delete: :restrict), null: false)
 
       add(:code, :string, size: 60, null: false)
       add(:name, :string, size: 120, null: false)
@@ -100,9 +98,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
       add(:employee_id, :bigint, null: false)
       add(:claim_type_id, references(:people_claim_types, on_delete: :restrict), null: false)
 
-      add(:claim_policy_id, references(:people_claim_policies, on_delete: :restrict),
-        null: false
-      )
+      add(:claim_policy_id, references(:people_claim_policies, on_delete: :restrict), null: false)
 
       add(:incurred_on, :date, null: false)
       add(:amount, :decimal, precision: 14, scale: 2, null: false)
@@ -146,9 +142,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     )
 
     create(
-      constraint(:people_claim_requests, :people_claim_requests_amount_check,
-        check: "amount > 0"
-      )
+      constraint(:people_claim_requests, :people_claim_requests_amount_check, check: "amount > 0")
     )
 
     create(

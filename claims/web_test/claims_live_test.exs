@@ -106,9 +106,19 @@ defmodule BilimbiWeb.ClaimsLiveTest do
 
       assert duplicate_prompt =~ "Confirm it is a separate expense"
       refute duplicate_prompt =~ "Claim submitted."
-      assert has_element?(mine, "#my-claims-form input[name='claim[incurred_on]'][value='2026-03-10']")
+
+      assert has_element?(
+               mine,
+               "#my-claims-form input[name='claim[incurred_on]'][value='2026-03-10']"
+             )
+
       assert has_element?(mine, "#my-claims-form input[name='claim[amount]'][value='40']")
-      assert has_element?(mine, "#my-claims-form input[name='claim[receipt_number]'][value='R-2']")
+
+      assert has_element?(
+               mine,
+               "#my-claims-form input[name='claim[receipt_number]'][value='R-2']"
+             )
+
       assert has_element?(mine, "#my-claims-form option[value='AAA'][selected]")
 
       mine
