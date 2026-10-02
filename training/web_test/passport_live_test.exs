@@ -202,9 +202,26 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     assert {:ok, %{entries: [%{employees: 2}]}} = Insights.summary(c.scopes[91], 73, %{"from" => "2026-10-01", "until" => "2026-10-01"})
   end
 
-  defp freeze_period!(first, last) do
+  test "switching company resets the aggregate period to the new company's default; a forged period still refuses", c do
+    for company <- [73, 74], do: {:ok, _} = Settings.put("people.training.evaluation.minimum_cohort", 2, SettingScope.company(company, 41))
+    freeze_period!(~D[2026-10-01], ~D[2026-12-31])
+    freeze_period!(~D[2026-07-01], ~D[2026-09-30], 74)
+    grant_capabilities!(~w(admin.company.tenant-wide.manage), user_id: 94)
+    {:ok, view, _} = live(login(c.conn, 94), "/people/training/insights?company_id=73")
+    assert has_element?(view, "#insights-period option[selected][value='2026-10-01']")
+    render_hook(view, "filter", %{"filters" => %{"company_id" => "74", "period" => "2026-10-01", "page" => "2"}})
+    assert_patch(view, "/people/training/insights?company_id=74")
+    assert has_element?(view, "#insights-period option[selected][value='2026-07-01']")
+    refute render(view) =~ "Choose a frozen Effectiveness reporting period"
+    render_hook(view, "filter", %{"filters" => %{"company_id" => "74", "period" => "2026-10-01"}})
+    assert render(view) =~ "Choose a frozen Effectiveness reporting period"
+    {:ok, _, html} = live(login(c.conn, 94), "/people/training/insights?company_id=74&period=2026-10-01")
+    assert html =~ "Choose a frozen Effectiveness reporting period"
+  end
+
+  defp freeze_period!(first, last, company \\ 73) do
     now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-    Repo.insert_all(Training.EffectivenessSummary, [%{tenant_id: 41, company_id: 73, actor_user_id: 91, period_start: first, period_end: last, minimum_cohort: 2, status: "suppressed", groups: %{"items" => []}, inserted_at: now, updated_at: now}])
+    Repo.insert_all(Training.EffectivenessSummary, [%{tenant_id: 41, company_id: company, actor_user_id: 91, period_start: first, period_end: last, minimum_cohort: 2, status: "suppressed", groups: %{"items" => []}, inserted_at: now, updated_at: now}])
   end
 
   test "passport expiry and retention use the shared Training maintenance controls", c do

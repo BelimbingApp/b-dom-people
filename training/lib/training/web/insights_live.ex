@@ -32,7 +32,11 @@ defmodule Bilimbi.People.Training.Web.InsightsLive do
     {:noreply, assign(socket, company: company, params: params, page: page, error: error, can_drill?: drill?, periods: periods, drilling?: params["course_id"] != nil, filters: to_form(Map.put(params, "company_id", if(company, do: company.id, else: "")), as: :filters))}
   end
   @impl true
-  def handle_event("filter", %{"filters" => params}, socket), do: {:noreply, push_patch(socket, to: "/people/training/insights?" <> URI.encode_query(params))}
+  def handle_event("filter", %{"filters" => params}, socket) do
+    company = socket.assigns.company
+    params = if company && params["company_id"] == to_string(company.id), do: params, else: Map.drop(params, ~w(period page course_id))
+    {:noreply, push_patch(socket, to: "/people/training/insights?" <> URI.encode_query(params))}
+  end
   def handle_event("page", %{"page" => page}, socket), do: {:noreply, push_patch(socket, to: "/people/training/insights?" <> URI.encode_query(Map.put(socket.assigns.params, "page", page)))}
   @impl true
   def render(assigns) do
