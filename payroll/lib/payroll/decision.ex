@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.Payroll.Decision do
   @moduledoc false
   use Ecto.Schema
+
   schema "people_payroll_decisions" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)

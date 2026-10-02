@@ -4,7 +4,7 @@
 pay items, Leave/Claims and Attendance allowance mappings and frozen setup
 runs. It installs no sample rows, statutory packs, country rules or bank
 formats. Calculation, contribution intake, approvals, artifacts and output
-belong to slice 6A.
+are implemented by slice 6A below.
 
 The authenticated `/people/payroll/setup` route requires
 `people.payroll.view`. Editing requires `people.payroll.manage` both in the
@@ -107,3 +107,93 @@ validation, per-currency mappings, unmapped-source reports and snapshots.
 database, verifies it with `SchemaVerifier.verify/2`, and checks that its
 triggers, foreign keys and unique indexes refuse invalid changes, including any
 change to a locked run.
+
+## Calculation, intake and approval
+
+Slice 6A adds `/people/payroll/runs`, still a direct authorized route while
+Payroll navigation remains hidden. The setup page links to it. Select the
+platform company and frozen run, attest contributions, lock setup, calculate,
+then obtain an independent final decision. `people.payroll.manage` grants
+intake, calculation and document generation; `people.payroll.approve` grants
+final decisions, while `people.payroll.view` grants review and private document
+reads. A run creator, setup locker, calculator or contribution author cannot
+approve or reject that run. Rejection is final and prevents document output;
+correction requires a separately governed future period rather than overwriting
+financial history. Decisions retain the sealed actor and a required reason.
+
+`Payroll.intake/4` accepts exact decimal units, a frozen pay-item ID, the current
+Workforce employee, a date inside the period and item's effective version,
+a direction (`earning`, `deduction` or `employer`), a source evidence reference
+and a company-unique contribution key. Actor, tenant, company and run ownership
+are supplied by the facade. A repeated key with identical input returns the
+accepted row while intake remains open; conflicting reuse is refused, including
+reuse in another run. Calculation closes intake permanently. There are no
+implicit salaries, eligibility rules, statutory percentages, country packs or
+contributions. Operators attest externally governed facts; this is not an
+automatic read of pending Leave/Claims requests or raw clock events.
+
+`Payroll.intake_mapped/6` resolves Leave/Claims source IDs through the run's
+frozen effective mapping. `Payroll.intake_attendance_allowance/4` resolves an
+Attendance rule code through `attendance_mappings` already frozen by the
+foundation. It records an earning using that mapping's pay-item rate and exact
+attested units. The allowance rule's `value` is catalog information, not a
+second amount added to the pay item. Unknown, unmapped or out-of-date mappings
+are refused. No allowance eligibility or units are inferred from clock data.
+The page offers each intake path explicitly and requires an evidence reference.
+Source owners retain their business records; no sibling private table is read
+or updated and no claim is marked reimbursed by this intake contract.
+
+`Payroll.calculate/3` requires permanently locked setup and at least one
+contribution. It revalidates current Workforce identities, then atomically
+stores immutable result lines and a calculation snapshot containing setup,
+contributions, result and a deterministic SHA-256 replay digest. Retrying returns
+the same calculation. Replay uses a local 60-digit Decimal context, never
+floats, and preserves twelve fractional places for six-place rate × six-place
+units. Result lines use `numeric(40,12)`. Net is earnings minus deductions;
+employer contributions are shown separately. Settings, future rate versions,
+source changes and ambient decimal precision cannot affect replay. Monetary
+formatting does not imply a currency-specific settlement rounding policy.
+
+Migration `20261001021001` is `:bilimbi_only`. Contributions, calculations,
+result lines, final decisions and document references are append-only. Database
+triggers validate run tenant/company ownership, require locked setup for results,
+reject contributions/results after calculation, require independent decisions
+and require approval before attaching documents. Company advisory locks
+serialize facade intake, calculation and approval. The fresh migration test
+checks the combined schema contract and actual database refusal behavior.
+
+## Private payslips and reports
+
+`Payroll.generate_document/5` generates a report for the approved run or a
+payslip for an employee with a frozen result. `DocumentOwner` implements the
+Base Artifacts Owner and PDF contracts. It re-reads approved frozen data before
+rendering; arbitrary caller PDF contents are never trusted. The compact,
+paginated PDF contains employee/item identifiers, exact rate calculations,
+totals, currency and the replay digest. The renderer uses built-in fonts and
+fetches no resources or external executables. No executable vendor bank format
+is provided.
+
+Base Artifacts owns bytes, reservations, integrity, retention and audit. Payroll
+stores only provenance and the returned artifact UUID, never paths or duplicate
+file storage. Configure private `artifacts.storage_root` and positive
+`artifacts.retention_days` in `/system/settings` before generation. Missing
+storage/retention refuses generation without affecting the approved calculation.
+The adapter validates live Company scope and current payroll permissions on
+every create/read/delete/purge. Payroll managers may run
+`Artifacts.purge_expired(scope, company_id, Payroll.DocumentOwner)` and the Base
+held-purge recovery APIs; Base's documented operator policy governs retries.
+
+Every `/people/payroll/documents/:id?company_id=…` request calls Base read again;
+the attachment uses `private, no-store` and `nosniff` headers. Expired, deleted,
+corrupt, unapproved or unauthorized documents return no bytes. Document expiry
+or physical purge does not remove financial result history. Download permissions
+are payroll company review permissions; this slice does not expose employee
+self-service payslips.
+
+Local verification: all 27 focused payroll tests passed, including real-host
+LiveView workflows, mapped Attendance intake, independent approval, private PDF
+downloads, fresh schema verification and PostgreSQL stage/immutability refusals.
+Live browser verification was skipped with firstmate authorization after
+`chrome-devtools-axi` repeatedly refused page initialization with “No page is
+currently selected,” including a fresh-page retry. Payroll menu leaves remain
+hidden pending whole-area acceptance.

@@ -21,7 +21,15 @@ defmodule Bilimbi.People.Payroll.Contribution do
   def changeset(record, attrs) do
     record
     |> cast(attrs, [:employee_id, :item_id, :source_key, :evidence, :on_date, :units, :direction])
-    |> validate_required([:employee_id, :item_id, :source_key, :evidence, :on_date, :units, :direction])
+    |> validate_required([
+      :employee_id,
+      :item_id,
+      :source_key,
+      :evidence,
+      :on_date,
+      :units,
+      :direction
+    ])
     |> validate_length(:source_key, min: 1, max: 120)
     |> validate_length(:evidence, min: 1, max: 500)
     |> validate_inclusion(:direction, ["earning", "deduction", "employer"])
@@ -29,8 +37,8 @@ defmodule Bilimbi.People.Payroll.Contribution do
     |> validate_change(:units, fn :units, value ->
       if is_float(Map.get(attrs, :units, Map.get(attrs, "units"))) or
            not Decimal.equal?(value, Decimal.round(value, 6)),
-        do: [units: "must be an exact decimal with at most six fractional digits"],
-        else: []
+         do: [units: "must be an exact decimal with at most six fractional digits"],
+         else: []
     end)
     |> unique_constraint([:company_id, :source_key])
   end

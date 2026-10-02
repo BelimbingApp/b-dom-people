@@ -14,15 +14,21 @@ defmodule Bilimbi.People.Payroll.DocumentOwner do
   def render_pdf(scope, company, reference, data) do
     # Re-read the approved frozen result rather than trusting caller PDF data.
     with {:ok, frozen} <- Payroll.document_data(scope, company, reference, data.employee_id) do
-      text = ["Payroll #{reference.kind} - run #{reference.subject}",
-        "Currency: #{frozen.currency}", "Calculation: #{frozen.digest}"] ++
-        Enum.map(frozen.lines, fn line ->
-          "Employee #{line["employee_id"]} / item #{line["item_id"]} / #{line["direction"]}: " <>
-            "#{line["units"]} x #{line["rate"]} = #{line["amount"]}"
-        end) ++ Enum.map(frozen.totals, fn total ->
-          "Employee #{total["employee_id"]}: earnings #{total["earning"]}, " <>
-            "deductions #{total["deduction"]}, net #{total["net"]}, employer #{total["employer"]}"
-        end)
+      text =
+        [
+          "Payroll #{reference.kind} - run #{reference.subject}",
+          "Currency: #{frozen.currency}",
+          "Calculation: #{frozen.digest}"
+        ] ++
+          Enum.map(frozen.lines, fn line ->
+            "Employee #{line["employee_id"]} / item #{line["item_id"]} / #{line["direction"]}: " <>
+              "#{line["units"]} x #{line["rate"]} = #{line["amount"]}"
+          end) ++
+          Enum.map(frozen.totals, fn total ->
+            "Employee #{total["employee_id"]}: earnings #{total["earning"]}, " <>
+              "deductions #{total["deduction"]}, net #{total["net"]}, employer #{total["employer"]}"
+          end)
+
       {:ok, Bilimbi.People.Payroll.PDF.render(text)}
     end
   end
