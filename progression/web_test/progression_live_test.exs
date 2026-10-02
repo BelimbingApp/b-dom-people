@@ -92,7 +92,13 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
     {:ok, view, _} = build_conn() |> login(103) |> live("/people/progression/my")
     refute has_element?(view, "#my-standing-performance")
     {:ok, operator, _} = build_conn() |> login(101) |> live("/people/progression")
-    assert has_element?(operator, "a[href='/people/progression']", "Progression")
+
+    assert has_element?(
+             operator,
+             "a[href='/people/progression'][aria-current='page']",
+             "Progression"
+           )
+
     refute has_element?(operator, "a[href='/people/progression/my']")
   end
 end

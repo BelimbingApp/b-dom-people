@@ -152,7 +152,13 @@ defmodule Bilimbi.People.Performance.Web.PerformanceLiveTest do
     assert has_element?(view, "#my-performance-targets")
     refute has_element?(view, "a[href='/people/performance/my']")
     {:ok, viewer, _} = build_conn() |> login(:viewer) |> live("/people/performance")
-    assert has_element?(viewer, "a[href='/people/performance']", "Performance reviews")
+
+    assert has_element?(
+             viewer,
+             "a[href='/people/performance'][aria-current='page']",
+             "Performance reviews"
+           )
+
     refute has_element?(viewer, "a[href='/people/performance/my']")
 
     {:ok, :stored} =

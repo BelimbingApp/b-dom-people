@@ -13,7 +13,7 @@ defmodule Bilimbi.People.Performance.Web.ReviewsLive do
     {:ok,
      socket
      |> assign(:page_title, "Performance reviews")
-     |> assign(:active_nav, nil)
+     |> assign(:active_nav, "people.development.performance")
      |> assign(:selected, nil)
      |> assign(:pending, nil)
      |> stream(:reviews, [])}

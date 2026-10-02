@@ -33,20 +33,24 @@ setup, permanent locking, exact decimal replay, independent approval, private
 artifacts, versioned performance evidence, release guards and actor-specific
 views, and immutable progression publication and eligibility explanations.
 Additional host assertions check rendered menu links and capability denial.
-Full `mix precommit` passed: 1,043 Web tests, all People domain suites and the
-contribution check. The Payroll migration fixture now uses a UUID database
+Before the review fixes (the `/people/payroll/setup/mappings` variant, the
+My performance leaf removal and per-leaf highlighting), full `mix precommit`
+passed: 1,043 Web tests, all People domain suites and the contribution check.
+That full run is pre-fix evidence; the review fixes were verified by the
+focused Payroll, Performance and Progression LiveView suites and the host menu
+route integrity test. The Payroll migration fixture now uses a UUID database
 name so separate BEAM processes cannot collide through VM-local counters.
 Migration versions, declared graph edges and the host mandate scan also passed.
 All three unregistered SchemaContracts were verified against a freshly
 migrated task-owned database before browser inspection.
 
-The browser walkthrough uses the real Bilimbi host, real sign-in sessions,
+The original browser walkthrough below is pre-fix evidence. It uses the real Bilimbi host, real sign-in sessions,
 company-scoped capability grants and linked employees. Scratch data and logs
 stay outside this repository. Desktop and 390 × 844 mobile snapshots cover:
 
 | Actor | Observed behavior |
 | --- | --- |
-| Employee | My standing is visible (the walkthrough predates removing the My performance leaf; the My standing link to own performance is covered by LiveView tests); own performance has communicated-target/released-review empty states; progression has a no-policy state and an explicit unknown explanation after publication without evidence. |
+| Employee | My performance and My standing are visible (pre-fix: the My performance leaf has since been removed); own performance has communicated-target/released-review empty states; progression has a no-policy state and an explicit unknown explanation after publication without evidence. |
 | Manager | Performance reviews is visible; review, description, KPI and evidence tasks render; a governed measurement can be recorded. |
 | HR | Performance reviews and Progression are visible; release queue starts empty; policy draft, publication confirmation and published history work. |
 | Payroll operator | Runs, Pay-item mappings and Payroll setup are visible; company settings save; runs and Leave/Claims mappings have meaningful empty states; the separately authorized Attendance mapping page renders its no-rules state. |
@@ -56,3 +60,15 @@ Menu filtering does not grant access. Company validation and action capabilities
 remain enforced by the existing LiveViews and public facades. Employees do not
 receive payroll review access from this change. No area was held hidden after
 these walkthroughs.
+
+A browser recheck after the review fixes confirmed that My standing shows
+Open my performance with no separate My performance leaf, and the link opens
+the employee's own performance empty state. Pay-item mappings focuses and
+scrolls to its section at desktop and 390 × 844 with no mobile overflow, with
+only that leaf marked current; the general setup page marks only Payroll setup.
+
+My standing and its route require `people.progression.self.view`, so an actor
+holding only `people.performance.self.view` reaches own performance by its
+direct route, not the menu. Base Menu and route guards accept exactly one
+capability per leaf and route, so an either-grant My standing needs a host
+change.

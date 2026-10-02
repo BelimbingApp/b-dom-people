@@ -168,7 +168,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people">
+    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people.payroll.runs">
       <.page id="payroll-runs-page">
         <.header>
           Payroll runs<:subtitle>
