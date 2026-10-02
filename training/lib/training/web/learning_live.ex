@@ -537,7 +537,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
               <span :if={r.answer}>{r.answer.reason}</span>
               <p :for={c <- r.criteria} :if={r.answer} class="text-sm">{c["label"]}: {if is_nil(r.answer.values[c["code"]]), do: "Unknown", else: r.answer.values[c["code"]]}</p>
             </:col>
-            <:empty title="No evaluations yet" reason="An evaluation appears here after an operator prepares reviews for a confirmed session you attended." />
+            <:empty :if={@evaluations == []} title="No evaluations yet" reason="An evaluation appears here after an operator prepares reviews for a confirmed session you attended." />
           </.table>
         </section>
         <.modal :if={@selected_evaluation} id="my-evaluation-modal" title="Answer evaluation" flash={@flash} on_cancel={JS.push("close_evaluation")}>

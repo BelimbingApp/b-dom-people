@@ -476,6 +476,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     {:ok, view, _} = live(conn, "/people/training/my")
 
     assert has_element?(view, "#evaluation-#{evaluation.id}", "Awaiting answer")
+    refute has_element?(view, "#my-evaluation-tasks-empty")
     view |> element("#evaluation-#{evaluation.id} button", "Answer") |> render_click()
 
     view
@@ -600,6 +601,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
       |> live("/people/training/effectiveness")
 
     assert has_element?(view, "#review-#{effectiveness.id}")
+    refute has_element?(view, "#effectiveness-reviews-empty")
     view |> element("#review-#{effectiveness.id} button", "Answer") |> render_click()
 
     view
@@ -661,6 +663,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
     assert has_element?(view, "#evaluation-policies")
     refute has_element?(view, "#effectiveness-reviews")
+    assert has_element?(view, "#evaluation-policies-empty")
     view |> element("button", "Publish criteria") |> render_click()
 
     view
@@ -678,6 +681,8 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     view |> element("#evaluation-policy-confirm-confirm") |> render_click()
     assert {:ok, [p]} = Training.evaluation_policies(s[93], 73)
     assert p.version == 1 and p.evaluation_days == 0 and p.checkpoints == %{"days" => [2, 5]}
+    assert has_element?(view, "#evaluation-policies", "Governed criteria")
+    refute has_element?(view, "#evaluation-policies-empty")
 
     {:ok, _} =
       Settings.put("people.training.evaluation.evaluation_days", 30, SettingScope.company(73, 41))

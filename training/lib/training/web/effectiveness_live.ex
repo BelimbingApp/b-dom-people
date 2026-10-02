@@ -338,7 +338,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
             <span :if={r.answer}>{r.answer.reason}</span>
             <p :for={c <- r.criteria} :if={r.answer} class="text-sm">{c["label"]}: {if is_nil(r.answer.values[c["code"]]), do: "Unknown", else: r.answer.values[c["code"]]}</p>
           </:col>
-          <:empty title="No reviews yet" reason="An operator prepares reviews after a confirmed session ends." />
+          <:empty :if={@review_page.entries == []} title="No reviews yet" reason="An operator prepares reviews after a confirmed session ends." />
         </.table>
         <.pagination :if={@can_answer? and is_nil(@error)} id="effectiveness-pagination" page={@review_page} filters_form={@filters} filters_event="select_company" />
         <.section_heading :if={@can_summary?} title="Summary"><:description>Fixed company reporting periods, frozen after the answer grace window; small cohorts and insufficient known answers are suppressed.</:description></.section_heading>
@@ -366,7 +366,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           <:col :let={p} label="Effective period">{p.effective_from} – {p.effective_to}</:col>
           <:col :let={p} label="Criteria"><p :for={c <- p.criteria["items"]}>{c["label"]}</p><p :for={c <- p.effectiveness_criteria["items"]}>{c["label"]}</p></:col>
           <:col :let={p} label="Reason">{p.reason}</:col>
-          <:empty title="No evaluation policy" reason="Configure company settings, then publish effective-dated criteria." />
+          <:empty :if={@policies == []} title="No evaluation policy" reason="Configure company settings, then publish effective-dated criteria." />
         </.table>
         <.section_heading :if={@can_remind?} title="Due reminders"><:description>Prepare session reviews, refresh the durable worklist and freeze closed reporting periods. This does not send email.</:description></.section_heading>
         <.form :if={@can_remind?} for={@maintenance_form} id="prepare-review-form" phx-submit="prepare_reviews">
