@@ -67,8 +67,13 @@ the employee's own performance empty state. Pay-item mappings focuses and
 scrolls to its section at desktop and 390 × 844 with no mobile overflow, with
 only that leaf marked current; the general setup page marks only Payroll setup.
 
-My standing and its route require `people.progression.self.view`, so an actor
-holding only `people.performance.self.view` reaches own performance by its
-direct route, not the menu. Base Menu and route guards accept exactly one
-capability per leaf and route, so an either-grant My standing needs a host
-change.
+The My standing leaf and route require `people.progression.self.view`; its
+My performance section additionally requires `people.performance.self.view`.
+An actor holding only `people.performance.self.view` does not see My standing
+and reaches own performance by the direct link `/people/performance/my` until
+Bilimbi supports any-of capability guards for menu leaves and routes. A People
+follow-up will remove this coupling once that host support exists. LiveView
+tests cover each grant combination: both grants show both sections;
+progression only shows My standing without the performance section and denies
+the performance route; performance only denies My standing, hides its leaf and
+opens the performance route; neither denies both routes and hides both links.

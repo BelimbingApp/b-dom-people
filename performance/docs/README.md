@@ -102,7 +102,9 @@ People > Development > Performance reviews requires `people.performance.view`.
 There is no separate My work leaf for self-view: People > My work > My standing
 shows a My performance section linking to `/people/performance/my` when the
 actor holds `people.performance.self.view`, and the route stays directly
-reachable with that capability.
+reachable with that capability. My standing itself requires
+`people.progression.self.view`, so an actor with only performance self-view
+uses the direct link.
 Routes enforce the same capabilities independently of menu visibility.
 Performance insights has no implemented route and receives no menu entry.
 No configurable business
