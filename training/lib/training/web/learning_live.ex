@@ -2,6 +2,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
   @moduledoc "Governed learning requests, own evaluations, plans and company budget policy."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Training
+  alias Bilimbi.People.Training.Passport
   alias Bilimbi.People.Training.Web.Support
   @write_events ~w(open_entry add_item save_entry decide confirm_decision save_currencies)
   @evaluation_events ~w(open_evaluation save_evaluation confirm_evaluation)
@@ -443,15 +444,17 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
         Enum.filter(
           @destinations ++
             [
-              {"My passport & evidence", "/people/training/records/my",
-               "people.training.passport.my.view"},
-              {"Team passports", "/people/training/records/team",
-               "people.training.passport.team.view"},
+              {"My passport & evidence", "/people/training/records/my", {:passport, :self}},
+              {"Team passports", "/people/training/records/team", {:passport, :team}},
               {"Evaluation policy & effectiveness", "/people/training/effectiveness",
                "people.training.effectiveness.view"}
             ],
-          fn {_, _, cap} ->
-            a.company && Training.allowed?(scope, a.company.id, cap)
+          fn
+            {_, _, {:passport, audience}} ->
+              a.company && Passport.allowed?(scope, a.company.id, audience)
+
+            {_, _, cap} ->
+              a.company && Training.allowed?(scope, a.company.id, cap)
           end
         ),
       currencies_form: to_form(%{"values" => Enum.join(currencies, ", ")}, as: :currencies),

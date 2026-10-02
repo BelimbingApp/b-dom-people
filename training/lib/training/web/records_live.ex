@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
   @moduledoc "Session attendance history and private evidence."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Training
-  alias Bilimbi.People.Training.Participation
+  alias Bilimbi.People.Training.{Participation, Passport}
   alias Bilimbi.People.Training.Web.Support
   @write_events ~w(record upload purge retry_purge)
   @impl true
@@ -181,8 +181,8 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
       employees: employees,
       error: error,
       can_records?: can_records,
-      can_my?: Bilimbi.Base.Authz.can(scope, "people.training.passport.my.view").allowed,
-      can_team?: Bilimbi.Base.Authz.can(scope, "people.training.passport.team.view").allowed,
+      can_my?: Passport.allowed?(scope, company && company.id, :self),
+      can_team?: Passport.allowed?(scope, company && company.id, :team),
       can_manage?: can_manage,
       can_evidence?: can_evidence,
       can_retain?: can_retain,

@@ -96,6 +96,29 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     assert {:error, _} = Passport.download(c.scopes[92], 73, document.id)
   end
 
+  test "generation is refused without generate authority and above the record bound", c do
+    storage()
+    assert {:error, :forbidden} = Training.generate_passport(c.scopes[94], 73, :self, c.other.id)
+    assert {:error, :unauthorized} = Training.generate_passport(c.scopes[92], 73, :team, c.learner.id)
+    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+    entries = for n <- 1..1000, do: %{tenant_id: 41, company_id: 73, event_id: c.session.event_id, name: "Session #{n}", capacity: 2, time_zone: "Etc/UTC", starts_at: ~U[2026-10-01 09:00:00Z], ends_at: ~U[2026-10-01 10:00:00Z], actor_user_id: 91, inserted_at: now, updated_at: now}
+    {1000, sessions} = Repo.insert_all(Training.Session, entries, returning: [:id])
+    facts = Enum.map(sessions, &%{tenant_id: 41, company_id: 73, session_id: &1.id, employee_id: c.learner.id, revision: 1, status: "confirmed", reason: "Confirmed", import_key: "bound-#{&1.id}", actor_user_id: 91, inserted_at: now, updated_at: now})
+    Repo.insert_all(Training.ParticipationFact, facts)
+    assert {:error, :passport_too_large} = Training.generate_passport(c.scopes[92], 73, :self, c.learner.id)
+    assert Repo.aggregate("base_artifacts", :count) == 0
+  end
+
+  test "passport task links follow passport authority, including the actor's own company", c do
+    grant_capabilities!(~w(admin.company.tenant-wide.manage people.training.learning.view people.training.records.workspace.view), user_id: 92, company_id: 73)
+    {:ok, view, _} = live(login(c.conn, 92), "/people/training/my?company_id=73")
+    assert has_element?(view, "nav a", "My passport & evidence")
+    {:ok, view, _} = live(login(c.conn, 92), "/people/training/my?company_id=74")
+    refute has_element?(view, "nav a", "My passport & evidence")
+    {:ok, view, _} = live(login(c.conn, 92), "/people/training/records?company_id=74")
+    refute has_element?(view, "nav a", "My passport")
+  end
+
   test "passport pages have My/Team tasks, honest empty states and refuse forged generate events", c do
     {:ok, view, html} = live(login(c.conn, 92), "/people/training/records/my")
     assert html =~ "Course A"

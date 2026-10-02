@@ -37,6 +37,9 @@ defmodule Bilimbi.People.Training.Passport do
     end
   end
 
+  def allowed?(%Scope{} = scope, company, audience),
+    do: is_integer(company) and match?({:ok, _}, authorize(scope, company, audience))
+
   def employees(%Scope{} = scope, company, audience) do
     with {:ok, actor} <- authorize(scope, company, audience),
          {:ok, user} <- User.get_user(scope, company, actor.user_id),
@@ -157,10 +160,7 @@ defmodule Bilimbi.People.Training.Passport do
   def generate(%Scope{} = scope, company, audience, employee_id) do
     subject = Atom.to_string(audience) <> ":" <> to_string(employee_id)
 
-    with :ok <- authorize_subject(scope, company, subject, :create),
-         {:ok, passport} <- read(scope, company, audience, employee_id),
-         total = passport.page.total_entries,
-         true <- total <= 1000 do
+    with {:ok, passport} <- read(scope, company, audience, employee_id) do
       # PDF size is a fixed implementation safety bound, never a partial passport.
       rows =
         Repo.all(
@@ -194,9 +194,6 @@ defmodule Bilimbi.People.Training.Passport do
           }
         )
       end
-    else
-      false -> {:error, :passport_too_large}
-      error -> error
     end
   end
 

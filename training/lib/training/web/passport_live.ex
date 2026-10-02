@@ -132,8 +132,8 @@ defmodule Bilimbi.People.Training.Web.PassportLive do
       error: error,
       warning: if(directory, do: Passport.workforce_warning(directory.workforce)),
       can_generate?: can_generate,
-      can_my?: Authz.can(scope, Passport.capability(:self)).allowed,
-      can_team?: Authz.can(scope, Passport.capability(:team)).allowed,
+      can_my?: Passport.allowed?(scope, a.company && a.company.id, :self),
+      can_team?: Passport.allowed?(scope, a.company && a.company.id, :team),
       can_records?: Authz.can(scope, "people.training.records.workspace.view").allowed,
       can_learning?: Authz.can(scope, "people.training.learning.view").allowed,
       filters:
