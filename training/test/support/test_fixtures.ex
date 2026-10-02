@@ -19,4 +19,41 @@ defmodule Bilimbi.People.Training.TestFixtures do
       )
     end
   end
+
+  def create_participation_tables! do
+    SQL.query!(
+      Repo,
+      "CREATE UNIQUE INDEX ON people_training_sessions(id, tenant_id, company_id)",
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TEMPORARY TABLE people_training_participation_facts (
+        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
+        session_id bigint NOT NULL, employee_id bigint NOT NULL, revision integer NOT NULL,
+        status varchar(20) NOT NULL, reason text NOT NULL, import_key varchar(160) NOT NULL,
+        actor_user_id bigint NOT NULL, impersonator_id bigint,
+        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
+        CONSTRAINT people_training_participation_facts_import UNIQUE(tenant_id, company_id, import_key),
+        UNIQUE(session_id, employee_id, revision), UNIQUE(id, tenant_id, company_id),
+        FOREIGN KEY(session_id, tenant_id, company_id) REFERENCES people_training_sessions(id, tenant_id, company_id))
+      """,
+      []
+    )
+
+    SQL.query!(
+      Repo,
+      """
+      CREATE TEMPORARY TABLE people_training_evidence (
+        id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
+        fact_id bigint NOT NULL, artifact_id uuid NOT NULL UNIQUE,
+        actor_user_id bigint NOT NULL, impersonator_id bigint,
+        inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
+        FOREIGN KEY(fact_id, tenant_id, company_id) REFERENCES people_training_participation_facts(id, tenant_id, company_id))
+      """,
+      []
+    )
+  end
 end

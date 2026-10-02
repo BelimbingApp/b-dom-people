@@ -26,7 +26,8 @@ Performance owns position-description versions, KPI definitions and governed
 individual targets, attributable observations, independently released reviews
 and employee responses.
 Training owns a company-scoped course catalog, delivery events and a session
-calendar with explicit capacity and IANA time zones.
+calendar with explicit capacity and IANA time zones, append-only attendance
+corrections and private evidence through Base Artifacts.
 Progression owns published policy versions and an employee eligibility
 explanation. No sample rows are installed.
 
@@ -126,12 +127,12 @@ corrections append versions with reasons. Performance menu leaves remain hidden
 until the entire area's rollout acceptance is complete. See
 `performance/docs/README.md` for capabilities, release guards and verification.
 
-People > Development > Courses opens `/people/training/courses` for authorized
-catalog viewers. Sessions & calendar opens `/people/training/sessions`, with
-company/month filters and list/calendar views. Operators supply courses,
-events, capacities and delivery time zones; empty companies have no sample
-training data. Later Training workflows remain hidden. See
-`training/docs/README.md`.
+Training is available by authorized direct routes at `/people/training/courses`,
+`/people/training/sessions`, and `/people/training/records`. Operators supply
+courses, sessions, capacities and time zones, then confirm attendance or append
+corrections and attach evidence PDFs. Training menu leaves stay hidden until
+the whole area's acceptance is complete. Evidence storage and retention are
+configured in Base Operator Settings. See `training/docs/README.md`.
 
 Progression is available by direct authorized routes at `/people/progression`
 for policy operators and `/people/progression/my` for the linked employee.
