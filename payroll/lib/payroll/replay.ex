@@ -33,6 +33,25 @@ defmodule Bilimbi.People.Payroll.Replay do
     end)
   end
 
+  @doc "SHA-256 of the snapshot's canonical JSON with sorted object keys."
+  def digest(snapshot),
+    do: :crypto.hash(:sha256, canonical(snapshot)) |> Base.encode16(case: :lower)
+
+  defp canonical(map) when is_map(map) and not is_struct(map) do
+    pairs =
+      map
+      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+      |> Enum.sort_by(&elem(&1, 0))
+      |> Enum.map(fn {key, value} -> [JSON.encode!(key), ?:, canonical(value)] end)
+
+    [?{, Enum.intersperse(pairs, ?,), ?}]
+  end
+
+  defp canonical(list) when is_list(list),
+    do: [?[, Enum.intersperse(Enum.map(list, &canonical/1), ?,), ?]]
+
+  defp canonical(value), do: JSON.encode!(value)
+
   defp sum(rows, direction) do
     rows
     |> Enum.filter(&(&1["direction"] == direction))

@@ -448,7 +448,10 @@ defmodule Bilimbi.People.Payroll do
     with {:ok, _} <- authorize(scope, company_id, @manage),
          %Run{} = run <- fetch(Run, scope, company_id, run_id),
          {:ok, on_date} <-
-           Ecto.Type.cast(:date, Map.get(attrs, :on_date, Map.get(attrs, "on_date"))) do
+           Ecto.Type.cast(:date, Map.get(attrs, :on_date, Map.get(attrs, "on_date"))),
+         true <-
+           Map.get(attrs, :direction, Map.get(attrs, "direction")) in [nil, "earning"] ||
+             {:error, :direction_conflict} do
       date = Date.to_iso8601(on_date)
       code = Map.get(attrs, :attendance_rule_code, Map.get(attrs, "attendance_rule_code"))
 
@@ -521,10 +524,6 @@ defmodule Bilimbi.People.Payroll do
                   "result" => Replay.calculate(run.snapshot, Enum.map(inputs, &json/1))
                 }
 
-                digest =
-                  :crypto.hash(:sha256, :erlang.term_to_binary(snapshot, [:deterministic]))
-                  |> Base.encode16(case: :lower)
-
                 for line <- snapshot["result"]["lines"] do
                   Repo.insert!(%ResultLine{
                     tenant_id: Scope.tenant_id(scope),
@@ -544,7 +543,7 @@ defmodule Bilimbi.People.Payroll do
                   run_id: run_id,
                   created_by_actor_id: Scope.actor(scope).user_id,
                   snapshot: snapshot,
-                  digest: digest
+                  digest: Replay.digest(snapshot)
                 }
                 |> Repo.insert()
                 |> result()

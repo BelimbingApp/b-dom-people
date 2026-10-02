@@ -126,6 +126,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
     assert {:ok, calculation} = Payroll.calculate(c.scope, 73, run.id)
     assert {:ok, ^calculation} = Payroll.calculate(c.scope, 73, run.id)
     assert [%{"amount" => "0.000000123456"}] = calculation.snapshot["result"]["lines"]
+    assert calculation.digest == Bilimbi.People.Payroll.Replay.digest(calculation.snapshot)
 
     assert calculation.snapshot["result"] ==
              Bilimbi.People.Payroll.Replay.calculate(
@@ -271,8 +272,14 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
     assert {:error, :allowance_not_mapped} =
              Payroll.intake_attendance_allowance(c.scope, 73, old.id, attrs)
 
-    assert {:ok, %{item_id: id, direction: "earning"}} =
+    assert {:error, :direction_conflict} =
              Payroll.intake_attendance_allowance(c.scope, 73, run.id, attrs)
+
+    assert {:ok, %{item_id: id, direction: "earning"}} =
+             Payroll.intake_attendance_allowance(c.scope, 73, run.id, %{
+               attrs
+               | direction: "earning"
+             })
 
     assert id == item.id
     {:ok, _} = Payroll.lock_run(c.scope, 73, run.id)

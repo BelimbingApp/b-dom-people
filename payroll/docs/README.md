@@ -136,7 +136,8 @@ automatic read of pending Leave/Claims requests or raw clock events.
 frozen effective mapping. `Payroll.intake_attendance_allowance/4` resolves an
 Attendance rule code through `attendance_mappings` already frozen by the
 foundation. It records an earning using that mapping's pay-item rate and exact
-attested units. The allowance rule's `value` is catalog information, not a
+attested units; any other attested direction is refused as
+`:direction_conflict`. The allowance rule's `value` is catalog information, not a
 second amount added to the pay item. Unknown, unmapped or out-of-date mappings
 are refused. No allowance eligibility or units are inferred from clock data.
 The page offers each intake path explicitly and requires an evidence reference.
@@ -149,7 +150,9 @@ rechecks, in pages of at most 1,000, that each attested employee still belongs
 to the company, whatever their current working status, so final pay for a
 leaver calculates. It then atomically
 stores immutable result lines and a calculation snapshot containing setup,
-contributions, result and a deterministic SHA-256 replay digest. Retrying returns
+contributions, result and a SHA-256 replay digest of the snapshot's canonical
+JSON (sorted object keys), recomputable from the stored snapshot with
+`Replay.digest/1`. Retrying returns
 the same calculation. Replay uses a local 60-digit Decimal context, never
 floats, and preserves twelve fractional places for six-place rate × six-place
 units. Result lines use `numeric(40,12)`. Net is earnings minus deductions;
@@ -194,10 +197,4 @@ or physical purge does not remove financial result history. Download permissions
 are payroll company review permissions; this slice does not expose employee
 self-service payslips.
 
-Local verification: all 27 focused payroll tests passed, including real-host
-LiveView workflows, mapped Attendance intake, independent approval, private PDF
-downloads, fresh schema verification and PostgreSQL stage/immutability refusals.
-Live browser verification was skipped with firstmate authorization after
-`chrome-devtools-axi` repeatedly refused page initialization with “No page is
-currently selected,” including a fresh-page retry. Payroll menu leaves remain
-hidden pending whole-area acceptance.
+Payroll menu leaves remain hidden pending whole-area acceptance.
