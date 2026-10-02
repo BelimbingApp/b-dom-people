@@ -116,6 +116,8 @@ defmodule Bilimbi.People.Training.Web.ParticipationLiveTest do
     {:ok, system} = Tenancy.scope(41)
     assert {:error, :unauthorized} = Participation.record(system, 73, attrs(c))
     assert {:error, :unauthorized} = Participation.record(c.scope, 74, attrs(c))
+    assert {:error, :not_found} = Participation.record(c.scope, 0, attrs(c))
+    assert {:error, :not_found} = Participation.sessions(c.scope, 0)
 
     assert {:error, :session_unavailable} =
              Participation.record(c.scope, 73, attrs(c, %{session_id: 999_999}))

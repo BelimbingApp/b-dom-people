@@ -12,11 +12,7 @@ defmodule Bilimbi.People.Training.Participation do
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Training.{ParticipationFact, Session, Evidence, DocumentOwner}
 
-  def authorize(scope, company, capability) do
-    if Training.allowed?(scope, company, capability),
-      do: {:ok, Scope.actor(scope)},
-      else: {:error, :unauthorized}
-  end
+  defdelegate authorize(scope, company, capability), to: Training
 
   def record(scope, company, attrs) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
