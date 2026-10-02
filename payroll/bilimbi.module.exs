@@ -14,6 +14,7 @@
     "base/tenancy",
     "base/ui",
     "core/company",
+    "core/employee",
     "people/attendance",
     "people/leave",
     "people/workforce",

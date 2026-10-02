@@ -144,7 +144,10 @@ Source owners retain their business records; no sibling private table is read
 or updated and no claim is marked reimbursed by this intake contract.
 
 `Payroll.calculate/3` requires permanently locked setup and at least one
-contribution. It revalidates current Workforce identities, then atomically
+contribution. It relies on the intake-time Workforce attestation and only
+rechecks, in pages of at most 1,000, that each attested employee still belongs
+to the company, whatever their current working status, so final pay for a
+leaver calculates. It then atomically
 stores immutable result lines and a calculation snapshot containing setup,
 contributions, result and a deterministic SHA-256 replay digest. Retrying returns
 the same calculation. Replay uses a local 60-digit Decimal context, never
@@ -171,7 +174,8 @@ rendering; arbitrary caller PDF contents are never trusted. The compact,
 paginated PDF contains employee/item identifiers, exact rate calculations,
 totals, currency and the replay digest. The renderer uses built-in fonts and
 fetches no resources or external executables. No executable vendor bank format
-is provided.
+is provided. The serializer implements the Base Artifacts PDF behaviour and is
+expected to move into Base Artifacts when a second domain needs PDF rendering.
 
 Base Artifacts owns bytes, reservations, integrity, retention and audit. Payroll
 stores only provenance and the returned artifact UUID, never paths or duplicate

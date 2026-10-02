@@ -9,7 +9,7 @@ defmodule Bilimbi.People.Payroll do
   alias Bilimbi.Base.{Authz, Repo, Settings, Tenancy}
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
-  alias Bilimbi.Core.Company
+  alias Bilimbi.Core.{Company, Employee}
   alias Bilimbi.People.{Attendance, Claims, Leave, Workforce}
   alias Bilimbi.People.Workforce.ReadResult
 
@@ -37,6 +37,7 @@ defmodule Bilimbi.People.Payroll do
   @view "people.payroll.view"
   @manage "people.payroll.manage"
   @attendance "people.payroll.attendance-mappings.manage"
+  @lookup_limit 1_000
 
   def allowed?(%Scope{} = scope, company_id, capability) do
     match?({:ok, _}, authorize(scope, company_id, capability))
@@ -513,9 +514,7 @@ defmodule Bilimbi.People.Payroll do
               if inputs == [], do: Repo.rollback(:no_contributions)
               ids = inputs |> Enum.map(& &1.employee_id) |> Enum.uniq()
 
-              with {:ok, %ReadResult{freshness: :current, value: employees}} <-
-                     Workforce.employees_by_ids(scope, company_id, ids),
-                   true <- length(employees) == length(ids) do
+              if company_employees?(scope, company_id, ids) do
                 snapshot = %{
                   "setup" => run.snapshot,
                   "contributions" => Enum.map(inputs, &json/1),
@@ -550,8 +549,7 @@ defmodule Bilimbi.People.Payroll do
                 |> Repo.insert()
                 |> result()
               else
-                {:error, _} = error -> error
-                _ -> {:error, :workforce_unavailable}
+                {:error, :employee_not_found}
               end
 
             row ->
@@ -562,6 +560,15 @@ defmodule Bilimbi.People.Payroll do
         end
       end)
     end
+  end
+
+  defp company_employees?(scope, company_id, ids) do
+    ids
+    |> Enum.chunk_every(@lookup_limit)
+    |> Enum.all?(fn page ->
+      {:ok, employees} = Employee.get_tenant_employees(scope, page)
+      Enum.all?(page, &match?(%{company_id: ^company_id}, Map.get(employees, &1)))
+    end)
   end
 
   def run_output(%Scope{} = scope, company_id, run_id) do

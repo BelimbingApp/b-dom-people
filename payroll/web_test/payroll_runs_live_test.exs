@@ -155,6 +155,38 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
              Payroll.run_output(c.scope, 73, run.id)
   end
 
+  test "an employee attested while working who leaves before calculation is still paid", c do
+    %{run: run, item: item} = frozen(c.scope)
+    assert {:ok, _} = Payroll.intake(c.scope, 73, run.id, input(c.employee, item))
+
+    {:ok, _} =
+      Bilimbi.Core.Employee.update_employee(c.system, 73, c.employee.id, %{status: "terminated"})
+
+    assert {:error, :not_found} = Workforce.employee(c.scope, 73, c.employee.id)
+    assert {:ok, _} = Payroll.lock_run(c.scope, 73, run.id)
+    assert {:ok, calculation} = Payroll.calculate(c.scope, 73, run.id)
+    employee_id = c.employee.id
+    assert [%{"employee_id" => ^employee_id}] = calculation.snapshot["result"]["lines"]
+  end
+
+  test "a run with more employees than one Workforce lookup page calculates", c do
+    %{run: run, item: item} = frozen(c.scope)
+
+    for n <- 1..1_001 do
+      {:ok, employee} =
+        Bilimbi.Core.Employee.create_employee(c.system, 73, %{
+          employee_number: "E-#{n}",
+          full_name: "Employee #{n}"
+        })
+
+      {:ok, _} = Payroll.intake(c.scope, 73, run.id, input(employee, item, "source-#{n}"))
+    end
+
+    assert {:ok, _} = Payroll.lock_run(c.scope, 73, run.id)
+    assert {:ok, calculation} = Payroll.calculate(c.scope, 73, run.id)
+    assert length(calculation.snapshot["result"]["lines"]) == 1_001
+  end
+
   test "intake refuses floats, precision loss, foreign employee, date and pay item", c do
     %{run: run, item: item} = frozen(c.scope)
     attrs = input(c.employee, item)
