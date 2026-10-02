@@ -521,6 +521,42 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
              Training.amend_learning_plan(s[92], 73, plan.id, plan_attrs(), items())
   end
 
+  test "unsubmitted plans and amendments stay private to the manager", %{scopes: s} do
+    {:ok, plan} = Training.create_learning_plan(s[92], 73, plan_attrs(), items())
+    {:ok, withdrawn} = Training.create_learning_plan(s[92], 73, plan_attrs(), items())
+    {:ok, _} = Training.decide_learning_plan(s[92], 73, withdrawn.id, "cancel", "Withdrawn")
+    assert {:ok, [_, _]} = Training.learning_plans(s[92], 73, :team)
+    assert {:ok, []} = Training.learning_plans(s[93], 73, :hr)
+
+    assert {:ok, %{}} ==
+             Training.learning_histories(s[93], 73, :plan, [plan.id, withdrawn.id], :hr)
+
+    {:ok, _} = Training.decide_learning_plan(s[92], 73, plan.id, "submit", "Team plan")
+    {:ok, _} = Training.decide_learning_plan(s[93], 73, plan.id, "approve", "Approved scope")
+
+    {:ok, amended} =
+      Training.amend_learning_plan(
+        s[92],
+        73,
+        plan.id,
+        %{plan_attrs() | reason: "Changed"},
+        items()
+      )
+
+    ids = [plan.id, withdrawn.id, amended.id]
+    assert {:ok, [%{id: id}]} = Training.learning_plans(s[93], 73, :hr)
+    assert id == plan.id
+    {:ok, histories} = Training.learning_histories(s[93], 73, :plan, ids, :hr)
+    assert Map.keys(histories) == [plan.id]
+
+    {:ok, _} = Training.decide_learning_plan(s[92], 73, amended.id, "submit", "Revised scope")
+    assert {:ok, [newest, prior]} = Training.learning_plans(s[93], 73, :hr)
+    assert {newest.id, prior.id} == {amended.id, plan.id}
+    {:ok, histories} = Training.learning_histories(s[93], 73, :plan, ids, :hr)
+    assert Enum.map(histories[amended.id], & &1.action) == ["amend", "submit"]
+    refute Map.has_key?(histories, withdrawn.id)
+  end
+
   test "lost workforce link and revoked grants refuse an open write", %{conn: conn, scopes: s} do
     {:ok, _} = currencies(s)
     {:ok, live, _} = conn |> log_in_as() |> live("/people/training/my")

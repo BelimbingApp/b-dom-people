@@ -48,7 +48,9 @@ rejects the submitted scope with `people.training.plans.approve`.
 The prior approved scope remains effective until HR approves the amendment,
 then becomes superseded with another decision row. A competing amendment cannot
 supersede an already superseded prior version. `learning_plans/3` returns the
-actor's team plans or the capability-protected HR register. Plans record learning
+actor's team plans or the capability-protected HR register. A plan or amendment
+stays private to its manager until submitted: the HR register and
+`learning_histories/5` omit drafts and plans cancelled from draft. Plans record learning
 scope, not financial commitments; request approval reserves the money once.
 They never enroll employees, alter participation, cancel sessions or infer
 training completion. Slice 6C can consume these schema-free APIs later.

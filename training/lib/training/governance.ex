@@ -171,7 +171,7 @@ defmodule Bilimbi.People.Training.Governance do
          {:ok, ids} <- audience_ids(scope, company_id, audience) do
       query = scoped(Request, scope, company_id)
       query = if ids == :company, do: query, else: from(r in query, where: r.employee_id in ^ids)
-      query = submitted(query, scope, company_id, audience)
+      query = submitted(query, scope, company_id, :request, audience)
       {:ok, Repo.all(from(r in query, order_by: [desc: r.id])) |> Enum.map(&view/1)}
     end
   end
@@ -331,7 +331,9 @@ defmodule Bilimbi.People.Training.Governance do
 
       if audience == :hr do
         {:ok,
-         Repo.all(from(p in query, order_by: [desc: p.id]))
+         Repo.all(
+           from(p in submitted(query, scope, company_id, :plan, :hr), order_by: [desc: p.id])
+         )
          |> then(&plan_views(scope, company_id, &1))}
       else
         with {:ok, id} <- self_employee(scope, company_id) do
@@ -420,7 +422,7 @@ defmodule Bilimbi.People.Training.Governance do
           {:plan, managers} -> from(r in rows, where: r.manager_employee_id in ^managers)
         end
 
-      rows = if kind == :request, do: submitted(rows, scope, company_id, audience), else: rows
+      rows = submitted(rows, scope, company_id, kind, audience)
 
       {:ok,
        Repo.all(
@@ -433,13 +435,17 @@ defmodule Bilimbi.People.Training.Governance do
     end
   end
 
-  defp submitted(query, _scope, _company_id, :self), do: query
+  defp submitted(query, _scope, _company_id, :request, :self), do: query
+  defp submitted(query, _scope, _company_id, :plan, :team), do: query
 
-  defp submitted(query, scope, company_id, _audience) do
+  defp submitted(query, scope, company_id, kind, _audience) do
+    {decisions, key} =
+      if kind == :request, do: {RequestDecision, :request_id}, else: {PlanDecision, :plan_id}
+
     submits =
-      from(d in scoped(RequestDecision, scope, company_id),
+      from(d in scoped(decisions, scope, company_id),
         where: d.action == "submit",
-        select: d.request_id
+        select: field(d, ^key)
       )
 
     from(r in query, where: r.id in subquery(submits))
