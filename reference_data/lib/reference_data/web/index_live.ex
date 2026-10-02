@@ -7,37 +7,47 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
 
   @manage_capability "people.references.manage"
 
+  @write_events ~w(create_entry add_alias create_exception)
+
   @impl true
-  def mount(%{"company_id" => raw_company_id}, _session, socket) do
-    company_id = positive_id(raw_company_id)
-    actor = socket.assigns.current_scope.actor
+  def mount(params, _session, socket) do
+    socket =
+      socket
+      |> assign(:page_title, "People references")
+      |> assign(:company_id, positive_id(Map.get(params, "company_id")))
+      |> refresh_access()
+      |> attach_hook(:reference_access, :handle_event, fn _event, _params, socket ->
+        {:cont, refresh_access(socket)}
+      end)
 
-    case company_id && Company.authorize_company_target(actor, company_id, @manage_capability) do
-      {:ok, company} ->
-        {:ok,
-         socket
-         |> assign(:page_title, "People references")
-         |> assign(:company, company)
-         |> assign(:company_id, company_id)
-         |> load_records()}
-
-      _ ->
-        {:ok,
-         socket
-         |> assign(:page_title, "People references")
-         |> assign(:company, nil)
-         |> assign(:company_id, nil)
-         |> assign(:entries, [])
-         |> assign(:aliases, %{})
-         |> assign(:exceptions, [])}
-    end
+    {:ok, if(socket.assigns.can_manage?, do: load_records(socket), else: socket)}
   end
 
   @impl true
+  def handle_event(event, _params, %{assigns: %{can_manage?: false}} = socket)
+      when event in @write_events,
+      do: {:noreply, put_flash(socket, :error, "You cannot change this company's references.")}
+
+  def handle_event("select_company", %{"company_id" => raw_id}, socket) do
+    company_id = positive_id(raw_id)
+
+    case Company.authorize_company_target(
+           socket.assigns.current_scope.actor,
+           company_id,
+           @manage_capability
+         ) do
+      {:ok, _company} ->
+        {:noreply, push_navigate(socket, to: ~p"/people/companies/#{company_id}/references")}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "This company is unavailable to you.")}
+    end
+  end
+
   def handle_event("create_entry", %{"entry" => attributes}, socket) do
     case ReferenceData.create_entry(scope(socket), socket.assigns.company_id, attributes) do
       {:ok, _entry} ->
-        {:noreply, socket |> load_records() |> put_flash(:info, "Reference added.")}
+        {:noreply, socket |> load_records() |> put_flash(:success, "Reference added.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Check the reference fields and unique code.")}
@@ -49,7 +59,7 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
 
     case ReferenceData.add_alias(scope(socket), socket.assigns.company_id, entry_id, attributes) do
       {:ok, _alias} ->
-        {:noreply, socket |> load_records() |> put_flash(:info, "Alias added.")}
+        {:noreply, socket |> load_records() |> put_flash(:success, "Alias added.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Choose a reference and a unique alias.")}
@@ -63,10 +73,40 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
            attributes
          ) do
       {:ok, _exception} ->
-        {:noreply, socket |> load_records() |> put_flash(:info, "Calendar exception added.")}
+        {:noreply, socket |> load_records() |> put_flash(:success, "Calendar exception added.")}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Check the date and label.")}
+    end
+  end
+
+  # The hook refreshes both capability and company reach before every event,
+  # including events sent from controls rendered before access was revoked.
+  defp refresh_access(socket) do
+    actor = socket.assigns.current_scope.actor
+
+    companies =
+      case Company.list_selectable_companies(actor, @manage_capability) do
+        {:ok, companies} -> companies
+        _ -> []
+      end
+
+    company =
+      case Company.authorize_company_target(actor, socket.assigns.company_id, @manage_capability) do
+        {:ok, company} -> company
+        _ -> nil
+      end
+
+    socket =
+      socket
+      |> assign(:companies, companies)
+      |> assign(:company, company)
+      |> assign(:can_manage?, not is_nil(company))
+
+    if company do
+      socket
+    else
+      socket |> assign(:entries, []) |> assign(:aliases, %{}) |> assign(:exceptions, [])
     end
   end
 
