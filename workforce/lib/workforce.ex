@@ -29,6 +29,10 @@ defmodule Bilimbi.People.Workforce do
   @spec source_id() :: String.t()
   def source_id, do: @source_id
 
+  @doc "Returns whether a position reader is currently registered."
+  @spec positions_available?() :: boolean()
+  def positions_available?, do: :persistent_term.get(@position_reader_key, nil) != nil
+
   @doc "Registers the mounted position owner at application startup."
   def register_position_reader(module) when is_atom(module) do
     :persistent_term.put(@position_reader_key, module)

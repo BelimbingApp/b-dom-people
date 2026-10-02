@@ -21,6 +21,7 @@ of bounded position projections when Organisation is mounted. Organisation
 registers that public reader during application startup; an absent owner returns
 `{:error, :unavailable}`. Position references use the native source identity and
 remain distinct from Connector projections.
+`positions_available?/0` returns true only while a position reader is registered.
 
 Company and employee reads use Core public APIs. Only active companies and
 non-agent employees in the company's working statuses are exposed, both as
