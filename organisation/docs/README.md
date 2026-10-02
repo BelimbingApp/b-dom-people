@@ -32,7 +32,7 @@ that read returns `{:error, :unavailable}`. No Connector table is read.
 
 The authorised `/people/organisation` route has a company and date filter,
 bounded pages, and an empty state. Only the complete Organisation leaf is
-visible in People > Team. Training and Progression navigation remain hidden.
+visible in People > Team.
 
 The `20260930060000` migration is fresh Bilimbi-only schema. It creates three
 empty tables and no seed rows. Before running it against any deployment, use a
