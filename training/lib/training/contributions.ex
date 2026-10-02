@@ -21,4 +21,9 @@ defmodule Bilimbi.People.Training.Contributions do
         domains: %{"people" => "People domain modules"},
         verbs: ["recommend"],
         capabilities:
-          ~w(people.training.courses.view people.training.courses.manage people.training.sessions.view people.training.sessions.manage people.training.requests.submit people.training.requests.recommend people.training.requests.review people.training.requests.approve people.training.requests.view people.training.plans.submit people.training.plans.approve people.training.plans.view people.training.budgets.view people.training.budgets.manage)
+          ~w(people.training.courses.view people.training.courses.manage people.training.sessions.view people.training.sessions.manage people.training.records.view people.training.records.manage people.training.evidence.manage people.training.retention.manage people.training.requests.submit people.training.requests.recommend people.training.requests.review people.training.requests.approve people.training.requests.view people.training.plans.submit people.training.plans.approve people.training.plans.view people.training.budgets.view people.training.budgets.manage)
+      },
+      menu: []
+    }
+  end
+end

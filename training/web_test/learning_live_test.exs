@@ -179,7 +179,10 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     live |> element("#learning-decision-confirm-confirm") |> render_click()
     assert has_element?(live, "#learning-records", "pending_hod")
     request_id = r.id
-    {:ok, %{^request_id => history}} = Training.learning_histories(s[91], 73, :request, [r.id], :self)
+
+    {:ok, %{^request_id => history}} =
+      Training.learning_histories(s[91], 73, :request, [r.id], :self)
+
     assert Enum.map(history, & &1.action) == ["create", "submit"]
     assert Enum.all?(history, &(&1.actor_user_id == 91))
 

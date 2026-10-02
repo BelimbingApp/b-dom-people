@@ -12,6 +12,17 @@
     capability: "people.training.sessions.view"
   },
   %{
+    path: "/people/training/records",
+    live: Bilimbi.People.Training.Web.RecordsLive,
+    session: :auth,
+    capability: "people.training.records.view"
+  },
+  %{
+    path: "/people/training/evidence/:company_id/:id",
+    controller: Bilimbi.People.Training.Web.EvidenceController,
+    action: :show,
+    session: :auth,
+    capability: "people.training.records.view"
   },
   %{
     path: "/people/training/my",
@@ -48,3 +59,5 @@
     live: Bilimbi.People.Training.Web.LearningLive,
     session: :auth,
     capability: "people.training.budgets.view"
+  }
+]
