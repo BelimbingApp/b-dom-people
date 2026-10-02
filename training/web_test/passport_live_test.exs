@@ -7,9 +7,17 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
   alias Bilimbi.People.Training
   alias Bilimbi.People.Training.{Insights, Passport, Participation, TestFixtures}
 
-  setup %{conn: conn} do
+  setup %{conn: conn} = context do
     User.TestFixtures.create_user_tables!()
-    TestFixtures.migrate_evaluation_tables!()
+    if context[:passport_record_bound] do
+      # Exercise the full PDF record bound with the module's relational fixtures.
+      # Migrated session triggers scan pg_timezone_names for every inserted row;
+      # their database guards are covered by the migration-backed suites.
+      TestFixtures.create_tables!()
+      TestFixtures.create_participation_tables!()
+    else
+      TestFixtures.migrate_evaluation_tables!()
+    end
     Bilimbi.Base.Artifacts.TestFixtures.create_artifacts_table!()
     Company.TestFixtures.insert_tenant!(%{id: 41, is_platform_operator: false})
     Company.TestFixtures.insert_tenant!(%{id: 42, is_platform_operator: false})
@@ -96,6 +104,7 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     assert {:error, _} = Passport.download(c.scopes[92], 73, document.id)
   end
 
+  @tag :passport_record_bound
   test "generation is refused without generate authority and above the record bound", c do
     storage()
     assert {:error, :forbidden} = Training.generate_passport(c.scopes[94], 73, :self, c.other.id)
@@ -104,7 +113,8 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     entries = for n <- 1..1000, do: %{tenant_id: 41, company_id: 73, event_id: c.session.event_id, name: "Session #{n}", capacity: 2, time_zone: "Etc/UTC", starts_at: ~U[2026-10-01 09:00:00Z], ends_at: ~U[2026-10-01 10:00:00Z], actor_user_id: 91, inserted_at: now, updated_at: now}
     {1000, sessions} = Repo.insert_all(Training.Session, entries, returning: [:id])
     facts = Enum.map(sessions, &%{tenant_id: 41, company_id: 73, session_id: &1.id, employee_id: c.learner.id, revision: 1, status: "confirmed", reason: "Confirmed", import_key: "bound-#{&1.id}", actor_user_id: 91, inserted_at: now, updated_at: now})
-    Repo.insert_all(Training.ParticipationFact, facts)
+    {1000, _} = Repo.insert_all(Training.ParticipationFact, facts)
+    assert {:ok, %{page: %{total_entries: 1001}}} = Passport.read(c.scopes[92], 73, :self, c.learner.id)
     assert {:error, :passport_too_large} = Training.generate_passport(c.scopes[92], 73, :self, c.learner.id)
     assert Repo.aggregate("base_artifacts", :count) == 0
   end
