@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.Payroll.ReplayTest do
   use ExUnit.Case, async: true
-  alias Bilimbi.People.Payroll.{Replay, PDF}
+  alias Bilimbi.Base.Artifacts.PDF.Renderer
+  alias Bilimbi.People.Payroll.Replay
 
   test "six-place rates and quantities replay exactly independent of order and ambient precision" do
     setup = %{"items" => [%{"id" => 1, "code" => "item", "amount" => "1234567890123.123456"}]}
@@ -44,13 +45,18 @@ defmodule Bilimbi.People.Payroll.ReplayTest do
   end
 
   test "generated paginated PDF can be opened by a real reader" do
+    document = %{
+      title: "Payroll report",
+      blocks: for(n <- 1..100, do: {:text, "Employee #{n} (exact amount) \\ 1.234567"})
+    }
+
+    assert {:ok, pdf} = Renderer.render(document)
+    assert {:ok, ^pdf} = Renderer.render(document)
+
     if executable = System.find_executable("pdfinfo") do
       path = Path.join(System.tmp_dir!(), "payroll-pdf-#{Ecto.UUID.generate()}.pdf")
 
-      File.write!(
-        path,
-        PDF.render(for n <- 1..100, do: "Employee #{n} (exact amount) \\ 1.234567")
-      )
+      File.write!(path, pdf)
 
       on_exit(fn -> File.rm(path) end)
       {info, 0} = System.cmd(executable, [path], stderr_to_stdout: true)

@@ -336,8 +336,37 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
     assert {:ok, payslip} =
              Payroll.generate_document(c.scope, 73, run.id, "payslip", c.employee.id)
 
-    assert {:ok, %{bytes: <<"%PDF-", _::binary>>}} =
+    assert {:ok, %{bytes: payslip_bytes}} =
              Payroll.read_document(c.scope, 73, payslip.artifact_id)
+
+    reference = %{subject: to_string(run.id), kind: "payslip"}
+
+    assert {:ok, ^payslip_bytes} =
+             Payroll.DocumentOwner.render_pdf(c.scope, 73, reference, %{
+               employee_id: c.employee.id,
+               contents: "Untrusted replacement"
+             })
+
+    assert payslip_bytes =~ "(Payroll payslip - run #{run.id}) Tj"
+    assert payslip_bytes =~ "(Currency: AAA) Tj"
+    assert payslip_bytes =~ "0.000000123456"
+    assert payslip_bytes =~ "Employee #{c.employee.id} / item #{item.id} / earning:"
+    refute payslip_bytes =~ "Untrusted replacement"
+
+    assert {:ok, frozen_data} =
+             Payroll.document_data(c.scope, 73, reference, c.employee.id)
+
+    assert payslip_bytes =~ "(Calculation: #{frozen_data.digest}) Tj"
+
+    assert {:ok, %{bytes: report_bytes}} =
+             Payroll.read_document(c.scope, 73, report.artifact_id)
+
+    assert {:ok, ^report_bytes} =
+             Payroll.DocumentOwner.render_pdf(c.scope, 73, %{reference | kind: "report"}, %{
+               employee_id: nil
+             })
+
+    assert report_bytes =~ "(Payroll report - run #{run.id}) Tj"
 
     download =
       c.conn
