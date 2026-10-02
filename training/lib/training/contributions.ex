@@ -47,23 +47,25 @@ defmodule Bilimbi.People.Training.Contributions do
   defp policy_settings do
     Map.new(
       [
-        {"evaluation_days", :integer, 0, 3650, "Evaluation due days",
+        {"evaluation_days", :integer, nil, 0, 3650, "Evaluation due days",
          "Days after the session ends when employee evaluation is due."},
-        {"reminder_days", :integer, 0, 3650, "Evaluation reminder lead",
+        {"reminder_days", :integer, nil, 0, 3650, "Evaluation reminder lead",
          "Days before a review is due when its reminder becomes available."},
-        {"minimum_cohort", :integer, 2, 1000, "Effectiveness disclosure minimum",
+        {"minimum_cohort", :integer, nil, 2, 1000, "Effectiveness disclosure minimum",
          "Minimum distinct employees and answered employees for a summary score."},
-        {"report_days", :integer, 1, 3650, "Effectiveness reporting window",
-         "Days ending today included in the company summary."},
-        {"checkpoints", :array, nil, nil, "Effectiveness checkpoints",
+        {"report_months", :integer, 3, 1, 12, "Effectiveness reporting period",
+         "Calendar months per fixed summary period; 12 must divide evenly by it. 3 is a calendar quarter."},
+        {"report_grace_days", :integer, nil, 0, 3650, "Effectiveness answer grace",
+         "Days after a reporting period ends before its summary is frozen permanently."},
+        {"checkpoints", :array, nil, nil, nil, "Effectiveness checkpoints",
          "Distinct positive day offsets after a session, captured by each published policy."}
       ],
-      fn {key, type, min, max, label, help} ->
+      fn {key, type, default, min, max, label, help} ->
         {"people.training.evaluation." <> key,
          %{
            type: type,
            scopes: [:company],
-           default: nil,
+           default: default,
            nullable: true,
            minimum: min,
            maximum: max,

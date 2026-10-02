@@ -80,7 +80,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
     grant(94, ~w(requests.view requests.approve))
     scopes = Map.new(91..95, fn id -> {id, scope(conn, id)} end)
-    grant(91, ~w(effectiveness.view evaluation.submit))
+    grant(91, ~w(evaluation.submit))
     grant(92, ~w(effectiveness.view effectiveness.answer))
 
     grant(
@@ -113,7 +113,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
           {"checkpoints", [2, 5]},
           {"reminder_days", 0},
           {"minimum_cohort", minimum},
-          {"report_days", 30}
+          {"report_grace_days", 10}
         ] do
       {:ok, _} = Settings.put("people.training.evaluation." <> key, value, scope)
     end
@@ -181,7 +181,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     session = session(s)
     {:ok, f} = attendance(s, session, 2)
 
-    {:ok, reviews} =
+    {:ok, %{reviews: reviews, unknown: 0}} =
       Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-01 09:00:00Z])
 
     {p, session, f, reviews}
@@ -189,6 +189,10 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
   test "policy settings fail closed, criteria are versioned and overlap refuses", %{scopes: s} do
     assert {:error, :policy_not_configured} = policy(s)
+
+    assert {:error, :report_not_configured} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-01-11])
+
     configure(s)
     assert {:error, :invalid_criteria} = policy(s, %{criteria: [criterion(), criterion()]})
     assert {:ok, first} = policy(s)
@@ -214,7 +218,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert Enum.all?(reviews, &(&1.policy_id == p.id))
     assert Enum.map(reviews, & &1.due_on) == [~D[2026-10-01], ~D[2026-10-03], ~D[2026-10-06]]
 
-    assert {:ok, ^reviews} =
+    assert {:ok, %{reviews: ^reviews}} =
              Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-02 09:00:00Z])
 
     assert {:error, :session_not_finished} =
@@ -222,7 +226,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
     {:ok, _} = attendance(s, session, 2, "confirmed", "correction")
 
-    assert {:ok, ^reviews} =
+    assert {:ok, %{reviews: ^reviews}} =
              Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-02 09:00:00Z])
   end
 
@@ -312,51 +316,37 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert r.policy_id == p.id and r.answer.actor_user_id == 92
   end
 
-  test "small cohorts and unknown answers never become a zero effectiveness score", %{scopes: s} do
-    {_, session, _, [_, effectiveness | _]} = prepared(s)
-
-    assert {:ok, _} =
-             Training.answer_evaluation(
-               s[92],
-               73,
-               effectiveness.id,
-               %{"criterion" => 5},
-               "Observed outcome"
-             )
-
-    assert {:ok, %{status: :suppressed, groups: []}} =
-             Training.effectiveness_summary(s[93], 73, ~D[2026-10-03])
-
-    {:ok, _} = Bilimbi.Core.Employee.update_employee(s[93], 73, 3, %{supervisor_id: 1})
+  test "one departed attendee is skipped and counted while the others get reviews", %{
+    scopes: s
+  } do
+    configure(s)
+    {:ok, _} = policy(s)
+    session = session(s)
+    {:ok, _} = attendance(s, session, 2)
     {:ok, _} = attendance(s, session, 3)
+    {:ok, _} = Bilimbi.Core.Employee.update_employee(s[93], 73, 3, %{status: "inactive"})
 
-    {:ok, all} =
-      Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-02 09:00:00Z])
+    assert {:ok, %{reviews: reviews, unknown: 1}} =
+             Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-01 09:00:00Z])
 
-    second =
-      Enum.find(
-        all,
-        &(&1.kind == "effectiveness" and &1.checkpoint_days == 2 and &1.id != effectiveness.id)
-      )
+    assert length(reviews) == 3
+    assert {:ok, [evaluation]} = Training.evaluation_reviews(s[91], 73, "evaluation")
+    assert evaluation.employee_id == 2 and evaluation.id in Enum.map(reviews, & &1.id)
 
-    assert {:ok, _} =
-             Training.answer_evaluation(
-               s[92],
-               73,
-               second.id,
-               %{"criterion" => nil},
-               "Unknown result"
-             )
+    assert {:ok, %{reviews: ^reviews, unknown: 1}} =
+             Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-02 09:00:00Z])
+  end
 
-    assert {:ok, %{status: :current, groups: [g]}} =
-             Training.effectiveness_summary(s[93], 73, ~D[2026-10-03])
+  defp answer!(s, review, score) do
+    {:ok, _} =
+      Training.answer_evaluation(s[92], 73, review.id, %{"criterion" => score}, "Observed result")
+  end
 
-    assert [%{status: :suppressed, answered: nil, mean: nil}] = g.criteria
-    # Add another distinct employee with a known score; the unknown stays excluded.
+  defp add_attendee(s, session, number) do
     {:ok, employee} =
       Bilimbi.Core.Employee.create_employee(s[93], 73, %{
-        employee_number: "employee-104",
-        full_name: "Employee 104",
+        employee_number: "employee-#{number}",
+        full_name: "Employee #{number}",
         employee_type: "employee_type",
         status: "active",
         supervisor_id: 1
@@ -364,29 +354,118 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
     {:ok, _} = attendance(s, session, employee.id)
 
-    {:ok, all} =
+    {:ok, _} =
       Training.prepare_evaluation_reviews(s[93], 73, session.id, ~U[2026-10-02 09:00:00Z])
 
-    third =
-      Enum.find(
-        all,
-        &(&1.kind == "effectiveness" and &1.checkpoint_days == 2 and
-            &1.id not in [effectiveness.id, second.id])
+    {:ok, reviews} = Training.evaluation_reviews(s[92], 73, "effectiveness")
+    Enum.find(reviews, &(&1.employee_id == employee.id and &1.checkpoint_days == 2))
+  end
+
+  test "a small cohort freezes suppressed and a later answer cannot reveal it", %{scopes: s} do
+    {_, session, _, [_, effectiveness | _]} = prepared(s)
+    answer!(s, effectiveness, 5)
+
+    assert {:ok, %{frozen: 1}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-01-11])
+
+    assert {:ok, [frozen]} = Training.effectiveness_summary(s[93], 73)
+
+    assert %{
+             status: "suppressed",
+             period_start: ~D[2026-10-01],
+             period_end: ~D[2026-12-31],
+             groups: %{"items" => []}
+           } = frozen
+
+    answer!(s, add_attendee(s, session, 104), 1)
+
+    assert {:ok, %{frozen: 0}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-02-01])
+
+    assert {:ok, [^frozen]} = Training.effectiveness_summary(s[93], 73)
+  end
+
+  test "frozen period summaries exclude unknown scores and never change after freezing", %{
+    scopes: s
+  } do
+    {_, session, _, [_, effectiveness, later]} = prepared(s)
+    answer!(s, effectiveness, 5)
+    answer!(s, add_attendee(s, session, 104), nil)
+    answer!(s, add_attendee(s, session, 105), 3)
+
+    assert {:ok, %{frozen: 0}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-01-10])
+
+    assert {:ok, []} = Training.effectiveness_summary(s[93], 73)
+
+    assert {:ok, %{frozen: 1}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-01-11])
+
+    assert {:ok, [frozen]} = Training.effectiveness_summary(s[93], 73)
+    assert frozen.status == "current" and frozen.minimum_cohort == 2
+
+    assert [
+             %{
+               "checkpoint_days" => 2,
+               "status" => "current",
+               "criteria" => [%{"status" => "current", "answered" => 2, "mean" => "4.00"}]
+             },
+             %{
+               "checkpoint_days" => 5,
+               "status" => "current",
+               "criteria" => [%{"status" => "suppressed", "answered" => nil, "mean" => nil}]
+             }
+           ] = frozen.groups["items"]
+
+    answer!(s, later, 0)
+
+    assert {:ok, %{frozen: 0}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-02-01])
+
+    assert {:ok, [^frozen]} = Training.effectiveness_summary(s[93], 73)
+    assert {:error, :unauthorized} = Training.effectiveness_summary(s[92], 73)
+
+    assert {:error, :unauthorized} =
+             Training.freeze_effectiveness_summaries(s[92], 73, ~D[2027-02-01])
+  end
+
+  test "employees answer their own evaluations under My learning without Effectiveness access",
+       %{conn: conn, scopes: s} do
+    {_, _, _, [evaluation | _]} = prepared(s)
+    conn = log_in_as(conn, session_user(%{"user_id" => 91}))
+    assert {:error, _} = live(conn, "/people/training/effectiveness")
+    {:ok, view, _} = live(conn, "/people/training/my")
+
+    assert has_element?(view, "#evaluation-#{evaluation.id}", "Awaiting answer")
+    view |> element("#evaluation-#{evaluation.id} button", "Answer") |> render_click()
+
+    view
+    |> form("#my-evaluation-form",
+      evaluation: %{values: %{criterion: "4"}, reason: "Applied at work"}
+    )
+    |> render_submit()
+
+    view |> element("#my-evaluation-confirm-confirm") |> render_click()
+    assert has_element?(view, "#evaluation-#{evaluation.id}", "Answered")
+    assert {:ok, [%{answer: %{values: %{"criterion" => 4}}}]} =
+             Training.evaluation_reviews(s[91], 73, "evaluation")
+
+    {:ok, :stored} =
+      Bilimbi.Base.Authz.put_principal_capability(
+        s[91],
+        73,
+        :user,
+        91,
+        "people.training.evaluation.submit",
+        false
       )
 
-    assert {:ok, _} =
-             Training.answer_evaluation(
-               s[92],
-               73,
-               third.id,
-               %{"criterion" => 3},
-               "Observed result"
-             )
+    {:ok, view, _} = live(conn, "/people/training/my")
+    refute has_element?(view, "#my-evaluations")
 
-    assert {:ok, %{groups: [g]}} = Training.effectiveness_summary(s[93], 73, ~D[2026-10-03])
-    assert [score] = g.criteria
-    assert score.answered == 2 and Decimal.equal?(score.mean, "4")
-    assert {:error, :unauthorized} = Training.effectiveness_summary(s[92], 73, ~D[2026-10-03])
+    for event <- ~w(open_evaluation save_evaluation confirm_evaluation) do
+      assert render_hook(view, event, %{"id" => to_string(evaluation.id)}) =~ "cannot"
+    end
   end
 
   test "unknown workforce, lost reporting line and attendance corrections refuse work", %{
@@ -445,15 +524,14 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert has_element?(view, "#effectiveness-forbidden")
 
     for event <-
-          ~w(open_answer save_answer confirm_answer open_policy save_policy confirm_policy prepare_reviews run_reminders) do
+          ~w(open_answer save_answer confirm_answer open_policy save_policy confirm_policy prepare_reviews run_reminders freeze_summaries) do
       assert render_hook(view, event, %{}) =~ "cannot"
     end
 
     for company <- [74, 75] do
       assert {:error, :unauthorized} = Training.evaluation_policies(s[93], company)
 
-      assert {:error, :unauthorized} =
-               Training.effectiveness_summary(s[93], company, ~D[2026-10-03])
+      assert {:error, :unauthorized} = Training.effectiveness_summary(s[93], company)
 
       assert {:error, :unauthorized} =
                Training.answer_evaluation(s[92], company, 1, %{}, "Wrong company")
@@ -579,7 +657,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert {:ok, [%{reminder: %{available_on: _}}]} =
              Training.evaluation_reviews(s[91], 73, "evaluation")
 
-    assert has_element?(view, "#summary-suppressed")
+    assert has_element?(view, "#summary-empty")
   end
 
   test "session-local completion day selects the policy and inclusive due date", %{scopes: s} do
@@ -600,7 +678,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert DateTime.to_date(local_session.ends_at) == ~D[2026-10-01]
     {:ok, _} = attendance(s, local_session, 2)
 
-    assert {:ok, [evaluation | _]} =
+    assert {:ok, %{reviews: [evaluation | _]}} =
              Training.prepare_evaluation_reviews(
                s[93],
                73,

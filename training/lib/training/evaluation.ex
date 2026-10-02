@@ -9,12 +9,19 @@ defmodule Bilimbi.People.Training.Evaluation do
   alias Bilimbi.People.Workforce.ReadResult
 
   alias Bilimbi.People.Training.{
+    EffectivenessSummary,
     EvaluationPolicy,
     EvaluationReview,
     EvaluationAnswer,
     EvaluationReminder,
     ParticipationFact,
     Session
+  }
+
+  # Employees evaluate under My learning; HODs answer under Effectiveness.
+  @task_access %{
+    "evaluation" => ~w(requests.submit evaluation.submit),
+    "effectiveness" => ~w(effectiveness.view effectiveness.answer)
   }
 
   def policies(%Scope{} = scope, company) do
@@ -113,53 +120,50 @@ defmodule Bilimbi.People.Training.Evaluation do
         require!(policy != nil, :policy_unavailable)
         employees = current_employees!(scope, company)
 
-        facts =
+        {facts, unavailable} =
           latest_facts(scope, company, session.id)
           |> Repo.all()
           |> Enum.filter(&(&1.status == "confirmed"))
+          |> Enum.split_with(&Map.has_key?(employees, &1.employee_id))
 
-        require!(
-          Enum.all?(facts, &Map.has_key?(employees, &1.employee_id)),
-          :employee_unavailable
-        )
-
-        for fact <- facts,
-            {kind, days, offset} <- [
-              {"evaluation", 0, policy.evaluation_days}
-              | Enum.map(policy.checkpoints["days"], &{"effectiveness", &1, &1})
-            ] do
-          existing =
-            Repo.one(
-              from(r in scoped(EvaluationReview, scope, company),
-                join: f in ParticipationFact,
-                on: f.id == r.fact_id,
-                where:
-                  f.session_id == ^session.id and f.employee_id == ^fact.employee_id and
-                    r.kind == ^kind and r.checkpoint_days == ^days
+        reviews =
+          for fact <- facts,
+              {kind, days, offset} <- [
+                {"evaluation", 0, policy.evaluation_days}
+                | Enum.map(policy.checkpoints["days"], &{"effectiveness", &1, &1})
+              ] do
+            existing =
+              Repo.one(
+                from(r in scoped(EvaluationReview, scope, company),
+                  join: f in ParticipationFact,
+                  on: f.id == r.fact_id,
+                  where:
+                    f.session_id == ^session.id and f.employee_id == ^fact.employee_id and
+                      r.kind == ^kind and r.checkpoint_days == ^days
+                )
               )
-            )
 
-          # A confirmed correction must not create duplicate review obligations.
-          if existing,
-            do: view(existing),
-            else:
-              insert!(EvaluationReview, scope, company, %{
-                policy_id: policy.id,
-                fact_id: fact.id,
-                kind: kind,
-                checkpoint_days: days,
-                due_on: Date.add(finished, offset)
-              })
-              |> view()
-        end
+            # A confirmed correction must not create duplicate review obligations.
+            if existing,
+              do: view(existing),
+              else:
+                insert!(EvaluationReview, scope, company, %{
+                  policy_id: policy.id,
+                  fact_id: fact.id,
+                  kind: kind,
+                  checkpoint_days: days,
+                  due_on: Date.add(finished, offset)
+                })
+                |> view()
+          end
+
+        %{reviews: reviews, unknown: length(unavailable)}
       end)
     end
   end
 
   def reviews(%Scope{} = scope, company, kind) when kind in ["evaluation", "effectiveness"] do
-    cap = if kind == "evaluation", do: "evaluation.submit", else: "effectiveness.answer"
-
-    with :ok <- auth(scope, company, cap),
+    with :ok <- task_auth(scope, company, kind),
          {:ok, self} <- self_employee(scope, company),
          {:ok, read} <- Workforce.employees(scope, company),
          {:ok, employees} <- ReadResult.require_current(read) do
@@ -178,14 +182,12 @@ defmodule Bilimbi.People.Training.Evaluation do
   end
 
   def answer(%Scope{} = scope, company, id, values, reason) do
-    with :ok <- auth(scope, company, "effectiveness.view") do
+    with true <-
+           Enum.any?(Map.keys(@task_access), &(task_auth(scope, company, &1) == :ok)) ||
+             {:error, :unauthorized} do
       tx(scope, company, fn ->
         review = fetch!(EvaluationReview, scope, company, id)
-
-        cap =
-          if review.kind == "evaluation", do: "evaluation.submit", else: "effectiveness.answer"
-
-        require!(auth(scope, company, cap) == :ok, :unauthorized)
+        require!(task_auth(scope, company, review.kind) == :ok, :unauthorized)
         fact = fetch!(ParticipationFact, scope, company, review.fact_id)
         fetch!(Session, scope, company, fact.session_id)
         current_fact!(scope, company, fact)
@@ -284,63 +286,120 @@ defmodule Bilimbi.People.Training.Evaluation do
     end
   end
 
-  # A fixed company window with no arbitrary cohort drill or complement totals.
-  # Both population and non-null answers must meet the operator threshold.
-  def summary(%Scope{} = scope, company, %Date{} = today) do
+  # Frozen snapshots only; reads never recompute, so readings cannot be differenced.
+  def summary(%Scope{} = scope, company) do
     with :ok <- auth(scope, company, "effectiveness.summary.view") do
+      {:ok,
+       Repo.all(
+         from(s in scoped(EffectivenessSummary, scope, company), order_by: [desc: s.period_start])
+       )
+       |> Enum.map(&view/1)}
+    end
+  end
+
+  # Explicit maintenance run. A fixed calendar period freezes once, after its
+  # answer grace window; no arbitrary cohort drill or complement totals exist.
+  # Both population and non-null answers must meet the operator threshold.
+  def freeze_summaries(%Scope{} = scope, company, %Date{} = today) do
+    with :ok <- auth(scope, company, "evaluation.reminders.manage") do
       minimum = setting(scope, company, "minimum_cohort")
-      window = setting(scope, company, "report_days")
+      months = setting(scope, company, "report_months")
+      grace = setting(scope, company, "report_grace_days")
 
-      if is_integer(minimum) and minimum in 2..1000 and is_integer(window) and window in 1..3650 do
-        with {:ok, read} <- Workforce.employees(scope, company),
-             {:ok, employees} <- ReadResult.require_current(read) do
-          ids = Enum.map(employees, &integer(&1.reference.stable_id))
-          start = Date.add(today, -window + 1)
+      if is_integer(minimum) and minimum in 2..1000 and is_integer(months) and
+           months in 1..12 and rem(12, months) == 0 and is_integer(grace) and grace in 0..3650 do
+        tx(scope, company, fn ->
+          employees = current_employees!(scope, company)
 
-          rows =
+          frozen =
             Repo.all(
-              from(r in scoped(EvaluationReview, scope, company),
-                join: f in ParticipationFact,
-                on: f.id == r.fact_id,
-                join: p in EvaluationPolicy,
-                on: p.id == r.policy_id,
-                left_join: a in EvaluationAnswer,
-                on: a.review_id == r.id,
-                where:
-                  r.kind == "effectiveness" and r.due_on >= ^start and r.due_on <= ^today and
-                    f.employee_id in ^ids,
-                select: {r, f, p, a}
+              from(s in scoped(EffectivenessSummary, scope, company),
+                select: {s.period_start, s.period_end}
               )
             )
 
-          rows = Enum.filter(rows, fn {_, f, _, _} -> current_confirmed?(scope, company, f) end)
+          periods =
+            Repo.all(
+              from(r in scoped(EvaluationReview, scope, company),
+                where: r.kind == "effectiveness",
+                distinct: true,
+                select: r.due_on
+              )
+            )
+            |> Enum.map(&period(&1, months))
+            |> Enum.uniq()
+            |> Enum.filter(fn {first, last} ->
+              Date.compare(today, Date.add(last, grace)) == :gt and
+                not Enum.any?(frozen, fn {s, e} ->
+                  Date.compare(s, last) != :gt and Date.compare(e, first) != :lt
+                end)
+            end)
+            |> Enum.sort_by(&elem(&1, 0), Date)
 
-          if distinct_subjects(rows) < minimum do
-            {:ok, %{status: :suppressed, groups: []}}
-          else
-            groups =
-              rows
-              |> Enum.group_by(fn {r, _, p, _} -> {p.id, r.checkpoint_days} end)
-              |> Enum.sort_by(&elem(&1, 0))
-              |> Enum.map(fn {{id, days}, cohort} -> aggregate(id, days, cohort, minimum) end)
-
-            {:ok, %{status: :current, groups: groups}}
+          for {first, last} <- periods do
+            insert!(
+              EffectivenessSummary,
+              scope,
+              company,
+              snapshot(scope, company, employees, first, last, minimum)
+            )
           end
-        else
-          error -> error
-        end
+
+          %{frozen: length(periods)}
+        end)
       else
         {:error, :report_not_configured}
       end
     end
   end
 
-  defp aggregate(id, days, cohort, minimum) do
-    if distinct_subjects(cohort) < minimum do
-      %{policy_id: id, checkpoint_days: days, status: :suppressed, criteria: []}
-    else
-      {_, _, policy, _} = hd(cohort)
+  defp period(date, months) do
+    first = Date.new!(date.year, div(date.month - 1, months) * months + 1, 1)
+    {first, Date.end_of_month(Date.new!(date.year, first.month + months - 1, 1))}
+  end
 
+  defp snapshot(scope, company, employees, first, last, minimum) do
+    ids = Map.keys(employees)
+
+    rows =
+      Repo.all(
+        from(r in scoped(EvaluationReview, scope, company),
+          join: f in ParticipationFact,
+          on: f.id == r.fact_id,
+          join: p in EvaluationPolicy,
+          on: p.id == r.policy_id,
+          left_join: a in EvaluationAnswer,
+          on: a.review_id == r.id,
+          where:
+            r.kind == "effectiveness" and r.due_on >= ^first and r.due_on <= ^last and
+              f.employee_id in ^ids,
+          select: {r, f, p, a}
+        )
+      )
+      |> Enum.filter(fn {_, f, _, _} -> current_confirmed?(scope, company, f) end)
+
+    base = %{period_start: first, period_end: last, minimum_cohort: minimum}
+
+    if distinct_subjects(rows) < minimum do
+      Map.merge(base, %{status: "suppressed", groups: %{"items" => []}})
+    else
+      groups =
+        rows
+        |> Enum.group_by(fn {r, _, p, _} -> {p.id, r.checkpoint_days} end)
+        |> Enum.sort_by(&elem(&1, 0))
+        |> Enum.map(fn {{_, days}, cohort} -> aggregate(days, cohort, minimum) end)
+
+      Map.merge(base, %{status: "current", groups: %{"items" => groups}})
+    end
+  end
+
+  defp aggregate(days, cohort, minimum) do
+    {_, _, policy, _} = hd(cohort)
+    group = %{"policy_version" => policy.version, "checkpoint_days" => days}
+
+    if distinct_subjects(cohort) < minimum do
+      Map.merge(group, %{"status" => "suppressed", "criteria" => []})
+    else
       criteria =
         Enum.map(policy.effectiveness_criteria["items"], fn c ->
           known =
@@ -352,18 +411,23 @@ defmodule Bilimbi.People.Training.Evaluation do
           if known |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length() >= minimum do
             scores = Enum.map(known, &elem(&1, 1))
 
+            mean =
+              Decimal.div(Decimal.new(Enum.sum(scores)), Decimal.new(length(scores)))
+              |> Decimal.round(2)
+              |> Decimal.to_string()
+
             %{
-              label: c["label"],
-              status: :current,
-              answered: length(scores),
-              mean: Decimal.div(Decimal.new(Enum.sum(scores)), Decimal.new(length(scores)))
+              "label" => c["label"],
+              "status" => "current",
+              "answered" => length(scores),
+              "mean" => mean
             }
           else
-            %{label: c["label"], status: :suppressed, answered: nil, mean: nil}
+            %{"label" => c["label"], "status" => "suppressed", "answered" => nil, "mean" => nil}
           end
         end)
 
-      %{policy_id: id, checkpoint_days: days, status: :current, criteria: criteria}
+      Map.merge(group, %{"status" => "current", "criteria" => criteria})
     end
   end
 
@@ -484,6 +548,13 @@ defmodule Bilimbi.People.Training.Evaluation do
   defp auth(scope, company, suffix),
     do:
       if(Training.allowed?(scope, company, "people.training." <> suffix),
+        do: :ok,
+        else: {:error, :unauthorized}
+      )
+
+  defp task_auth(scope, company, kind),
+    do:
+      if(Enum.all?(@task_access[kind], &(auth(scope, company, &1) == :ok)),
         do: :ok,
         else: {:error, :unauthorized}
       )

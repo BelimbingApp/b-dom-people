@@ -105,6 +105,33 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
 
     fk(:evaluation_reminders, :review_id, :evaluation_reviews)
 
+    create table(:people_training_effectiveness_summaries) do
+      common()
+      add(:period_start, :date, null: false)
+      add(:period_end, :date, null: false)
+      add(:minimum_cohort, :integer, null: false)
+      add(:status, :text, null: false)
+      add(:groups, :map, null: false)
+      timestamps()
+    end
+
+    create(
+      unique_index(
+        :people_training_effectiveness_summaries,
+        [:tenant_id, :company_id, :period_start],
+        name: :people_training_effectiveness_summary_period
+      )
+    )
+
+    create(
+      constraint(
+        :people_training_effectiveness_summaries,
+        :people_training_effectiveness_summary_values,
+        check:
+          "period_end >= period_start AND minimum_cohort >= 2 AND status IN ('current', 'suppressed') AND jsonb_typeof(groups->'items') = 'array'"
+      )
+    )
+
     execute(
       """
       CREATE FUNCTION people_training_criteria_valid(criteria jsonb) RETURNS boolean LANGUAGE plpgsql IMMUTABLE AS $$
@@ -243,7 +270,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
     )
 
     for suffix <-
-          ~w(evaluation_policies evaluation_reviews evaluation_answers evaluation_reminders) do
+          ~w(evaluation_policies evaluation_reviews evaluation_answers evaluation_reminders effectiveness_summaries) do
       execute(
         "CREATE TRIGGER people_training_#{suffix}_immutable BEFORE UPDATE OR DELETE ON people_training_#{suffix} FOR EACH ROW EXECUTE FUNCTION people_training_evaluation_immutable()",
         "DROP TRIGGER people_training_#{suffix}_immutable ON people_training_#{suffix}"

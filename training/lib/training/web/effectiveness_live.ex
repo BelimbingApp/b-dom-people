@@ -1,11 +1,11 @@
 defmodule Bilimbi.People.Training.Web.EffectivenessLive do
-  @moduledoc "Employee evaluations, HOD reviews and privacy-protected HR summary."
+  @moduledoc "HOD effectiveness reviews and the frozen privacy-protected HR summary."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Training
   alias Bilimbi.People.Training.Web.Support
   @answer_events ~w(open_answer save_answer confirm_answer)
   @policy_events ~w(open_policy add_criterion save_policy confirm_policy)
-  @maintenance_events ~w(prepare_reviews run_reminders)
+  @maintenance_events ~w(prepare_reviews run_reminders freeze_summaries)
 
   @impl true
   def mount(_, _, socket) do
@@ -161,16 +161,36 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
   def handle_event("cancel_confirm", _, socket), do: {:noreply, assign(socket, pending: nil)}
 
   def handle_event("prepare_reviews", %{"entry" => attrs}, socket) do
+    result =
+      Training.prepare_evaluation_reviews(
+        socket.assigns.current_scope.scope,
+        socket.assigns.company.id,
+        Support.integer(attrs["session_id"]),
+        DateTime.utc_now()
+      )
+
+    message =
+      case result do
+        {:ok, %{unknown: unknown}} when unknown > 0 ->
+          "Session reviews prepared. #{unknown} attendee(s) are no longer current employees and were skipped."
+
+        _ ->
+          "Session reviews prepared."
+      end
+
+    {:noreply, finish(socket, result, message)}
+  end
+
+  def handle_event("freeze_summaries", _, socket) do
     {:noreply,
      finish(
        socket,
-       Training.prepare_evaluation_reviews(
+       Training.freeze_effectiveness_summaries(
          socket.assigns.current_scope.scope,
          socket.assigns.company.id,
-         Support.integer(attrs["session_id"]),
-         DateTime.utc_now()
+         today(socket)
        ),
-       "Session reviews prepared."
+       "Closed reporting periods frozen."
      )}
   end
 
@@ -238,11 +258,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
     policy? = entry? and allowed.("evaluation.policy.manage")
     remind? = entry? and allowed.("evaluation.reminders.manage")
     review? = entry? and allowed.("effectiveness.answer")
-    evaluate? = entry? and allowed.("evaluation.submit")
     summary? = entry? and allowed.("effectiveness.summary.view")
-
-    {evaluations, evaluation_error} =
-      read_rows(evaluate?, fn -> Training.evaluation_reviews(scope, company.id, "evaluation") end)
 
     {reviews, review_error} =
       read_rows(review?, fn -> Training.evaluation_reviews(scope, company.id, "effectiveness") end)
@@ -250,25 +266,21 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
     {policies, policy_error} =
       read_rows(policy?, fn -> Training.evaluation_policies(scope, company.id) end)
 
-    summary =
-      if summary?, do: Training.effectiveness_summary(scope, company.id, today(socket)), else: nil
-
-    records = evaluations ++ reviews
+    {summaries, summary_error} =
+      read_rows(summary?, fn -> Training.effectiveness_summary(scope, company.id) end)
 
     assign(socket,
-      can_answer?: evaluate? or review?,
+      can_answer?: review?,
       can_policy?: policy?,
       can_remind?: remind?,
       can_summary?: summary?,
-      can_evaluate?: evaluate?,
-      can_review?: review?,
-      reviews: records,
-      review_page: Support.page(records, socket.assigns.params),
+      reviews: reviews,
+      review_page: Support.page(reviews, socket.assigns.params),
       policies: policies,
-      summary: summary,
+      summaries: summaries,
       error:
         if(entry?,
-          do: evaluation_error || review_error || policy_error,
+          do: review_error || policy_error || summary_error,
           else: "No company is available. Ask an operator to check your company access."
         ),
       filters:
@@ -304,10 +316,9 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           <:control type={:select} field={@filters[:company_id]} id="effectiveness-company" label="Company" options={Enum.map(@companies, &{&1.name, &1.id})} />
         </.filter_toolbar>
         <.alert :if={@error} kind={:error}>{@error}</.alert>
-        <.empty_state :if={not @can_answer? and not @can_summary? and not @can_policy? and not @can_remind? and is_nil(@error)} id="effectiveness-forbidden" title="No review tasks available" reason="Ask an operator to grant employee evaluation, HOD review or HR summary access." />
-        <.section_heading :if={@can_answer?} title="Review"><:description>Employees evaluate their own learning; heads of department answer for their current direct reports.</:description></.section_heading>
+        <.empty_state :if={not @can_answer? and not @can_summary? and not @can_policy? and not @can_remind? and is_nil(@error)} id="effectiveness-forbidden" title="No review tasks available" reason="Ask an operator to grant HOD review or HR summary access. Employees answer their own evaluations under My learning." />
+        <.section_heading :if={@can_answer?} title="Review"><:description>Heads of department answer effectiveness reviews for their current direct reports.</:description></.section_heading>
         <.table :if={@can_answer? and is_nil(@error)} id="effectiveness-reviews" rows={@review_page.entries} row_id={&"review-#{&1.id}"}>
-          <:col :let={r} label="Task">{if r.kind == "evaluation", do: "My evaluation", else: "HOD effectiveness"}</:col>
           <:col :let={r} label="Employee">{r.employee_id}</:col>
           <:col :let={r} label="Session">{r.session_id}</:col>
           <:col :let={r} label="Due">{r.due_on}</:col>
@@ -321,26 +332,25 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           <:empty title="No reviews yet" reason="An operator prepares reviews after a confirmed session ends." />
         </.table>
         <.pagination :if={@can_answer? and is_nil(@error)} id="effectiveness-pagination" page={@review_page} filters_form={@filters} filters_event="select_company" />
-        <.section_heading :if={@can_summary?} title="Summary"><:description>Company reporting window; small cohorts and insufficient known answers are suppressed.</:description></.section_heading>
-        <div :if={@can_summary?} id="effectiveness-summary">
-          <%= case @summary do %>
-            <% {:ok, %{status: :suppressed}} -> %><.empty_state id="summary-suppressed" title="Summary suppressed" reason="The cohort is below this company's disclosure minimum." />
-            <% {:ok, %{groups: groups}} -> %>
-              <div :for={group <- groups} id={"summary-#{group.policy_id}-#{group.checkpoint_days}"} class="space-y-2">
-                <.section_heading title={"#{group.checkpoint_days}-day review"} />
-                <p :if={group.status == :suppressed}>Summary suppressed for this cohort.</p>
-                <.table :if={group.status == :current} id={"summary-criteria-#{group.policy_id}-#{group.checkpoint_days}"} rows={group.criteria}>
-                  <:col :let={c} label="Criterion">{c.label}</:col>
-                  <:col :let={c} label="Known answers">{c.answered || "Suppressed"}</:col>
-                  <:col :let={c} label="Mean">{if c.mean, do: Decimal.to_string(Decimal.round(c.mean, 2)), else: "Suppressed — insufficient known data"}</:col>
-                </.table>
-              </div>
-            <% {:error, reason} -> %><.alert kind={:warning}>{Support.message(reason)}</.alert>
-            <% _ -> %>
-          <% end %>
+        <.section_heading :if={@can_summary?} title="Summary"><:description>Fixed company reporting periods, frozen after the answer grace window; small cohorts and insufficient known answers are suppressed.</:description></.section_heading>
+        <div :if={@can_summary? and is_nil(@error)} id="effectiveness-summary" class="space-y-4">
+          <.empty_state :if={@summaries == []} id="summary-empty" title="No frozen reporting period" reason="A period's summary appears once it ends, its answer grace window passes and an operator freezes it." />
+          <div :for={period <- @summaries} id={"summary-#{period.period_start}"} class="space-y-2">
+            <.section_heading title={"#{period.period_start} – #{period.period_end}"} />
+            <p :if={period.status == "suppressed"} id={"summary-suppressed-#{period.period_start}"}>Summary suppressed: the cohort is below this company's disclosure minimum.</p>
+            <div :for={group <- period.groups["items"]} :if={period.status == "current"} class="space-y-2">
+              <.section_heading title={"#{group["checkpoint_days"]}-day review · criteria version #{group["policy_version"]}"} />
+              <p :if={group["status"] == "suppressed"}>Summary suppressed for this cohort.</p>
+              <.table :if={group["status"] == "current"} id={"summary-criteria-#{period.period_start}-#{group["policy_version"]}-#{group["checkpoint_days"]}"} rows={group["criteria"]}>
+                <:col :let={c} label="Criterion">{c["label"]}</:col>
+                <:col :let={c} label="Known answers">{c["answered"] || "Suppressed"}</:col>
+                <:col :let={c} label="Mean">{c["mean"] || "Suppressed — insufficient known data"}</:col>
+              </.table>
+            </div>
+          </div>
         </div>
         <.section_heading :if={@can_policy?} title="Published criteria"><:description>Versions and answers are permanent. Publish another effective period to change criteria.</:description></.section_heading>
-        <p :if={@can_policy?} class="text-sm">Set due days, checkpoints, reminder lead and disclosure policy in <.link navigate="/system/settings" class="text-link">Operator Settings</.link> before publication.</p>
+        <p :if={@can_policy?} class="text-sm">Set due days, checkpoints, reminder lead, reporting period, answer grace and disclosure minimum in <.link navigate="/system/settings" class="text-link">Operator Settings</.link> before publication.</p>
         <.table :if={@can_policy?} id="evaluation-policies" rows={@policies}>
           <:col :let={p} label="Version">{p.version}</:col>
           <:col :let={p} label="Effective period">{p.effective_from} – {p.effective_to}</:col>
@@ -348,12 +358,13 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           <:col :let={p} label="Reason">{p.reason}</:col>
           <:empty title="No evaluation policy" reason="Configure company settings, then publish effective-dated criteria." />
         </.table>
-        <.section_heading :if={@can_remind?} title="Due reminders"><:description>Prepare session reviews, then refresh the durable worklist. This does not send email.</:description></.section_heading>
+        <.section_heading :if={@can_remind?} title="Due reminders"><:description>Prepare session reviews, refresh the durable worklist and freeze closed reporting periods. This does not send email.</:description></.section_heading>
         <.form :if={@can_remind?} for={@maintenance_form} id="prepare-review-form" phx-submit="prepare_reviews">
           <.input field={@maintenance_form[:session_id]} type="number" label="Completed session" min="1" required />
           <.button type="submit" phx-disable-with="Preparing…">Prepare reviews</.button>
         </.form>
         <.button :if={@can_remind?} phx-click="run_reminders" phx-disable-with="Refreshing…">Refresh reminders</.button>
+        <.button :if={@can_remind?} phx-click="freeze_summaries" phx-disable-with="Freezing…">Freeze closed periods</.button>
         <.modal :if={@modal == :answer} id="evaluation-answer-modal" title="Answer review" flash={@flash} on_cancel={JS.push("close_modal")}>
           <.form for={@form} id="evaluation-answer-form" phx-submit="save_answer" class="space-y-3">
             <p>Leave a score blank when the outcome is unknown. Submitted answers are permanent.</p>

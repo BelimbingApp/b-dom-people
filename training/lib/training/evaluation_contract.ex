@@ -82,6 +82,28 @@ defmodule Bilimbi.People.Training.EvaluationContract do
           "people_training_evaluation_reminders_review_id_scope" =>
             fk("review_id", "evaluation_reviews")
         }
+      ),
+      table(
+        "effectiveness_summaries",
+        %{
+          "period_start" => column(:date),
+          "period_end" => column(:date),
+          "minimum_cohort" => column(:integer),
+          "status" => column(:text),
+          "groups" => column(:jsonb)
+        },
+        %{
+          "people_training_effectiveness_summary_period" =>
+            index(~w(tenant_id company_id period_start))
+        },
+        %{},
+        %{
+          "people_training_effectiveness_summary_values" => %{
+            expression:
+              "(period_end >= period_start) AND (minimum_cohort >= 2) AND (status = ANY (ARRAY['current'::text, 'suppressed'::text])) AND (jsonb_typeof((groups -> 'items'::text)) = 'array'::text)",
+            validated: true
+          }
+        }
       )
     ]
   end

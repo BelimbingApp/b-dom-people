@@ -28,7 +28,7 @@ defmodule Bilimbi.People.Training.Web.Support do
       "Set evaluation due days, checkpoints and reminder lead in Operator Settings before publication."
 
   def message(:report_not_configured),
-    do: "Set the reporting window and disclosure minimum in Operator Settings."
+    do: "Set the reporting period, answer grace and disclosure minimum in Operator Settings."
 
   def message(:invalid_checkpoints),
     do: "Set distinct positive checkpoint day offsets in Operator Settings."

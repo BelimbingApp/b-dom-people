@@ -1,9 +1,10 @@
 defmodule Bilimbi.People.Training.Web.LearningLive do
-  @moduledoc "Governed learning requests, plans and company budget policy."
+  @moduledoc "Governed learning requests, own evaluations, plans and company budget policy."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Training
   alias Bilimbi.People.Training.Web.Support
   @write_events ~w(open_entry add_item save_entry decide confirm_decision save_currencies)
+  @evaluation_events ~w(open_evaluation save_evaluation confirm_evaluation)
   @destinations [
     {"My learning", "/people/training/my", "people.training.requests.submit"},
     {"Team requests", "/people/training/team", "people.training.requests.recommend"},
@@ -21,7 +22,10 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
        prior_id: nil,
        item_count: 1,
        form: to_form(%{}, as: :entry),
-       decision_form: to_form(%{}, as: :decision)
+       decision_form: to_form(%{}, as: :decision),
+       selected_evaluation: nil,
+       pending_evaluation: nil,
+       evaluation_form: to_form(%{}, as: :evaluation)
      )}
   end
 
@@ -56,7 +60,9 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
        company: Support.company(companies, params),
        params: params,
        modal: false,
-       pending_decision: nil
+       pending_decision: nil,
+       selected_evaluation: nil,
+       pending_evaluation: nil
      )
      |> load()}
   end
@@ -67,6 +73,10 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
       do:
         {:noreply,
          put_flash(socket, :error, "You cannot change this company's learning records.")}
+
+  def handle_event(event, _, %{assigns: %{can_evaluate?: false}} = socket)
+      when event in @evaluation_events,
+      do: {:noreply, put_flash(socket, :error, "You cannot answer this company's evaluations.")}
 
   def handle_event("select_company", %{"filters" => attrs}, socket),
     do:
@@ -166,6 +176,76 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
       end
 
     finish(socket, result, "Decision recorded.", %{})
+  end
+
+  def handle_event("open_evaluation", %{"id" => id}, socket) do
+    selected =
+      Enum.find(
+        socket.assigns.evaluations,
+        &(&1.id == Support.integer(id) and is_nil(&1.answer))
+      )
+
+    if selected do
+      {:noreply,
+       socket
+       |> clear_flash()
+       |> assign(selected_evaluation: selected, evaluation_form: to_form(%{}, as: :evaluation))}
+    else
+      {:noreply, put_flash(socket, :error, "That unanswered evaluation is not available to you.")}
+    end
+  end
+
+  def handle_event("close_evaluation", _, socket),
+    do: {:noreply, assign(socket, selected_evaluation: nil)}
+
+  def handle_event("save_evaluation", _, %{assigns: %{selected_evaluation: nil}} = socket),
+    do: {:noreply, put_flash(socket, :error, "Choose an unanswered evaluation first.")}
+
+  def handle_event("save_evaluation", %{"evaluation" => attrs}, socket) do
+    selected = socket.assigns.selected_evaluation
+
+    values =
+      Map.new(selected.criteria, fn c ->
+        value = get_in(attrs, ["values", c["code"]])
+        {c["code"], if(value in [nil, ""], do: nil, else: Support.integer(value) || value)}
+      end)
+
+    {:noreply,
+     assign(socket,
+       pending_evaluation: {selected, values, attrs["reason"]},
+       evaluation_form: to_form(attrs, as: :evaluation),
+       selected_evaluation: nil
+     )}
+  end
+
+  def handle_event("cancel_evaluation", _, socket),
+    do: {:noreply, assign(socket, pending_evaluation: nil)}
+
+  def handle_event("confirm_evaluation", _, %{assigns: %{pending_evaluation: nil}} = socket),
+    do: {:noreply, socket}
+
+  def handle_event("confirm_evaluation", _, socket) do
+    {selected, values, reason} = socket.assigns.pending_evaluation
+    socket = assign(socket, pending_evaluation: nil)
+
+    case Training.answer_evaluation(
+           socket.assigns.current_scope.scope,
+           socket.assigns.company.id,
+           selected.id,
+           values,
+           reason
+         ) do
+      {:ok, _} ->
+        {:noreply,
+         socket |> clear_flash() |> put_flash(:success, "Evaluation recorded.") |> load()}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(selected_evaluation: selected)
+         |> put_flash(:error, message(reason))
+         |> load()}
+    end
   end
 
   def handle_event("save_currencies", %{"currencies" => %{"values" => values}}, socket) do
@@ -312,7 +392,27 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
         []
       end
 
+    evaluate? =
+      a.audience == :self and a.company != nil and
+        Enum.all?(
+          ~w(requests.submit evaluation.submit),
+          &Training.allowed?(scope, a.company.id, "people.training." <> &1)
+        )
+
+    {evaluations, evaluation_error} =
+      if evaluate? do
+        case Training.evaluation_reviews(scope, a.company.id, "evaluation") do
+          {:ok, rows} -> {rows, nil}
+          {:error, reason} -> {[], message(reason)}
+        end
+      else
+        {[], nil}
+      end
+
     assign(socket,
+      can_evaluate?: evaluate?,
+      evaluations: evaluations,
+      evaluation_error: evaluation_error,
       records: records,
       record_page: record_page,
       histories: histories,
@@ -424,6 +524,31 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
           <:empty :if={@record_page.entries == []} title="No learning records yet" reason="Choose a company and add a request, plan or budget when you have the required access." />
         </.table>
         <.pagination :if={is_nil(@error)} id="learning-pagination" page={@record_page} filters_form={@filters} filters_event="select_company" />
+        <section :if={@can_evaluate?} id="my-evaluations" class="space-y-3">
+          <.section_heading title="My evaluations"><:description>Evaluate your own learning after a confirmed session. Leave a score blank when the outcome is unknown.</:description></.section_heading>
+          <.alert :if={@evaluation_error} kind={:error}>{@evaluation_error}</.alert>
+          <.table :if={is_nil(@evaluation_error)} id="my-evaluation-tasks" rows={@evaluations} row_id={&"evaluation-#{&1.id}"}>
+            <:col :let={r} label="Session">{r.session_id}</:col>
+            <:col :let={r} label="Due">{r.due_on}</:col>
+            <:col :let={r} label="Criteria version">{r.policy_version}</:col>
+            <:col :let={r} label="Status">{cond do r.answer -> "Answered"; r.reminder -> "Reminder available"; true -> "Awaiting answer" end}</:col>
+            <:col :let={r} label="Answer">
+              <button :if={is_nil(r.answer)} type="button" phx-click="open_evaluation" phx-value-id={r.id} class="text-link">Answer</button>
+              <span :if={r.answer}>{r.answer.reason}</span>
+              <p :for={c <- r.criteria} :if={r.answer} class="text-sm">{c["label"]}: {if is_nil(r.answer.values[c["code"]]), do: "Unknown", else: r.answer.values[c["code"]]}</p>
+            </:col>
+            <:empty title="No evaluations yet" reason="An evaluation appears here after an operator prepares reviews for a confirmed session you attended." />
+          </.table>
+        </section>
+        <.modal :if={@selected_evaluation} id="my-evaluation-modal" title="Answer evaluation" flash={@flash} on_cancel={JS.push("close_evaluation")}>
+          <.form for={@evaluation_form} id="my-evaluation-form" phx-submit="save_evaluation" class="space-y-3">
+            <p>Leave a score blank when the outcome is unknown. Submitted answers are permanent.</p>
+            <.input :for={c <- @selected_evaluation.criteria} type="number" name={"evaluation[values][#{c["code"]}]"} value={get_in(@evaluation_form.params, ["values", c["code"]])} label={c["label"]} min={c["minimum"]} max={c["maximum"]} />
+            <.input field={@evaluation_form[:reason]} type="textarea" label="Evidence and explanation" required maxlength="4000" />
+            <.button type="submit">Review answer</.button>
+          </.form>
+        </.modal>
+        <.confirm_dialog :if={@pending_evaluation} id="my-evaluation-confirm" consequence="This evaluation will be recorded permanently." detail="The criteria version and explanation are preserved. This cannot be undone." confirm="Submit" working="Submitting…" on_confirm={JS.push("confirm_evaluation")} on_cancel={JS.push("cancel_evaluation")} />
         <.confirm_dialog :if={@pending_decision} id="learning-decision-confirm"
           consequence={"Record #{@pending_decision["action"]} for this learning record?"}
           detail="The decision and your reason will remain in history. A terminal request cannot be reopened; an approved plan needs a reasoned amendment."

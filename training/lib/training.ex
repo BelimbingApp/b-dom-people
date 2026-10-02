@@ -27,7 +27,11 @@ defmodule Bilimbi.People.Training do
   defdelegate evaluation_reviews(scope, company, kind), to: Evaluation, as: :reviews
   defdelegate answer_evaluation(scope, company, id, values, reason), to: Evaluation, as: :answer
   defdelegate evaluation_reminders(scope, company, today), to: Evaluation, as: :remind
-  defdelegate effectiveness_summary(scope, company, today), to: Evaluation, as: :summary
+  defdelegate effectiveness_summary(scope, company), to: Evaluation, as: :summary
+
+  defdelegate freeze_effectiveness_summaries(scope, company, today),
+    to: Evaluation,
+    as: :freeze_summaries
 
   alias Bilimbi.People.Training.Governance
   defdelegate learning_currencies(scope, company_id), to: Governance, as: :currencies
