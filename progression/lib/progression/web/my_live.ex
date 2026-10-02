@@ -7,7 +7,14 @@ defmodule Bilimbi.People.Progression.Web.MyLive do
   def mount(_, _, socket) do
     scope = socket.assigns.current_scope.scope
     company = Bilimbi.Base.Tenancy.Scope.actor(scope).company_id
-    socket = assign(socket, page_title: "My progression", active_nav: nil)
+
+    socket =
+      assign(socket,
+        page_title: "My progression",
+        active_nav: "people.my_work.standing",
+        performance?:
+          Bilimbi.People.Performance.allowed?(scope, company, "people.performance.self.view")
+      )
 
     case Progression.explain(scope, company) do
       {:ok, result} -> {:ok, assign(socket, result: result, unavailable: nil)}
@@ -21,6 +28,11 @@ defmodule Bilimbi.People.Progression.Web.MyLive do
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page variant={:detail}>
         <.header>My progression</.header>
+        <.card :if={@performance?} id="my-standing-performance" inner_class="p-5 sm:p-6">
+          <.section_heading title="My performance"/>
+          <p class="mt-2 text-sm text-ink-muted">Communicated targets, released reviews and your responses.</p>
+          <.link navigate="/people/performance/my" class="mt-3 inline-block underline">Open my performance</.link>
+        </.card>
         <.empty_state :if={@unavailable} id="my-progression-unavailable" title="Your progression explanation is unavailable" reason={@unavailable}/>
         <div :if={@result} id="my-progression" class="space-y-4">
           <.card :for={e <- @result.explanations} id={"my-progression-#{e.policy.id}"} inner_class="p-5 sm:p-6">

@@ -61,6 +61,89 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
     {:ok, _} = Progression.publish(actor(ctx, :manager), 73, p.id)
     {:ok, view, _} = conn |> login(103) |> live("/people/progression/my?employee_id=999999")
     assert has_element?(view, "#my-progression", "Unknown")
-    assert Bilimbi.People.Progression.Contributions.contributions().menu == []
+
+    assert has_element?(
+             view,
+             "a[href='/people/progression/my'][aria-current='page']",
+             "My standing"
+           )
+
+    refute has_element?(view, "a[href='/people/progression']")
+
+    assert {:ok, performance, _} =
+             view
+             |> element("#my-standing-performance a", "Open my performance")
+             |> render_click()
+             |> follow_redirect(build_conn() |> login(103))
+
+    assert has_element?(performance, "#my-performance-targets")
+    assert has_element?(performance, "a[href='/people/progression/my'][aria-current='page']")
+
+    {:ok, :stored} =
+      Bilimbi.Base.Authz.put_principal_capability(
+        ctx.scope,
+        73,
+        :user,
+        103,
+        "people.performance.self.view",
+        false
+      )
+
+    {:ok, view, _} = build_conn() |> login(103) |> live("/people/progression/my")
+    refute has_element?(view, "#my-standing-performance")
+    {:ok, operator, _} = build_conn() |> login(101) |> live("/people/progression")
+
+    assert has_element?(
+             operator,
+             "a[href='/people/progression'][aria-current='page']",
+             "Progression"
+           )
+
+    refute has_element?(operator, "a[href='/people/progression/my']")
+  end
+
+  test "My standing and own performance follow each self-view grant separately", %{ctx: ctx} do
+    set = fn grants ->
+      for cap <- ~w(people.progression.self.view people.performance.self.view),
+          do:
+            {:ok, :stored} =
+              Bilimbi.Base.Authz.put_principal_capability(
+                ctx.scope,
+                73,
+                :user,
+                103,
+                cap,
+                cap in grants
+              )
+    end
+
+    open = fn path -> build_conn() |> login(103) |> live(path) end
+
+    set.(~w(people.progression.self.view people.performance.self.view))
+    {:ok, both, _} = open.("/people/progression/my")
+    assert has_element?(both, "#my-progression-unavailable")
+    assert has_element?(both, "#my-standing-performance a", "Open my performance")
+    assert {:ok, _, _} = open.("/people/performance/my")
+
+    set.(~w(people.progression.self.view))
+    {:ok, progression_only, _} = open.("/people/progression/my")
+    assert has_element?(progression_only, "#my-progression-unavailable")
+    assert has_element?(progression_only, "a[href='/people/progression/my']", "My standing")
+    refute has_element?(progression_only, "#my-standing-performance")
+    assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/performance/my")
+
+    set.(~w(people.performance.self.view))
+    assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/progression/my")
+    {:ok, performance_only, _} = open.("/people/performance/my")
+    assert has_element?(performance_only, "#my-performance-targets")
+    refute has_element?(performance_only, "a[href='/people/progression/my']")
+    refute has_element?(performance_only, "a[href='/people/performance/my']")
+
+    set.([])
+    assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/progression/my")
+    assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/performance/my")
+    {:ok, dashboard, _} = open.("/dashboard")
+    refute has_element?(dashboard, "a[href='/people/progression/my']")
+    refute has_element?(dashboard, "a[href='/people/performance/my']")
   end
 end

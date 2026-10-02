@@ -6,12 +6,12 @@ runs. It installs no sample rows, statutory packs, country rules or bank
 formats. Calculation, contribution intake, approvals, artifacts and output
 are implemented by slice 6A below.
 
-The authenticated `/people/payroll/setup` route requires
-`people.payroll.view`. Editing requires `people.payroll.manage` both in the
-LiveView event guard and the public facade. Payroll navigation remains hidden
-until the whole payroll area meets its acceptance. Operators reach this route
-directly for foundation review. Company selection comes from Core Company's
-public selectable-company API. APIs require a validated tenant scope with a
+The authenticated `/people/payroll/setup` route and its
+`/people/payroll/setup/mappings` variant require `people.payroll.view`; the
+variant opens the same workspace focused on the Pay-item mappings section. Editing requires `people.payroll.manage` both in the
+LiveView event guard and the public facade. Payroll setup and Pay-item mappings
+are visible to viewers; editing controls remain management-gated. Company
+selection comes from Core Company's public selectable-company API. APIs require a validated tenant scope with a
 sealed login actor; sibling companies require explicit tenant-wide reach.
 Anonymous/system actors, impersonated writes, archived companies and other
 tenants are refused. No actor identifier can be submitted in record fields.
@@ -110,9 +110,9 @@ change to a locked run.
 
 ## Calculation, intake and approval
 
-Slice 6A adds `/people/payroll/runs`, still a direct authorized route while
-Payroll navigation remains hidden. The setup page links to it. Select the
-platform company and frozen run, attest contributions, lock setup, calculate,
+Slice 6A adds `/people/payroll/runs`, available from People > Payroll > Runs
+and the setup workspace. Select the platform company and frozen run, attest
+contributions, lock setup, calculate,
 then obtain an independent final decision. `people.payroll.manage` grants
 intake, calculation and document generation; `people.payroll.approve` grants
 final decisions, while `people.payroll.view` grants review and private document
@@ -199,4 +199,10 @@ or physical purge does not remove financial result history. Download permissions
 are payroll company review permissions; this slice does not expose employee
 self-service payslips.
 
-Payroll menu leaves remain hidden pending whole-area acceptance.
+People > Payroll contains Runs and Pay-item mappings; People > Settings contains
+Payroll setup. Each leaf requires `people.payroll.view`, matching the workspace
+route. Management and independent approval retain their own action permissions.
+Pay-item mappings and Payroll setup open the shared setup workspace; its
+Attendance mappings link additionally requires
+`people.payroll.attendance-mappings.manage`. See the repository's
+[menu rollout verification](../../settings/docs/menu-rollout.md).

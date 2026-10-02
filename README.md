@@ -22,7 +22,8 @@ and reminders.
 Payroll owns periods, effective-dated pay items and classifications,
 Leave/Claims and Attendance allowance mappings, immutable frozen setup runs,
 attested contributions, exact calculation results, independent approval and
-private payslip/report documents. Its menu remains hidden pending the whole payroll area.
+private payslip/report documents. Its completed Payroll and Settings menu
+entries are capability-filtered.
 Performance owns position-description versions, KPI definitions and governed
 individual targets, attributable observations, independently released reviews
 and employee responses.
@@ -122,17 +123,21 @@ work > My skills shows an employee's own standing; and People > Settings >
 Skills policy holds the company's reassessment, priority and reminder settings,
 action types and the reminder run. See `skills/docs/README.md`.
 
-Payroll foundation is available for authorized review at `/people/payroll/setup`.
+People > Settings > Payroll setup opens the company setup workspace at
+`/people/payroll/setup`; People > Payroll > Pay-item mappings opens the same
+workspace at `/people/payroll/setup/mappings`, focused on its mappings section.
+People > Payroll > Runs opens `/people/payroll/runs`.
 See `payroll/docs/README.md` for explicit country/currency settings, effective
 versions and permanent run locking. Calculation and outputs are available at
 `/people/payroll/runs` through frozen contributions, independent approval and
 Base Artifacts documents.
 
-Performance is available by direct authorized routes at `/people/performance`
-for planning and authored reviews, and `/people/performance/my` for the login
-actor's own linked employee. Published content and evidence remain immutable;
-corrections append versions with reasons. Performance menu leaves remain hidden
-until the entire area's rollout acceptance is complete. See
+Performance is available from People > Development > Performance reviews at
+`/people/performance` for planning and authored reviews. The login actor's own
+linked employee view at `/people/performance/my` has no separate menu leaf; the
+People > My work > My standing page links to it. Published content and evidence remain immutable;
+corrections append versions with reasons. Performance leaves use their
+respective planning and self-view capabilities. See
 `performance/docs/README.md` for capabilities, release guards and verification.
 
 Training is available by authorized direct routes at `/people/training/courses`,
@@ -143,10 +148,12 @@ corrections and attach evidence PDFs. Training contributes My learning, Courses,
 and budgets, each filtered by its route capability. Evidence storage and retention are
 configured in Base Operator Settings. See `training/docs/README.md`.
 
-Progression is available by direct authorized routes at `/people/progression`
+Progression is available from People > Development > Progression and
+People > My work > My standing, using authorized routes at `/people/progression`
 for policy operators and `/people/progression/my` for the linked employee.
 Policy criteria are governed company data; missing evidence remains explicit.
-Progression navigation stays hidden pending rollout acceptance. See
+Progression leaves use their respective policy-view and self-view
+capabilities. See
 `progression/docs/README.md`.
 
 ## License

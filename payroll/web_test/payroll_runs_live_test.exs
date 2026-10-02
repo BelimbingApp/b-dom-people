@@ -106,6 +106,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
 
     {:ok, view, _} = c.conn |> log_in_as() |> live("/people/payroll/runs")
     assert has_element?(view, "#payroll-no-runs")
+    assert has_element?(view, "a[href='/people/payroll/runs'][aria-current='page']", "Runs")
 
     for event <- ~w(intake calculate generate_report generate_payslip decide),
         do: assert(render_hook(view, event, %{}) =~ "You cannot")

@@ -17,6 +17,7 @@
     "core/employee",
     "people/attendance",
     "people/leave",
+    "people/settings",
     "people/workforce",
     "people/claims"
   ],

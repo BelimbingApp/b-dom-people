@@ -144,10 +144,35 @@ defmodule Bilimbi.People.Performance.Web.PerformanceLiveTest do
            }
   end
 
-  test "capabilities gate routes and menu stays absent until area rollout", %{conn: conn} do
+  test "capabilities gate routes and employee navigation", %{conn: conn, ctx: ctx} do
     assert {:error, {:redirect, %{to: "/dashboard"}}} =
              conn |> login(:viewer) |> live("/people/performance/my")
 
-    assert Bilimbi.People.Performance.Contributions.contributions().menu == []
+    {:ok, view, _} = build_conn() |> login(:employee) |> live("/people/performance/my")
+    assert has_element?(view, "#my-performance-targets")
+    refute has_element?(view, "a[href='/people/performance/my']")
+    {:ok, viewer, _} = build_conn() |> login(:viewer) |> live("/people/performance")
+
+    assert has_element?(
+             viewer,
+             "a[href='/people/performance'][aria-current='page']",
+             "Performance reviews"
+           )
+
+    refute has_element?(viewer, "a[href='/people/performance/my']")
+
+    {:ok, :stored} =
+      Bilimbi.Base.Authz.put_principal_capability(
+        ctx.scope,
+        73,
+        :user,
+        106,
+        "people.performance.view",
+        false
+      )
+
+    {:ok, denied, _} = build_conn() |> login(:viewer) |> live("/dashboard")
+    refute has_element?(denied, "a[href='/people/performance']")
+    refute has_element?(denied, "a[href='/people/performance/my']")
   end
 end

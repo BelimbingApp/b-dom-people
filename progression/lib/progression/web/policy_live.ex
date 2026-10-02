@@ -9,7 +9,7 @@ defmodule Bilimbi.People.Progression.Web.PolicyLive do
       {:ok,
        assign(socket,
          page_title: "Progression policies",
-         active_nav: nil,
+         active_nav: "people.development.progression",
          pending: nil,
          selected: nil,
          error: nil
