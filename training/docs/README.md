@@ -292,7 +292,7 @@ policy authority does not grant those Base permissions:
 | `checkpoints` | A distinct list of positive day offsets for effectiveness deadlines |
 | `reminder_days` | Days before a deadline when the worklist reminder becomes available |
 | `minimum_cohort` | At least two distinct employees; disclosure also requires this many distinct employees with known scores |
-| `report_months` | Fixed calendar reporting period length in months; it must divide 12. Defaults to 3, a calendar quarter |
+| `report_months` | Fixed reporting period length in months; it must divide 12. Defaults to 3, a calendar quarter. A change applies from the day after the last frozen period |
 | `report_grace_days` | Days after a period ends during which late answers still count before it freezes |
 
 `publish_evaluation_policy/3` takes inclusive effective dates, separate employee
@@ -341,13 +341,19 @@ principal or unattended worker. A changed reporting line changes who can see
 and answer the obligation, and never grants access through the historical
 reminder recipient.
 
-`freeze_effectiveness_summaries/3` takes the company's reporting day. It
-computes each fixed calendar period that contains effectiveness deadlines only
-after the period ends and its answer grace window has passed, then stores it as
-a permanent snapshot in `people_training_effectiveness_summaries`. A frozen
-period never recomputes: later answers, late-prepared reviews and attendance
-corrections cannot change it, and a period overlapping an existing snapshot
-(after a period-length change) is never frozen. This keeps an HR reader from
+`freeze_effectiveness_summaries/3` takes the company's reporting day. Frozen
+periods form one contiguous chain with no gap or overlap. The first period is
+the calendar-aligned period containing the earliest effectiveness deadline;
+each next period starts the day after the last frozen period end and runs for
+the currently configured length. A changed length therefore takes effect from
+that date: after a frozen January–March quarter, a change to 6 months freezes
+April–September next. `effectiveness_period_start/2` returns that date for
+policy managers, and the Effectiveness page shows it beside the Operator
+Settings link. A period is computed only after it ends and its answer grace
+window has passed, including empty periods, which freeze as suppressed. It is
+then stored as a permanent snapshot in `people_training_effectiveness_summaries`.
+A frozen period never recomputes: later answers, late-prepared reviews and
+attendance corrections cannot change it. This keeps an HR reader from
 differencing two readings to recover one answer. Each snapshot keeps separate
 policy-version/checkpoint groups so different criterion versions are never
 averaged together, and records the disclosure minimum it applied. Both a

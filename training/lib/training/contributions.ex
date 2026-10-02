@@ -54,7 +54,7 @@ defmodule Bilimbi.People.Training.Contributions do
         {"minimum_cohort", :integer, nil, 2, 1000, "Effectiveness disclosure minimum",
          "Minimum distinct employees and answered employees for a summary score."},
         {"report_months", :integer, 3, 1, 12, "Effectiveness reporting period",
-         "Calendar months per fixed summary period; 12 must divide evenly by it. 3 is a calendar quarter."},
+         "Months per fixed summary period; 12 must divide evenly by it. 3 is a calendar quarter. A changed length applies from the day after the last frozen period; Effectiveness shows that date."},
         {"report_grace_days", :integer, nil, 0, 3650, "Effectiveness answer grace",
          "Days after a reporting period ends before its summary is frozen permanently."},
         {"checkpoints", :array, nil, nil, nil, "Effectiveness checkpoints",

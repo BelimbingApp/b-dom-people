@@ -429,6 +429,45 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
              Training.freeze_effectiveness_summaries(s[92], 73, ~D[2027-02-01])
   end
 
+  test "a changed period length starts after the last frozen period with no gap or overlap", %{
+    conn: conn,
+    scopes: s
+  } do
+    {_, _, _, [_, effectiveness | _]} = prepared(s)
+    answer!(s, effectiveness, 5)
+    assert {:ok, ~D[2026-10-01]} = Training.effectiveness_period_start(s[93], 73)
+
+    assert {:ok, %{frozen: 1}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-01-11])
+
+    {:ok, _} =
+      Settings.put("people.training.evaluation.report_months", 6, SettingScope.company(73, 41))
+
+    assert {:ok, ~D[2027-01-01]} = Training.effectiveness_period_start(s[93], 73)
+
+    {:ok, view, _} =
+      conn
+      |> log_in_as(session_user(%{"user_id" => 93}))
+      |> live("/people/training/effectiveness")
+
+    assert has_element?(view, "#report-period-start", "2027-01-01")
+
+    assert {:ok, %{frozen: 0}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-07-10])
+
+    assert {:ok, %{frozen: 1}} =
+             Training.freeze_effectiveness_summaries(s[93], 73, ~D[2027-07-11])
+
+    assert {:ok, periods} = Training.effectiveness_summary(s[93], 73)
+
+    assert Enum.map(periods, &{&1.period_start, &1.period_end}) == [
+             {~D[2027-01-01], ~D[2027-06-30]},
+             {~D[2026-10-01], ~D[2026-12-31]}
+           ]
+
+    assert {:ok, ~D[2027-07-01]} = Training.effectiveness_period_start(s[93], 73)
+  end
+
   test "employees answer their own evaluations under My learning without Effectiveness access",
        %{conn: conn, scopes: s} do
     {_, _, _, [evaluation | _]} = prepared(s)
@@ -447,6 +486,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
     view |> element("#my-evaluation-confirm-confirm") |> render_click()
     assert has_element?(view, "#evaluation-#{evaluation.id}", "Answered")
+
     assert {:ok, [%{answer: %{values: %{"criterion" => 4}}}]} =
              Training.evaluation_reviews(s[91], 73, "evaluation")
 
@@ -699,13 +739,17 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
              Ecto.Adapters.SQL.query(
                Repo,
                "INSERT INTO people_training_evaluation_answers (tenant_id, company_id, actor_user_id, review_id, values, reason, inserted_at, updated_at) VALUES (41, 73, 92, $1, $2, 'Invalid score', now(), now())",
-               [review.id, %{"criterion" => 6}], mode: :savepoint)
+               [review.id, %{"criterion" => 6}],
+               mode: :savepoint
+             )
 
     assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
              Ecto.Adapters.SQL.query(
                Repo,
                "INSERT INTO people_training_evaluation_reviews (tenant_id, company_id, actor_user_id, policy_id, fact_id, kind, checkpoint_days, due_on, inserted_at, updated_at) VALUES (41, 73, 93, $1, $2, 'effectiveness', 2, '2026-10-03', now(), now())",
-               [review.policy_id, corrected.id], mode: :savepoint)
+               [review.policy_id, corrected.id],
+               mode: :savepoint
+             )
   end
 
   test "an invalid publication keeps the operator's entered criteria for correction", %{

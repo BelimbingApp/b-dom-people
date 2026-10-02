@@ -266,6 +266,14 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
     {policies, policy_error} =
       read_rows(policy?, fn -> Training.evaluation_policies(scope, company.id) end)
 
+    period_start =
+      with true <- policy?,
+           {:ok, %Date{} = date} <- Training.effectiveness_period_start(scope, company.id) do
+        date
+      else
+        _ -> nil
+      end
+
     {summaries, summary_error} =
       read_rows(summary?, fn -> Training.effectiveness_summary(scope, company.id) end)
 
@@ -278,6 +286,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
       review_page: Support.page(reviews, socket.assigns.params),
       policies: policies,
       summaries: summaries,
+      period_start: period_start,
       error:
         if(entry?,
           do: review_error || policy_error || summary_error,
@@ -351,6 +360,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
         </div>
         <.section_heading :if={@can_policy?} title="Published criteria"><:description>Versions and answers are permanent. Publish another effective period to change criteria.</:description></.section_heading>
         <p :if={@can_policy?} class="text-sm">Set due days, checkpoints, reminder lead, reporting period, answer grace and disclosure minimum in <.link navigate="/system/settings" class="text-link">Operator Settings</.link> before publication.</p>
+        <p :if={@can_policy? and @period_start} id="report-period-start" class="text-sm">The configured reporting period length takes effect from {@period_start}; a changed length starts the day after the last frozen period.</p>
         <.table :if={@can_policy?} id="evaluation-policies" rows={@policies}>
           <:col :let={p} label="Version">{p.version}</:col>
           <:col :let={p} label="Effective period">{p.effective_from} – {p.effective_to}</:col>

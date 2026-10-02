@@ -311,30 +311,10 @@ defmodule Bilimbi.People.Training.Evaluation do
         tx(scope, company, fn ->
           employees = current_employees!(scope, company)
 
-          frozen =
-            Repo.all(
-              from(s in scoped(EffectivenessSummary, scope, company),
-                select: {s.period_start, s.period_end}
-              )
-            )
-
           periods =
-            Repo.all(
-              from(r in scoped(EvaluationReview, scope, company),
-                where: r.kind == "effectiveness",
-                distinct: true,
-                select: r.due_on
-              )
-            )
-            |> Enum.map(&period(&1, months))
-            |> Enum.uniq()
-            |> Enum.filter(fn {first, last} ->
-              Date.compare(today, Date.add(last, grace)) == :gt and
-                not Enum.any?(frozen, fn {s, e} ->
-                  Date.compare(s, last) != :gt and Date.compare(e, first) != :lt
-                end)
-            end)
-            |> Enum.sort_by(&elem(&1, 0), Date)
+            scope
+            |> next_period_start(company, months)
+            |> closed_periods(months, today, grace)
 
           for {first, last} <- periods do
             insert!(
@@ -353,9 +333,45 @@ defmodule Bilimbi.People.Training.Evaluation do
     end
   end
 
-  defp period(date, months) do
-    first = Date.new!(date.year, div(date.month - 1, months) * months + 1, 1)
-    {first, Date.end_of_month(Date.new!(date.year, first.month + months - 1, 1))}
+  def period_start(%Scope{} = scope, company) do
+    with :ok <- auth(scope, company, "evaluation.policy.manage") do
+      months = setting(scope, company, "report_months")
+
+      if is_integer(months) and months in 1..12 and rem(12, months) == 0,
+        do: {:ok, next_period_start(scope, company, months)},
+        else: {:error, :report_not_configured}
+    end
+  end
+
+  # Periods form one contiguous chain: a changed length applies from the day
+  # after the last frozen period, so snapshots never overlap or leave a gap.
+  defp next_period_start(scope, company, months) do
+    last =
+      Repo.one(from(s in scoped(EffectivenessSummary, scope, company), select: max(s.period_end)))
+
+    first_due =
+      Repo.one(
+        from(r in scoped(EvaluationReview, scope, company),
+          where: r.kind == "effectiveness",
+          select: min(r.due_on)
+        )
+      )
+
+    cond do
+      last -> Date.add(last, 1)
+      first_due -> Date.new!(first_due.year, div(first_due.month - 1, months) * months + 1, 1)
+      true -> nil
+    end
+  end
+
+  defp closed_periods(nil, _, _, _), do: []
+
+  defp closed_periods(first, months, today, grace) do
+    last = first |> Date.shift(month: months) |> Date.add(-1)
+
+    if Date.compare(today, Date.add(last, grace)) == :gt,
+      do: [{first, last} | closed_periods(Date.add(last, 1), months, today, grace)],
+      else: []
   end
 
   defp snapshot(scope, company, employees, first, last, minimum) do

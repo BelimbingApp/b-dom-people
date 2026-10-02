@@ -29,6 +29,8 @@ defmodule Bilimbi.People.Training do
   defdelegate evaluation_reminders(scope, company, today), to: Evaluation, as: :remind
   defdelegate effectiveness_summary(scope, company), to: Evaluation, as: :summary
 
+  defdelegate effectiveness_period_start(scope, company), to: Evaluation, as: :period_start
+
   defdelegate freeze_effectiveness_summaries(scope, company, today),
     to: Evaluation,
     as: :freeze_summaries
