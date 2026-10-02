@@ -30,10 +30,17 @@ defmodule Bilimbi.People.Payroll.Contributions do
         capabilities: [
           "people.payroll.view",
           "people.payroll.manage",
+          "people.payroll.approve",
           "people.payroll.attendance-mappings.manage"
         ],
         roles: %{
-          "tenant_owner" => %{capabilities: ["people.payroll.view", "people.payroll.manage"]}
+          "tenant_owner" => %{
+            capabilities: [
+              "people.payroll.view",
+              "people.payroll.manage",
+              "people.payroll.approve"
+            ]
+          }
         }
       },
       menu: []

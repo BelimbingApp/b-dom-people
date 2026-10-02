@@ -20,8 +20,9 @@ catalog, versioned proficiency scales and requirement profiles, evidence-backed
 assessments with independent review, reassessment requests, development actions
 and reminders.
 Payroll owns periods, effective-dated pay items and classifications,
-Leave/Claims and Attendance allowance mappings, and immutable frozen setup
-runs. Its menu remains hidden pending the whole payroll area.
+Leave/Claims and Attendance allowance mappings, immutable frozen setup runs,
+attested contributions, exact calculation results, independent approval and
+private payslip/report documents. Its menu remains hidden pending the whole payroll area.
 Performance owns position-description versions, KPI definitions and governed
 individual targets, attributable observations, independently released reviews
 and employee responses.
@@ -48,7 +49,7 @@ explanation. No sample rows are installed.
 | `people/training` | Courses, sessions, learning records, requests, plans and budgets |
 | `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
 | `people/progression` | Immutable policy publication and employee eligibility explanations |
-| `people/payroll` | Payroll periods, catalog versions, mappings, attendance allowance mappings and frozen setup |
+| `people/payroll` | Payroll setup, mappings, frozen runs, contributions, calculation, approval and private documents |
 
 ## Mount and validate
 
@@ -121,7 +122,9 @@ action types and the reminder run. See `skills/docs/README.md`.
 
 Payroll foundation is available for authorized review at `/people/payroll/setup`.
 See `payroll/docs/README.md` for explicit country/currency settings, effective
-versions and permanent run locking. Calculation and outputs are not implemented.
+versions and permanent run locking. Calculation and outputs are available at
+`/people/payroll/runs` through frozen contributions, independent approval and
+Base Artifacts documents.
 
 Performance is available by direct authorized routes at `/people/performance`
 for planning and authored reviews, and `/people/performance/my` for the login
