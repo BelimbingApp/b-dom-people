@@ -70,7 +70,7 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
       grant_capabilities!("people.training.courses.view", user_id: user)
     end
 
-    grant(91, ~w(requests.submit))
+    grant(91, ~w(learning.view requests.submit))
     grant(92, ~w(requests.recommend plans.submit))
 
     grant(
@@ -578,7 +578,7 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
       )
 
     assert render_hook(live, "save_entry", %{"entry" => attrs()}) =~ "cannot do that"
-    grant(91, ~w(requests.submit))
+    grant(91, ~w(learning.view requests.submit))
     {:ok, _} = Bilimbi.Core.Employee.update_employee(s[91], 73, 2, %{status: "inactive"})
     assert {:error, :employee_unavailable} = Training.create_learning_request(s[91], 73, attrs())
   end

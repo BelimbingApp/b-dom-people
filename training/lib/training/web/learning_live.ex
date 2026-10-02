@@ -2,11 +2,12 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
   @moduledoc "Governed learning requests, own evaluations, plans and company budget policy."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Training
+  alias Bilimbi.People.Training.Passport
   alias Bilimbi.People.Training.Web.Support
   @write_events ~w(open_entry add_item save_entry decide confirm_decision save_currencies)
   @evaluation_events ~w(open_evaluation save_evaluation confirm_evaluation)
   @destinations [
-    {"My learning", "/people/training/my", "people.training.requests.submit"},
+    {"My learning", "/people/training/my", "people.training.learning.view"},
     {"Team requests", "/people/training/team", "people.training.requests.recommend"},
     {"Team plans", "/people/training/plans", "people.training.plans.submit"},
     {"Learning requests & reviews", "/people/training/requests", "people.training.requests.view"},
@@ -52,7 +53,12 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
      socket
      |> assign(
        page_title: title,
-       active_nav: nil,
+       active_nav:
+         case path do
+           "/people/training/my" -> "people.my_work.my_learning"
+           "/people/training/budgets" -> "people.settings.learning_policy"
+           _ -> "people.development.learning_reviews"
+         end,
        path: path,
        kind: kind,
        audience: audience,
@@ -329,12 +335,25 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
     a = socket.assigns
     scope = a.current_scope.scope
 
+    can_read_records =
+      not (a.audience == :self and a.kind == :request) or
+        (a.company != nil and
+           Training.allowed?(scope, a.company.id, "people.training.requests.submit"))
+
     result =
       if a.company do
         case a.kind do
-          :request -> Training.learning_requests(scope, a.company.id, a.audience)
-          :plan -> Training.learning_plans(scope, a.company.id, a.audience)
-          :budget -> Training.learning_budgets(scope, a.company.id)
+          :request ->
+            if(can_read_records,
+              do: Training.learning_requests(scope, a.company.id, a.audience),
+              else: {:ok, []}
+            )
+
+          :plan ->
+            Training.learning_plans(scope, a.company.id, a.audience)
+
+          :budget ->
+            Training.learning_budgets(scope, a.company.id)
         end
       else
         {:error, :company_unavailable}
@@ -417,13 +436,27 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
       record_page: record_page,
       histories: histories,
       error: error,
+      can_read_records?: can_read_records,
       can_create?: create?,
       can_write?: create? or Enum.any?(records, &(actions(&1, a.kind, a.audience, flags) != [])),
       flags: flags,
       tabs:
-        Enum.filter(@destinations, fn {_, _, cap} ->
-          a.company && Training.allowed?(scope, a.company.id, cap)
-        end),
+        Enum.filter(
+          @destinations ++
+            [
+              {"My passport & evidence", "/people/training/records/my", {:passport, :self}},
+              {"Team passports", "/people/training/records/team", {:passport, :team}},
+              {"Evaluation policy & effectiveness", "/people/training/effectiveness",
+               "people.training.effectiveness.view"}
+            ],
+          fn
+            {_, _, {:passport, audience}} ->
+              a.company && Passport.allowed?(scope, a.company.id, audience)
+
+            {_, _, cap} ->
+              a.company && Training.allowed?(scope, a.company.id, cap)
+          end
+        ),
       currencies_form: to_form(%{"values" => Enum.join(currencies, ", ")}, as: :currencies),
       filters:
         to_form(
@@ -487,6 +520,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
         <nav aria-label="Learning tasks" class="flex flex-wrap gap-4 border-b border-line pb-2">
           <.link :for={{label, path, _} <- @tabs} navigate={path <> "?company_id=" <> to_string(@company.id)} aria-current={if path == @path, do: "page"} class="text-link">{label}</.link>
         </nav>
+        <.empty_state :if={not @can_read_records?} title="Choose a learning task" reason="Use your authorized passport, evidence or evaluation tasks above. Request submission needs separate access." />
         <.filter_toolbar id="learning-filters" form={@filters} event="select_company">
           <:control type={:select} field={@filters[:company_id]} id="learning-company" label="Company" options={Enum.map(@companies, &{&1.name, &1.id})} />
         </.filter_toolbar>
@@ -496,7 +530,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
           <.input field={@currencies_form[:values]} label="Company currencies" placeholder="Comma-separated currency codes" />
           <.button type="submit" phx-disable-with="Saving…">Save currencies</.button>
         </.form>
-        <.table :if={is_nil(@error)} id="learning-records" rows={@record_page.entries} row_id={&"learning-#{&1.id}"}>
+        <.table :if={is_nil(@error) and @can_read_records?} id="learning-records" rows={@record_page.entries} row_id={&"learning-#{&1.id}"}>
           <:col :let={r} label="Record">
             <div :if={@kind == :request}><strong>{r.need}</strong><p>{r.objective}</p><p>{r.expected_result}</p><span>Employee {r.employee_id}</span></div>
             <div :if={@kind == :plan}><strong>{r.objectives}</strong><span> · Version {r.version}</span><p>{r.period_start} – {r.period_end}</p>
@@ -523,7 +557,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
           </:col>
           <:empty :if={@record_page.entries == []} title="No learning records yet" reason="Choose a company and add a request, plan or budget when you have the required access." />
         </.table>
-        <.pagination :if={is_nil(@error)} id="learning-pagination" page={@record_page} filters_form={@filters} filters_event="select_company" />
+        <.pagination :if={is_nil(@error) and @can_read_records?} id="learning-pagination" page={@record_page} filters_form={@filters} filters_event="select_company" />
         <section :if={@can_evaluate?} id="my-evaluations" class="space-y-3">
           <.section_heading title="My evaluations"><:description>Evaluate your own learning after a confirmed session. Leave a score blank when the outcome is unknown.</:description></.section_heading>
           <.alert :if={@evaluation_error} kind={:error}>{@evaluation_error}</.alert>

@@ -70,7 +70,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
       grant_capabilities!("people.training.courses.view", user_id: user)
     end
 
-    grant(91, ~w(requests.submit))
+    grant(91, ~w(learning.view requests.submit))
     grant(92, ~w(requests.recommend plans.submit))
 
     grant(
@@ -898,12 +898,12 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert {:ok, []} = Training.evaluation_policies(s[93], 73)
   end
 
-  test "one Effectiveness destination is reserved and runtime Training navigation stays hidden" do
+  test "one Effectiveness destination is visible when its capability is granted" do
     assert [entry] = Training.Contributions.effectiveness_menu()
     item = Bilimbi.Base.Menu.Item.new!(entry, "people/training")
     assert item.label == "Effectiveness" and item.parent == "people.development"
     assert item.route == "/people/training/effectiveness"
     assert item.capability == "people.training.effectiveness.view"
-    assert Training.Contributions.contributions().menu == []
+    assert Enum.count(Training.Contributions.contributions().menu, &(&1.label == "Effectiveness")) == 1
   end
 end

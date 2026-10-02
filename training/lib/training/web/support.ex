@@ -23,6 +23,28 @@ defmodule Bilimbi.People.Training.Web.Support do
     end
   end
 
+  def message(:passport_too_large),
+    do:
+      "This passport exceeds the document safety limit of 1,000 records. Review records on screen."
+
+  def message(:invalid_insight_range),
+    do: "Choose valid dates in order, covering at most 366 days."
+
+  def message(:report_period_unavailable),
+    do:
+      "Choose a frozen Effectiveness reporting period. Periods appear once an operator freezes them."
+
+  def message(:forbidden),
+    do:
+      "You cannot access or generate this document. Ask an operator to check your access and workforce connection."
+
+  def message(:storage_not_configured),
+    do: "Ask an operator to configure private document storage in Operator Settings."
+
+  def message(:unsupported_text),
+    do:
+      "This document contains characters the available PDF renderer cannot display. The training records remain available on screen."
+
   def message(:policy_not_configured),
     do: "Save this company's evaluation settings on Effectiveness before publication."
 
@@ -90,8 +112,11 @@ defmodule Bilimbi.People.Training.Web.Support do
   def message(:unauthorized), do: "You cannot do that for this company."
   def message(:not_found), do: "That record is not available to you."
 
-  def message({:not_current, _}),
-    do: "The workforce is not current. Try again when the connection is current."
+  def message({:not_current, freshness}),
+    do:
+      Bilimbi.People.Training.Passport.workforce_warning(%Bilimbi.People.Workforce.ReadResult{
+        freshness: freshness
+      })
 
   def message(:company_unavailable), do: "Choose an active company."
 
