@@ -3,6 +3,10 @@ defmodule Bilimbi.People.Training.SchemaContract do
   @behaviour Bilimbi.Base.Database.SchemaContract
   @impl true
   def tables do
+    catalog_tables() ++ Bilimbi.People.Training.ParticipationContract.tables()
+  end
+
+  defp catalog_tables do
     [
       table(
         "courses",
@@ -46,6 +50,8 @@ defmodule Bilimbi.People.Training.SchemaContract do
           "ends_at" => column({:timestamp, 0}, false)
         },
         %{
+          "people_training_sessions_id_tenant_id_company_id_index" =>
+            index(["id", "tenant_id", "company_id"], true),
           "people_training_sessions_tenant_id_company_id_starts_at_index" =>
             index(["tenant_id", "company_id", "starts_at"], false)
         },
