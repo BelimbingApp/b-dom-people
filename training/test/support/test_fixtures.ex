@@ -61,6 +61,8 @@ defmodule Bilimbi.People.Training.TestFixtures do
     for {file, module, version} <- [
           {"20261001060101_create_people_training_catalog.exs",
            Bilimbi.People.Training.Migrations.CreateCatalog, 20_261_001_060_101},
+          {"20261001060201_create_training_participation.exs",
+           Bilimbi.People.Training.Migrations.CreateParticipation, 20_261_001_060_201},
           {"20261001060401_create_people_learning_governance.exs",
            Bilimbi.People.Training.Migrations.CreateLearningGovernance, 20_261_001_060_401}
         ] do

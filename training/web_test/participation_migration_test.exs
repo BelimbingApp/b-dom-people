@@ -8,11 +8,22 @@ Code.require_file(
   __DIR__
 )
 
+Code.require_file(
+  "../priv/repo/migrations/20261001060401_create_people_learning_governance.exs",
+  __DIR__
+)
+
 defmodule Bilimbi.People.Training.ParticipationMigrationTest do
   use ExUnit.Case, async: false
   alias Bilimbi.Base.Database.SchemaVerifier
   alias Bilimbi.Base.Repo
-  alias Bilimbi.People.Training.Migrations.{CreateCatalog, CreateParticipation}
+
+  alias Bilimbi.People.Training.Migrations.{
+    CreateCatalog,
+    CreateParticipation,
+    CreateLearningGovernance
+  }
+
   alias Ecto.Adapters.SQL
   alias Ecto.Adapters.SQL.Sandbox
 
@@ -40,6 +51,11 @@ defmodule Bilimbi.People.Training.ParticipationMigrationTest do
     Ecto.Migrator.up(Repo, 20_261_001_060_101, CreateCatalog, log: false, dynamic_repo: repo)
 
     Ecto.Migrator.up(Repo, 20_261_001_060_201, CreateParticipation,
+      log: false,
+      dynamic_repo: repo
+    )
+
+    Ecto.Migrator.up(Repo, 20_261_001_060_401, CreateLearningGovernance,
       log: false,
       dynamic_repo: repo
     )
