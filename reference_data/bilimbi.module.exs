@@ -11,7 +11,8 @@
     "base/module_registry",
     "base/tenancy",
     "base/ui",
-    "core/company"
+    "core/company",
+    "people/settings"
   ],
   migrations: "priv/repo/migrations",
   migration_dispositions: %{20_260_930_100_101 => :bilimbi_only},

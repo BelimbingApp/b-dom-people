@@ -1,13 +1,21 @@
-<Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people">
+<Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people.settings.references">
   <.page id="people-references" variant={:list}>
     <.header>
       People references
       <:subtitle :if={@company}>{@company.name} · Reference values and calendar exceptions</:subtitle>
     </.header>
 
-    <p :if={is_nil(@company)} class="rounded-xl border border-line bg-surface p-5 text-sm text-ink-muted">
-      This company is unavailable in your tenant.
-    </p>
+    <form :if={@companies != []} id="reference-company-picker" phx-change="select_company" phx-submit="select_company" class="mt-4 flex flex-wrap items-center gap-2">
+      <label for="reference-company" class="text-sm font-medium text-ink">Company</label>
+      <select id="reference-company" name="company_id" class="rounded-md border border-line bg-surface px-3 py-1.5 text-sm">
+        <option value="">Choose a company</option>
+        <option :for={company <- @companies} value={company.id} selected={company.id == @company_id}>{company.name}</option>
+      </select>
+      <.button type="submit">Open references</.button>
+    </form>
+
+    <.empty_state :if={@companies == []} id="reference-companies-empty" title="No companies available" reason="You have no company available for managing People references. Ask an operator to review your access." />
+    <.empty_state :if={@companies != [] and is_nil(@company)} id="reference-company-unselected" title={if @company_id, do: "This company is unavailable in your tenant.", else: "Choose a company"} reason="Select an authorized company to manage its references and calendar exceptions." />
 
     <div :if={@company} class="mt-5 grid gap-5 lg:grid-cols-2">
       <section class="rounded-xl border border-line bg-surface p-5">
