@@ -412,8 +412,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
           </.card>
           <.card inner_class="p-5">
             <.section_heading id="payroll-runs" title="Frozen setup" />
+            <.link navigate={~p"/people/payroll/runs?company_id=#{@company.id}"}>Open payroll runs</.link>
             <p class="mt-2 text-sm text-ink-muted">
-              Freeze a period's setup for a currency. Locking is permanent. Calculation and financial outputs are not available yet.
+              Freeze a period's setup for a currency. Locking is permanent. Review contributions, calculation, approval and documents on the Payroll runs page.
             </p>
             <.empty_state :if={@data.runs == []} id="runs-empty" title="No frozen runs yet." />
             <div
