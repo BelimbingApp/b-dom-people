@@ -147,6 +147,11 @@ jobs:
       - name: Run Bilimbi's precommit with People mounted
         run: mix precommit
 
+      - name: Test attendance browser location hook
+        run: |
+          mix cmd --app web mix esbuild.install --if-missing
+          node --test apps/domains/people/attendance/assets/test/clock_location.test.mjs
+
       # Precommit formats and unlocks unused dependencies in place. Neither
       # repository nor the pinned composition lock may change.
       - name: Verify precommit made no changes

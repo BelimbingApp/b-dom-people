@@ -8,7 +8,7 @@ defmodule Bilimbi.People.Attendance do
   """
   import Ecto.Query
 
-  alias Bilimbi.Base.Repo
+  alias Bilimbi.Base.{Authz, Repo}
   alias Bilimbi.Base.DateTime, as: BaseDateTime
   alias Bilimbi.Base.Settings
   alias Bilimbi.Base.Tenancy
@@ -135,16 +135,45 @@ defmodule Bilimbi.People.Attendance do
     end
   end
 
-  def self_clock(%Scope{} = scope, company_id, actor, type, key)
-      when type in ["in", "out"] and is_binary(key) do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor),
+  @doc "Whether the authenticated user may clock their own employee in this company."
+  def can_self_clock?(%Scope{} = scope, company_id) do
+    performer = Scope.actor(scope)
+
+    performer.type == :user and performer.company_id == company_id and
+      is_nil(performer.impersonator_id) and
+      Authz.can(scope, "people.attendance.self.view").allowed
+  end
+
+  @doc "Records a browser clock using the scope's authenticated actor and optional coordinates."
+  def self_clock(scope, company_id, type, key),
+    do: self_clock(scope, company_id, type, key, %{})
+
+  # Compatibility for callers of the original actor-bearing API. The supplied
+  # actor can only match the authenticated scope; it cannot select a performer.
+  def self_clock(%Scope{} = scope, company_id, actor, type, key) when is_map(actor) do
+    with {:ok, performer} <- Authz.scope_actor(scope),
+         %{type: :user, id: user_id, company_id: ^company_id} <- actor,
+         true <- user_id == performer.id do
+      self_clock(scope, company_id, type, key, %{})
+    else
+      _ -> {:error, :unavailable}
+    end
+  end
+
+  def self_clock(%Scope{} = scope, company_id, type, key, coordinates)
+      when type in ["in", "out"] and is_binary(key) and is_map(coordinates) do
+    with true <- can_self_clock?(scope, company_id),
+         {:ok, performer} <- Authz.scope_actor(scope),
+         {:ok, employee_id} <- Access.self_employee(scope, company_id, performer),
          {:ok, %{self_clock_enabled: true}} <- rules(scope, company_id) do
       record_clock(scope, company_id, employee_id, %{
         event_key: key,
         event_type: type,
         source: "web",
         occurred_at: DateTime.utc_now(),
-        actor_user_id: actor.id
+        actor_user_id: performer.id,
+        latitude: Map.get(coordinates, "latitude", Map.get(coordinates, :latitude)),
+        longitude: Map.get(coordinates, "longitude", Map.get(coordinates, :longitude))
       })
     else
       _ -> {:error, :unavailable}
