@@ -24,3 +24,6 @@ target authorization and separate read, manage, and review capabilities.
 Migration `20260930120101` is fresh `:bilimbi_only` schema. It creates no
 employee rows and copies no source table names or migration sequence. Run
 `mix bilimbi.migrate` from a mounted Bilimbi root.
+`Bilimbi.People.EmployeeWorkspace.SchemaContract` stays unregistered;
+`test/schema_contract_test.exs` checks it against a freshly migrated database
+with `Bilimbi.Base.Database.SchemaVerifier.verify/2`.
