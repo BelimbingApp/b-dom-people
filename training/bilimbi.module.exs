@@ -7,6 +7,7 @@
   namespace: Bilimbi.People.Training,
   dependencies: [
     "base/authz",
+    "base/artifacts",
     "base/database",
     "base/datetime",
     "base/settings",
@@ -18,7 +19,10 @@
     "people/workforce"
   ],
   migrations: "priv/repo/migrations",
-  migration_dispositions: %{20_261_001_060_101 => :bilimbi_only},
+  migration_dispositions: %{
+    20_261_001_060_101 => :bilimbi_only,
+    20_261_001_060_201 => :bilimbi_only
+  },
   web: "priv/web_routes.exs",
   # Fresh tables are verified after migration, not during baseline adoption.
   schema_contract: nil,

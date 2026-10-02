@@ -174,8 +174,8 @@ defmodule Bilimbi.People.Training do
     end
   end
 
-  defp authorize(%Scope{} = scope, company_id, capability)
-       when is_integer(company_id) and company_id > 0 and company_id <= 9_223_372_036_854_775_807 do
+  def authorize(%Scope{} = scope, company_id, capability)
+      when is_integer(company_id) and company_id > 0 and company_id <= 9_223_372_036_854_775_807 do
     actor = Scope.actor(scope)
 
     with true <- actor.type == :user,
@@ -194,7 +194,7 @@ defmodule Bilimbi.People.Training do
     end
   end
 
-  defp authorize(%Scope{}, _company_id, _capability), do: {:error, :not_found}
+  def authorize(%Scope{}, _company_id, _capability), do: {:error, :not_found}
 
   defp scoped(schema, scope, company_id),
     do: from(r in Tenancy.scope_query(schema, scope), where: r.company_id == ^company_id)

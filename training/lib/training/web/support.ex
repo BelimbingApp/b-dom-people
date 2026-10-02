@@ -23,6 +23,20 @@ defmodule Bilimbi.People.Training.Web.Support do
     end
   end
 
+  def message(:session_unavailable), do: "Choose a session in this company."
+  def message(:employee_unavailable), do: "Choose a current employee in this company."
+
+  def message(:import_conflict),
+    do: "This record key already belongs to different attendance. Use a new key for a correction."
+
+  def message(:invalid_record), do: "Supply a session, employee, record key and reason."
+  def message(:invalid_pdf), do: "Choose a PDF evidence document."
+
+  def message(:retention_not_configured),
+    do: "Ask an operator to configure document retention in Operator Settings."
+
+  def message(:upload_required), do: "Choose an evidence PDF first."
+
   def message(:ambiguous_time),
     do: "That local time occurs twice. Choose a time outside the clock overlap."
 
@@ -31,6 +45,11 @@ defmodule Bilimbi.People.Training.Web.Support do
 
   def message(:invalid_time_zone_or_time), do: "Enter valid local times and an IANA time zone."
   def message(:invalid_time_range), do: "The end must be after the start."
+
+  def message(:attendance_capacity_exceeded),
+    do:
+      "This session has no remaining attendance places. Correct an existing record or ask a session operator to review capacity."
+
   def message(:capacity_exceeded), do: "Session capacity cannot exceed event capacity."
   def message(:course_unavailable), do: "Choose an active course in this company."
   def message(:event_unavailable), do: "Choose an event in this company."
