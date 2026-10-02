@@ -471,3 +471,10 @@ introduced by this slice.
 Live browser validation was skipped after the permitted fresh-page attempt
 failed with “No page is currently selected”; real-host LiveView and controller
 tests cover the new pages, task shells and document responses.
+
+A second attempt used a fresh named browser session and an isolated host on
+port 4017 with separate employee and HR accounts. Page selection and fresh
+snapshots worked, but filling the login form immediately failed with
+`STALE_REF` (latest snapshot generation 5, bridge reported current generation
+14). The employee/HR walkthrough remains unverified in the live browser;
+this bridge failure must be carried into the PR validation notes.
