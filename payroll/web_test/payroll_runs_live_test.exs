@@ -270,7 +270,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
       })
 
     assert {:error, :allowance_not_mapped} =
-             Payroll.intake_attendance_allowance(c.scope, 73, old.id, attrs)
+             Payroll.intake_attendance_allowance(c.scope, 73, old.id, %{attrs | direction: nil})
 
     assert {:error, :direction_conflict} =
              Payroll.intake_attendance_allowance(c.scope, 73, run.id, attrs)
