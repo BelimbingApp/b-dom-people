@@ -171,6 +171,7 @@ defmodule Bilimbi.People.Training.Governance do
          {:ok, ids} <- audience_ids(scope, company_id, audience) do
       query = scoped(Request, scope, company_id)
       query = if ids == :company, do: query, else: from(r in query, where: r.employee_id in ^ids)
+      query = submitted(query, scope, company_id, audience)
       {:ok, Repo.all(from(r in query, order_by: [desc: r.id])) |> Enum.map(&view/1)}
     end
   end
@@ -419,6 +420,8 @@ defmodule Bilimbi.People.Training.Governance do
           {:plan, managers} -> from(r in rows, where: r.manager_employee_id in ^managers)
         end
 
+      rows = if kind == :request, do: submitted(rows, scope, company_id, audience), else: rows
+
       {:ok,
        Repo.all(
          from(d in scoped(decisions, scope, company_id),
@@ -428,6 +431,18 @@ defmodule Bilimbi.People.Training.Governance do
        )
        |> Enum.group_by(&Map.fetch!(&1, key), &view/1)}
     end
+  end
+
+  defp submitted(query, _scope, _company_id, :self), do: query
+
+  defp submitted(query, scope, company_id, _audience) do
+    submits =
+      from(d in scoped(RequestDecision, scope, company_id),
+        where: d.action == "submit",
+        select: d.request_id
+      )
+
+    from(r in query, where: r.id in subquery(submits))
   end
 
   defp visible(scope, company_id, :request, audience),

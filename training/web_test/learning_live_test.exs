@@ -189,6 +189,35 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     assert {:ok, %{}} == Training.learning_histories(s[95], 73, :request, [r.id], :team)
   end
 
+  test "unsubmitted drafts stay private to the employee until submitted", %{scopes: s} do
+    {:ok, _} = currencies(s)
+    {:ok, draft} = Training.create_learning_request(s[91], 73, attrs())
+    {:ok, withdrawn} = Training.create_learning_request(s[91], 73, attrs())
+    {:ok, _} = Training.decide_learning_request(s[91], 73, withdrawn.id, "cancel", "Withdrawn")
+    ids = [draft.id, withdrawn.id]
+
+    assert {:ok, [_, _]} = Training.learning_requests(s[91], 73, :self)
+    assert {:ok, %{}} != Training.learning_histories(s[91], 73, :request, ids, :self)
+
+    for {actor, audience} <- [{92, :team}, {93, :hr}] do
+      assert {:ok, []} = Training.learning_requests(s[actor], 73, audience)
+      assert {:ok, %{}} == Training.learning_histories(s[actor], 73, :request, ids, audience)
+    end
+
+    {:ok, _} = Training.decide_learning_request(s[91], 73, draft.id, "submit", "Learning need")
+
+    for {actor, audience} <- [{92, :team}, {93, :hr}] do
+      assert {:ok, [%{id: id, status: "pending_hod"}]} =
+               Training.learning_requests(s[actor], 73, audience)
+
+      assert id == draft.id
+
+      {:ok, histories} = Training.learning_histories(s[actor], 73, :request, ids, audience)
+      assert Map.keys(histories) == [draft.id]
+      assert Enum.map(histories[draft.id], & &1.action) == ["create", "submit"]
+    end
+  end
+
   test "budget viewer cannot forge allocation or currency writes", %{conn: conn, scopes: s} do
     grant(95, ~w(budgets.view))
 

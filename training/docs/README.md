@@ -35,6 +35,8 @@ Both authored and subject self-approval are refused even with a decision grant.
 The public read `learning_requests/3` accepts `:self`, `:team` or `:hr` and checks
 the corresponding capability. `learning_histories/5` returns decision history
 for a page of record IDs under the same audience rule and omits IDs outside it.
+A request the employee never submitted, still in draft or cancelled from draft,
+stays private to them: the `:team` and `:hr` audiences omit it from both reads.
 
 `create_learning_plan/4` takes period, objectives, reason and a nonempty list of
 items. Each item records its need, expected result, target cohort, responsible
