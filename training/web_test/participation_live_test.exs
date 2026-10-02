@@ -147,6 +147,7 @@ defmodule Bilimbi.People.Training.Web.ParticipationLiveTest do
     |> render_submit()
 
     assert has_element?(view, "#participation-history", "confirmed")
+    refute has_element?(view, "#participation-history-empty")
 
     {:ok, :stored} =
       Authz.put_principal_capability(
@@ -206,6 +207,7 @@ defmodule Bilimbi.People.Training.Web.ParticipationLiveTest do
     assert render_upload(upload, "evidence.pdf") =~ "Add evidence"
     view |> element("#evidence-form") |> render_submit()
     assert has_element?(view, "#training-evidence a", "Download evidence PDF")
+    refute has_element?(view, "#training-evidence-empty")
     assert {:ok, [document]} = Participation.evidence(c.scope, 73, fact.id)
 
     assert {:ok, correction} =

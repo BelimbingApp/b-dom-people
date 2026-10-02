@@ -220,7 +220,7 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
           <:col :let={fact} label="Recorded by">{fact.actor_user_id}<span :if={fact.impersonator_id}> via {fact.impersonator_id}</span></:col>
           <:col :let={fact} label="Recorded"><.datetime id={"fact-time-#{fact.id}"} value={fact.inserted_at} /></:col>
           <:col :let={fact} label="Evidence"><button phx-click="select_fact" phx-value-id={fact.id}>View evidence</button></:col>
-          <:empty title="No attendance yet" reason="Confirmed attendance and corrections appear here as history." />
+          <:empty :if={@history_page.entries == []} title="No attendance yet" reason="Confirmed attendance and corrections appear here as history." />
         </.table>
         <.pagination :if={is_nil(@error)} id="records-pagination" page={@history_page} filters_form={@filters} filters_event="select_company" />
         <.empty_state :if={@can_manage? and @session_id && @employees == []} title="No current employees" reason="Ask an operator to check the workforce before confirming attendance." />
@@ -235,7 +235,7 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
           <h2>Evidence</h2>
           <.table id="training-evidence" rows={@documents}>
             <:col :let={document} label="Document"><a href={"/people/training/evidence/#{@company.id}/#{document.artifact_id}"}>Download evidence PDF</a></:col>
-            <:empty title="No evidence yet" reason="An authorized operator can attach a PDF to this attendance fact." />
+            <:empty :if={@documents == []} title="No evidence yet" reason="An authorized operator can attach a PDF to this attendance fact." />
           </.table>
           <p :if={not @can_evidence?}>Read-only evidence. Ask an operator with evidence management access to add a document.</p>
           <form :if={@can_evidence?} id="evidence-form" phx-change="validate_upload" phx-submit="upload">
@@ -255,7 +255,7 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
             <:col :let={hold} label="Reason">{hold.last_error}</:col>
             <:col :let={hold} label="Attempts">{hold.attempts}</:col>
             <:col :let={hold} label="Action"><button phx-click="retry_purge" phx-value-id={hold.id}>Retry purge</button></:col>
-            <:empty title="No retention holds" reason="Expired evidence is maintained by the document service." />
+            <:empty :if={@holds == []} title="No retention holds" reason="Expired evidence is maintained by the document service." />
           </.table>
         </section>
       </.page>
