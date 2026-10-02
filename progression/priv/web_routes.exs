@@ -9,6 +9,6 @@
     path: "/people/progression/my",
     live: Bilimbi.People.Progression.Web.MyLive,
     session: :auth,
-    capability: "people.progression.self.view"
+    capability: {:any_of, ~w(people.progression.self.view people.performance.self.view)}
   }
 ]

@@ -60,11 +60,12 @@ Capabilities:
 - `people.progression.self.view`: the actor's linked employee explanation.
 
 People > Development > Progression requires `people.progression.policy.view`.
-People > My work > My standing requires `people.progression.self.view`. Its
-page links to `/people/performance/my` for actors who also hold
-`people.performance.self.view`.
-Routes enforce the same capabilities; publishing and evidence reads retain
-separate permissions. Training navigation is unchanged. See the repository's
+People > My work > My standing accepts `people.progression.self.view` or
+`people.performance.self.view`, as does its `/people/progression/my` route.
+The page loads progression explanations only with the progression grant and
+links to `/people/performance/my` only with the performance grant. That route
+still requires `people.performance.self.view`; publishing and evidence reads
+retain separate permissions. Training navigation is unchanged. See the repository's
 [menu rollout verification](../../settings/docs/menu-rollout.md).
 
 The fresh table is `people_progression_policy_versions`, owned solely by this

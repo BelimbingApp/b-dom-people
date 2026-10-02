@@ -135,8 +135,11 @@ Base Artifacts documents.
 Performance is available from People > Development > Performance reviews at
 `/people/performance` for planning and authored reviews. The login actor's own
 linked employee view at `/people/performance/my` has no separate menu leaf; the
-People > My work > My standing page links to it. Published content and evidence remain immutable;
-corrections append versions with reasons. Performance leaves use their
+People > My work > My standing page links to it for actors with the performance
+self-view grant. My standing accepts either the performance or progression
+self-view grant and shows each section only with its own grant.
+Published content and evidence remain immutable;
+corrections append versions with reasons. Performance routes retain their
 respective planning and self-view capabilities. See
 `performance/docs/README.md` for capabilities, release guards and verification.
 
@@ -152,9 +155,9 @@ Progression is available from People > Development > Progression and
 People > My work > My standing, using authorized routes at `/people/progression`
 for policy operators and `/people/progression/my` for the linked employee.
 Policy criteria are governed company data; missing evidence remains explicit.
-Progression leaves use their respective policy-view and self-view
-capabilities. See
-`progression/docs/README.md`.
+The policy leaf requires the policy-view capability; My standing accepts
+either self-view capability and loads progression only with its progression
+grant. See `progression/docs/README.md`.
 
 ## License
 

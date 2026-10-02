@@ -24,7 +24,7 @@ defmodule Bilimbi.People.Progression.Contributions do
           label: "My standing",
           parent: "people.my_work",
           route: "/people/progression/my",
-          capability: "people.progression.self.view",
+          capability: {:any_of, ~w(people.progression.self.view people.performance.self.view)},
           icon: "user-circle",
           order: 70
         }

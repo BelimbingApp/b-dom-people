@@ -4,7 +4,7 @@ The implemented slices meet the menu readiness rows for Payroll foundation and
 calculation/output (5C/6A), Performance (7A) and Progression (7B). Navigation
 uses the existing shared People containers; Settings owns the new Payroll
 container. No business defaults, grants or sample records are installed by
-this rollout. The host pin is `cd98044ea278305380e0f7969cf9f347c42ec6fe`.
+this rollout. The host pin is `1aab4013b99d89259e1ca8259632bedc2582e487`.
 
 | Menu location | Route | Required capability |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ this rollout. The host pin is `cd98044ea278305380e0f7969cf9f347c42ec6fe`.
 | Settings > Payroll setup | `/people/payroll/setup` | `people.payroll.view` |
 | Development > Performance reviews | `/people/performance` | `people.performance.view` |
 | Development > Progression | `/people/progression` | `people.progression.policy.view` |
-| My work > My standing | `/people/progression/my` | `people.progression.self.view` |
+| My work > My standing | `/people/progression/my` | `people.progression.self.view` OR `people.performance.self.view` |
 
 Pay-item mappings belongs to the existing setup workspace. Its leaf opens the
 `/people/payroll/setup/mappings` variant, which focuses and scrolls to the
@@ -67,13 +67,22 @@ the employee's own performance empty state. Pay-item mappings focuses and
 scrolls to its section at desktop and 390 × 844 with no mobile overflow, with
 only that leaf marked current; the general setup page marks only Payroll setup.
 
-The My standing leaf and route require `people.progression.self.view`; its
-My performance section additionally requires `people.performance.self.view`.
-An actor holding only `people.performance.self.view` does not see My standing
-and reaches own performance by the direct link `/people/performance/my` until
-Bilimbi supports any-of capability guards for menu leaves and routes. A People
-follow-up will remove this coupling once that host support exists. LiveView
-tests cover each grant combination: both grants show both sections;
-progression only shows My standing without the performance section and denies
-the performance route; performance only denies My standing, hides its leaf and
-opens the performance route; neither denies both routes and hides both links.
+The My standing leaf and route accept either `people.progression.self.view` or
+`people.performance.self.view`, using Bilimbi's any-of capability guard. The
+page loads and shows progression explanations only with the progression grant,
+and shows the My performance link only with the performance grant. The
+performance route and the progression explanation API retain their own grants.
+LiveView tests cover all four combinations against a published policy: both
+grants show both sections; progression only shows its explanation and denies
+the performance route; performance only shows My standing and its performance
+link without loading a progression explanation; neither denies both routes and
+hides the leaf.
+
+The any-of follow-up was rechecked in the default `chrome-devtools-axi` browser
+session against the pinned host, with four real login actors linked to employees
+in a task-owned company. Performance only sees My standing and follows Open my
+performance to its own records, with My standing highlighted and no progression
+section or progression-unavailable message. Progression only sees the no-policy
+state and is redirected from the performance route. Both sees the progression
+empty state and performance link; neither sees no leaf and is redirected from
+both routes. A 390 × 844 mobile check showed no horizontal overflow.

@@ -1,5 +1,5 @@
 defmodule Bilimbi.People.Progression.Web.MyLive do
-  @moduledoc "The linked employee's progression explanation."
+  @moduledoc "The linked employee's standing, with separately authorized sections."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Progression
   alias Bilimbi.People.Progression.Web.Support
@@ -10,15 +10,22 @@ defmodule Bilimbi.People.Progression.Web.MyLive do
 
     socket =
       assign(socket,
-        page_title: "My progression",
+        page_title: "My standing",
+        progression?: Progression.allowed?(scope, company, "people.progression.self.view"),
+        result: nil,
+        unavailable: nil,
         active_nav: "people.my_work.standing",
         performance?:
           Bilimbi.People.Performance.allowed?(scope, company, "people.performance.self.view")
       )
 
-    case Progression.explain(scope, company) do
-      {:ok, result} -> {:ok, assign(socket, result: result, unavailable: nil)}
-      {:error, reason} -> {:ok, assign(socket, result: nil, unavailable: Support.message(reason))}
+    if socket.assigns.progression? do
+      case Progression.explain(scope, company) do
+        {:ok, result} -> {:ok, assign(socket, result: result)}
+        {:error, reason} -> {:ok, assign(socket, unavailable: Support.message(reason))}
+      end
+    else
+      {:ok, socket}
     end
   end
 
@@ -27,14 +34,14 @@ defmodule Bilimbi.People.Progression.Web.MyLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page variant={:detail}>
-        <.header>My progression</.header>
+        <.header>My standing</.header>
         <.card :if={@performance?} id="my-standing-performance" inner_class="p-5 sm:p-6">
           <.section_heading title="My performance"/>
           <p class="mt-2 text-sm text-ink-muted">Communicated targets, released reviews and your responses.</p>
           <.link navigate="/people/performance/my" class="mt-3 inline-block underline">Open my performance</.link>
         </.card>
-        <.empty_state :if={@unavailable} id="my-progression-unavailable" title="Your progression explanation is unavailable" reason={@unavailable}/>
-        <div :if={@result} id="my-progression" class="space-y-4">
+        <.empty_state :if={@progression? && @unavailable} id="my-progression-unavailable" title="Your progression explanation is unavailable" reason={@unavailable}/>
+        <div :if={@progression? && @result} id="my-progression" class="space-y-4">
           <.card :for={e <- @result.explanations} id={"my-progression-#{e.policy.id}"} inner_class="p-5 sm:p-6">
             <.section_heading title={e.policy.name}/>
             <.list>
