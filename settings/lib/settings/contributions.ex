@@ -48,6 +48,7 @@ defmodule Bilimbi.People.Settings.Contributions do
           capability: nil,
           order: 40
         },
+        %{id: "people.reports", label: "Reports", parent: "people", route: nil, capability: nil, order: 80},
         %{
           id: "people.settings",
           label: "Settings",

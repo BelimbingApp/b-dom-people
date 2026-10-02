@@ -26,7 +26,7 @@ composition-lock commands.
   names, migration sequences, migration inventory, or dummy rows. Read
   Bilimbi's `docs/architecture/database.md` before persistent work.
 - Show a menu leaf only after its route, authorization, scope, and empty state
-  are complete. Keep unfinished Training and Progression navigation hidden;
+  are complete. Keep unfinished Progression navigation hidden;
   use the task-based menu outline in the port plan when slices are ready.
   Hang leaves on the outline containers in
   `settings/lib/settings/contributions.ex` rather than declaring a container

@@ -32,7 +32,8 @@ corrections and private evidence through Base Artifacts. Training also owns
 governed learning requests, versioned team plans and effective-dated company
 budgets, versioned evaluation criteria, employee evaluations under My learning,
 HOD effectiveness answers and frozen, suppressed HR period summaries; these
-workflows use direct authorized routes while their menu leaves stay hidden.
+workflows include My/Team learning passports, private generated PDFs and bounded
+attendance insights, with the completed task-based Training menu.
 Progression owns published policy versions and an employee eligibility
 explanation. No sample rows are installed.
 
@@ -75,8 +76,8 @@ and absent compositions.
 This is fresh Bilimbi schema work. Future module migrations must have globally
 unique versions and declare `:bilimbi_only`; no source People tables or data are
 adopted. Add a visible menu leaf only with an implemented route, capability,
-scoped behavior, and meaningful empty state. The later Training slices remain
-work in progress.
+scoped behavior, and meaningful empty state. Training navigation follows the completed task-based menu in
+`training/docs/README.md`.
 
 After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
 operator can open `/people/companies/:company_id/references` for an accessible
@@ -137,8 +138,9 @@ until the entire area's rollout acceptance is complete. See
 Training is available by authorized direct routes at `/people/training/courses`,
 `/people/training/sessions`, and `/people/training/records`. Operators supply
 courses, sessions, capacities and time zones, then confirm attendance or append
-corrections and attach evidence PDFs. Training menu leaves stay hidden until
-the whole area's acceptance is complete. Evidence storage and retention are
+corrections and attach evidence PDFs. Training contributes My learning, Courses, Sessions & calendar, Learning requests
+& reviews, Training records, Effectiveness, Learning insights, and Learning policy
+and budgets, each filtered by its route capability. Evidence storage and retention are
 configured in Base Operator Settings. See `training/docs/README.md`.
 
 Progression is available by direct authorized routes at `/people/progression`

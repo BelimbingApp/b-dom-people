@@ -11,8 +11,9 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
      socket
      |> assign(
        page_title: "Training records",
-       active_nav: nil,
-       companies: Support.companies(socket.assigns.current_scope, "people.training.records.view"),
+       active_nav: "people.development.training_records",
+       companies:
+         Support.companies(socket.assigns.current_scope, "people.training.records.workspace.view"),
        form: to_form(%{}, as: :record),
        selected_fact: nil
      )
@@ -125,23 +126,30 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
     scope = socket.assigns.current_scope.scope
     company = socket.assigns.company
 
+    can_records =
+      company != nil and Training.allowed?(scope, company.id, "people.training.records.view")
+
     can_manage =
-      company != nil and Training.allowed?(scope, company.id, "people.training.records.manage")
+      can_records and Training.allowed?(scope, company.id, "people.training.records.manage")
 
     can_evidence =
-      company != nil and Training.allowed?(scope, company.id, "people.training.evidence.manage")
+      can_records and Training.allowed?(scope, company.id, "people.training.evidence.manage")
 
     can_retain =
       company != nil and Training.allowed?(scope, company.id, "people.training.retention.manage")
 
     {sessions, error} =
-      if company do
+      if can_records do
         case Participation.sessions(scope, company.id) do
           {:ok, rows} -> {rows, nil}
           {:error, reason} -> {[], Support.message(reason)}
         end
       else
-        {[], "No company is available. Ask an operator to check your access."}
+        {[],
+         if(company,
+           do: nil,
+           else: "No company is available. Ask an operator to check your access."
+         )}
       end
 
     selected =
@@ -172,6 +180,9 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
       holds: holds,
       employees: employees,
       error: error,
+      can_records?: can_records,
+      can_my?: Bilimbi.Base.Authz.can(scope, "people.training.passport.my.view").allowed,
+      can_team?: Bilimbi.Base.Authz.can(scope, "people.training.passport.team.view").allowed,
       can_manage?: can_manage,
       can_evidence?: can_evidence,
       can_retain?: can_retain,
@@ -204,6 +215,13 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
     <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page class="space-y-4">
         <.header>Training records</.header>
+        <nav aria-label="Training records" class="flex flex-wrap gap-4">
+          <.link :if={@can_my?} navigate="/people/training/records/my">My passport</.link>
+          <.link :if={@can_team?} navigate="/people/training/records/team">Team passports</.link>
+          <.link navigate="/people/training/records" aria-current="page">Attendance & evidence</.link>
+        </nav>
+        <.empty_state :if={not @can_records?} title="Choose a training records task" reason="Use your authorized My or Team passport above. Company-wide attendance and evidence need separate record-view access." />
+        <section :if={@can_records?} class="space-y-4">
         <.filter_toolbar id="records-filters" form={@filters} event="select_company">
           <:control type={:select} id="records-company" field={@filters[:company_id]} label="Company" options={Enum.map(@companies, &{&1.name, &1.id})} />
           <:control type={:select} id="records-session" field={@filters[:session_id]} label="Session" options={Enum.map(@sessions, &{&1.name, &1.id})} />
@@ -247,15 +265,16 @@ defmodule Bilimbi.People.Training.Web.RecordsLive do
             <.button type="submit">Add evidence</.button>
           </form>
         </section>
+        </section>
         <section :if={@can_retain?} class="space-y-3">
           <h2>Document retention</h2>
-          <.button phx-click="purge">Purge expired evidence</.button>
+          <.button phx-click="purge">Purge expired training documents</.button>
           <.table id="retention-holds" rows={@holds}>
             <:col :let={hold} label="Document">{hold.id}</:col>
             <:col :let={hold} label="Reason">{hold.last_error}</:col>
             <:col :let={hold} label="Attempts">{hold.attempts}</:col>
             <:col :let={hold} label="Action"><button phx-click="retry_purge" phx-value-id={hold.id}>Retry purge</button></:col>
-            <:empty :if={@holds == []} title="No retention holds" reason="Expired evidence is maintained by the document service." />
+            <:empty :if={@holds == []} title="No retention holds" reason="Expired training documents are maintained by the document service." />
           </.table>
         </section>
       </.page>

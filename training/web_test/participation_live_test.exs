@@ -6,7 +6,7 @@ defmodule Bilimbi.People.Training.Web.ParticipationLiveTest do
   alias Bilimbi.People.Training
   alias Bilimbi.People.Training.{Participation, TestFixtures}
 
-  @capabilities ~w(people.training.courses.view people.training.courses.manage people.training.sessions.manage people.training.records.view people.training.records.manage people.training.evidence.manage people.training.retention.manage admin.employee.create)
+  @capabilities ~w(people.training.records.workspace.view people.training.courses.view people.training.courses.manage people.training.sessions.manage people.training.records.view people.training.records.manage people.training.evidence.manage people.training.retention.manage admin.employee.create)
   setup %{conn: conn} do
     User.TestFixtures.create_user_tables!()
     TestFixtures.create_tables!()

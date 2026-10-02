@@ -16,6 +16,11 @@ defmodule Bilimbi.People.Training do
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
+  defdelegate passport(scope, company, audience, employee, params \\ %{}), to: Bilimbi.People.Training.Passport, as: :read
+  defdelegate generate_passport(scope, company, audience, employee), to: Bilimbi.People.Training.Passport, as: :generate
+  defdelegate learning_insights(scope, company, params), to: Bilimbi.People.Training.Insights, as: :summary
+  defdelegate learning_insight_drill(scope, company, course, params), to: Bilimbi.People.Training.Insights, as: :drill
+
   alias Bilimbi.People.Training.Evaluation
   defdelegate evaluation_settings(scope, company), to: Evaluation, as: :settings
 
