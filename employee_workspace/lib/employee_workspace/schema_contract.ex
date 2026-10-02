@@ -76,7 +76,10 @@ defmodule Bilimbi.People.EmployeeWorkspace.SchemaContract do
       if name == "people_employee_change_requests" do
         %{
           "people_employee_change_requests_status_check" => %{
-            expression: "status IN ('pending', 'approved', 'rejected')",
+            # Match pg_get_constraintdef after the fresh migration runs.
+            expression:
+              "(status)::text = ANY ((ARRAY['pending'::character varying, " <>
+                "'approved'::character varying, 'rejected'::character varying])::text[])",
             validated: true
           }
         }
