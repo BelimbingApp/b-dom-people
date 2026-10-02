@@ -83,9 +83,10 @@ scoped behavior, and meaningful empty state. Training navigation follows the com
 After mounting, run `mix bilimbi.migrate` from Bilimbi's root. An authorized
 operator can open `/people/companies/:company_id/references` for an accessible
 company. This route creates reference entries, aliases, and calendar exceptions
-without seeding company-specific values. People > Settings > People references opens `/people/references`, where the
-operator chooses an authorized company. The explicit company route remains
-available; selections and write events recheck current company access.
+without seeding company-specific values. People > Settings > People references
+opens `/people/references`, where the operator chooses an authorized company.
+The explicit company route remains available; selections and write events
+recheck current company access.
 
 The People > Team > Employees menu opens `/people/employees` for the signed-in
 actor's validated company. Employee detail shows Core Employee facts read-only

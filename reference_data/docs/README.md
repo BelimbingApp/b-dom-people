@@ -12,9 +12,9 @@ New installations have no reference values or calendar exceptions.
 The operator route `/people/companies/:company_id/references` requires
 `people.references.manage` and Core Company's target reach: the actor's own
 company, or a sibling company with tenant-wide company authority. It shows an
-empty state for a company without records. People > Settings > People references opens `/people/references` with an
-authorized company chooser and a meaningful empty state when no company is
-available. The explicit company route remains available. Every selection and
+empty state for a company without records. People > Settings > People
+references opens `/people/references` with an authorized company chooser and a
+meaningful empty state when no company is available. The explicit company route remains available. Every selection and
 write event rechecks current capability and company reach.
 
 The migration version `20260930100101` is `:bilimbi_only` and must remain
