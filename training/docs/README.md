@@ -244,7 +244,6 @@ schema contract above includes these six relations. Verification used newly
 created disposable development and test databases; target deployment inventory
 is still the read-only operator prerequisite described above.
 
-
 ## Evaluation and effectiveness (slice 6E)
 
 Employees answer their own evaluations in the **My evaluations** section of
@@ -334,8 +333,8 @@ and overdue tasks. Answered and currently absent obligations are skipped.
 The recipient is the current employee for an evaluation or current HOD for an
 effectiveness review. Missing subjects or supervisors increment the run's
 explicit `unknown` outcome rather than inventing a recipient. My evaluations
-and the HOD Review list show available reminders to the current actor. This is a durable worklist,
-not an email-delivery log; this slice sends no mail and installs no system
+and the HOD Review list show available reminders to the current actor. This is
+a durable worklist, not an email-delivery log; this slice sends no mail and installs no system
 principal or unattended worker. A changed reporting line changes who can see
 and answer the obligation, and never grants access through the historical
 reminder recipient.

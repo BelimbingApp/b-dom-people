@@ -31,8 +31,8 @@ calendar with explicit capacity and IANA time zones, append-only attendance
 corrections and private evidence through Base Artifacts. Training also owns
 governed learning requests, versioned team plans and effective-dated company
 budgets, versioned evaluation criteria, employee evaluations under My learning,
-HOD effectiveness answers and frozen, suppressed HR period summaries; these workflows use direct authorized routes while their menu leaves
-stay hidden.
+HOD effectiveness answers and frozen, suppressed HR period summaries; these
+workflows use direct authorized routes while their menu leaves stay hidden.
 Progression owns published policy versions and an employee eligibility
 explanation. No sample rows are installed.
 

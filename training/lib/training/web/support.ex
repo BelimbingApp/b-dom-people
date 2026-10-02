@@ -24,8 +24,7 @@ defmodule Bilimbi.People.Training.Web.Support do
   end
 
   def message(:policy_not_configured),
-    do:
-      "Save this company's evaluation settings on Effectiveness before publication."
+    do: "Save this company's evaluation settings on Effectiveness before publication."
 
   def message(:report_not_configured),
     do: "Save this company's evaluation settings on Effectiveness first."
