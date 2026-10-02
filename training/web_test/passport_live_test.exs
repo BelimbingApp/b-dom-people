@@ -106,6 +106,7 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     assert render_hook(other, "generate", %{}) =~ "cannot generate"
     {:ok, team, _} = live(login(c.conn, 93), "/people/training/records/team")
     assert has_element?(team, "#passport-records", "Course A")
+    refute has_element?(team, "#passport-records-empty")
     {:ok, forged, html} = live(login(c.conn, 93), "/people/training/records/team?employee_id=#{c.other.id}")
     assert html =~ "not available"
     assert render_hook(forged, "generate", %{}) =~ "cannot generate"
@@ -125,10 +126,12 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     assert {:error, :unauthorized} = Participation.sessions(c.scopes[93], 73)
   end
 
-  test "insights suppress small cohorts; drills require record-view authority and enforce the date and row bounds", c do
+  test "insights suppress small cohorts and counts; drills require record-view authority and enforce the date and row bounds", c do
     params = %{"from" => "2026-10-01", "until" => "2026-10-02", "perPage" => "99999"}
     {:ok, _} = Settings.put("people.training.evaluation.minimum_cohort", 2, SettingScope.company(73, 41))
-    assert {:ok, %{entries: [%{suppressed: true, employees: nil, confirmed: nil}], page_size: 25}} = Insights.summary(c.scopes[94], 73, params)
+    freeze_period!(~D[2026-10-01], ~D[2026-12-31])
+    period = Map.put(params, "period", "2026-10-01")
+    assert {:ok, %{entries: [%{suppressed: true, employees: nil, confirmed: nil}], page_size: 25}} = Insights.summary(c.scopes[94], 73, period)
     assert {:error, :unauthorized} = Insights.drill(c.scopes[94], 73, c.course.id, params)
     assert {:ok, %{entries: [row]}} = Insights.drill(c.scopes[91], 73, c.course.id, params)
     for id <- [nil, "invalid", "-1", "99999999999999999999999999999"] do
@@ -136,20 +139,50 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
     end
     assert row.fact_id == c.fact.id
     {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.other.id, status: "confirmed", reason: "Confirmed", import_key: "fact-b"})
-    assert {:ok, %{entries: [%{suppressed: false, employees: 2, confirmed: 2, absent: 0}]}} = Insights.summary(c.scopes[91], 73, params)
-    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.learner.id, status: "absent", reason: "Correction", import_key: "fact-c"})
-    assert {:ok, %{entries: [%{confirmed: 1, absent: 1}]}} = Insights.summary(c.scopes[91], 73, params)
+    assert {:ok, %{entries: [%{suppressed: false, employees: 2, confirmed: nil, absent: nil}]}} = Insights.summary(c.scopes[91], 73, params)
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.manager.id, status: "confirmed", reason: "Confirmed", import_key: "fact-c"})
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.learner.id, status: "absent", reason: "Correction", import_key: "fact-d"})
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.manager.id, status: "absent", reason: "Correction", import_key: "fact-e"})
+    assert {:ok, %{entries: [%{employees: 3, confirmed: nil, absent: nil}]}} = Insights.summary(c.scopes[91], 73, params)
+    {:ok, later} = Training.create_session(c.scopes[91], 73, %{event_id: c.session.event_id, name: "Session B", capacity: 500, time_zone: "Etc/UTC", starts_local: "2026-10-02T09:00", ends_local: "2026-10-02T10:00"})
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: later.id, employee_id: c.learner.id, status: "confirmed", reason: "Confirmed", import_key: "fact-f"})
+    assert {:ok, %{entries: [%{suppressed: false, employees: 3, confirmed: 2, absent: 2}]}} = Insights.summary(c.scopes[91], 73, params)
     assert {:error, :unauthorized} = Insights.summary(c.scopes[91], 74, params)
     assert {:error, :invalid_insight_range} = Insights.summary(c.scopes[91], 73, %{params | "until" => "2028-10-01"})
     assert {:error, :invalid_insight_range} = Insights.window(%{"from" => "invalid", "until" => "2026-10-01"})
     assert {:error, :invalid_insight_range} = Insights.window(%{"from" => "2026-10-02", "until" => "2026-10-01"})
-    {:ok, view, html} = live(login(c.conn, 94), "/people/training/insights?from=2026-10-01&until=2026-10-02")
+    {:ok, view, html} = live(login(c.conn, 94), "/people/training/insights")
     assert html =~ "Course A"
+    assert has_element?(view, "#insights-period")
+    refute has_element?(view, "#learning-insights-empty")
+    refute has_element?(view, "#insights-from")
     refute has_element?(view, "#learning-insights a", "View attendance")
     {:ok, _, html} = live(login(c.conn, 94), "/people/training/insights?from=2026-10-01&until=2026-10-02&course_id=#{c.course.id}")
     assert html =~ "cannot do that"
   end
 
+  test "aggregate-only insights read whole frozen periods, so overlapping windows cannot be differenced", c do
+    {:ok, _} = Settings.put("people.training.evaluation.minimum_cohort", 2, SettingScope.company(73, 41))
+    assert {:error, :report_period_unavailable} = Insights.summary(c.scopes[94], 73, %{"from" => "2026-10-01", "until" => "2026-10-01"})
+    freeze_period!(~D[2026-10-01], ~D[2026-12-31])
+    {:ok, other} = Training.create_session(c.scopes[91], 73, %{event_id: c.session.event_id, name: "Session B", capacity: 500, time_zone: "Etc/UTC", starts_local: "2026-10-02T09:00", ends_local: "2026-10-02T10:00"})
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: c.session.id, employee_id: c.manager.id, status: "confirmed", reason: "Confirmed", import_key: "fact-b"})
+    {:ok, _} = Participation.record(c.scopes[91], 73, %{session_id: other.id, employee_id: c.other.id, status: "absent", reason: "Absent", import_key: "fact-c"})
+    assert {:ok, %{entries: [%{employees: 3, confirmed: nil, absent: nil}]}} = Insights.summary(c.scopes[94], 73, %{"period" => "2026-10-01"})
+    for window <- [%{"from" => "2026-10-01", "until" => "2026-10-01"}, %{"from" => "2026-10-01", "until" => "2026-10-02"}] do
+      assert {:ok, %{entries: [%{employees: 3}]}} = Insights.summary(c.scopes[94], 73, Map.put(window, "period", "2026-10-01"))
+      assert {:error, :report_period_unavailable} = Insights.summary(c.scopes[94], 73, window)
+    end
+    for start <- ["2026-10-02", "2026-11-01", "invalid"] do
+      assert {:error, :report_period_unavailable} = Insights.summary(c.scopes[94], 73, %{"period" => start})
+    end
+    assert {:ok, %{entries: [%{employees: 2}]}} = Insights.summary(c.scopes[91], 73, %{"from" => "2026-10-01", "until" => "2026-10-01"})
+  end
+
+  defp freeze_period!(first, last) do
+    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+    Repo.insert_all(Training.EffectivenessSummary, [%{tenant_id: 41, company_id: 73, actor_user_id: 91, period_start: first, period_end: last, minimum_cohort: 2, status: "suppressed", groups: %{"items" => []}, inserted_at: now, updated_at: now}])
+  end
 
   test "passport expiry and retention use the shared Training maintenance controls", c do
     storage()

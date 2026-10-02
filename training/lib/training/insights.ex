@@ -2,19 +2,29 @@ defmodule Bilimbi.People.Training.Insights do
   @moduledoc """
   Bounded operational attendance KPIs and authorized course drills.
   Arbitrary date windows expose no evaluation scores: effectiveness remains the
-  frozen, suppressed Evaluation summary. Attendance drills require the existing
-  company record-view capability; aggregate-only readers see suppressed cohorts.
+  frozen, suppressed Evaluation summary. Attendance drills and arbitrary windows
+  require the existing company record-view capability; aggregate-only readers
+  choose one frozen Effectiveness reporting period, so overlapping windows cannot
+  be differenced, and see suppressed cohorts and counts.
   """
   import Ecto.Query
   alias Bilimbi.Base.{Repo, Settings, Tenancy}
   alias Bilimbi.Base.Settings.Scope, as: SettingScope
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Training
-  alias Bilimbi.People.Training.{ParticipationFact, Session, Event, Course, Passport}
+
+  alias Bilimbi.People.Training.{
+    ParticipationFact,
+    Session,
+    Event,
+    Course,
+    Passport,
+    EffectivenessSummary
+  }
 
   def summary(%Scope{} = scope, company, params) do
     with {:ok, _} <- Training.authorize(scope, company, "people.training.insights.view"),
-         {:ok, first, last} <- window(params),
+         {:ok, first, last} <- range(scope, company, params),
          minimum when is_integer(minimum) and minimum >= 2 <-
            Settings.get(
              "people.training.evaluation.minimum_cohort",
@@ -49,16 +59,16 @@ defmodule Bilimbi.People.Training.Insights do
 
       entries =
         Enum.map(entries, fn r ->
-          if r.employees < minimum,
-            do: %{
-              course_id: r.course_id,
-              course: r.course,
-              employees: nil,
-              confirmed: nil,
-              absent: nil,
-              suppressed: true
-            },
-            else: Map.put(r, :suppressed, false)
+          cond do
+            r.employees < minimum ->
+              %{r | employees: nil, confirmed: nil, absent: nil} |> Map.put(:suppressed, true)
+
+            r.confirmed < minimum or r.absent < minimum ->
+              %{r | confirmed: nil, absent: nil} |> Map.put(:suppressed, false)
+
+            true ->
+              Map.put(r, :suppressed, false)
+          end
         end)
 
       {:ok,
@@ -110,19 +120,50 @@ defmodule Bilimbi.People.Training.Insights do
     end
   end
 
+  def periods(%Scope{} = scope, company) do
+    with {:ok, _} <- Training.authorize(scope, company, "people.training.insights.view") do
+      {:ok,
+       Repo.all(
+         from(s in scoped(EffectivenessSummary, scope, company),
+           order_by: [desc: s.period_start],
+           select: %{period_start: s.period_start, period_end: s.period_end}
+         )
+       )}
+    end
+  end
+
   def window(%{"from" => first, "until" => last}) when is_binary(first) and is_binary(last) do
     with {:ok, first} <- Date.from_iso8601(first),
          {:ok, last} <- Date.from_iso8601(last),
          days = Date.diff(last, first),
          true <- days >= 0 and days < 366 do
-      {:ok, DateTime.new!(first, ~T[00:00:00], "Etc/UTC"),
-       DateTime.new!(Date.add(last, 1), ~T[00:00:00], "Etc/UTC")}
+      bounds(first, last)
     else
       _ -> {:error, :invalid_insight_range}
     end
   end
 
   def window(_), do: {:error, :invalid_insight_range}
+
+  defp range(scope, company, params) do
+    if Training.allowed?(scope, company, "people.training.records.view") do
+      window(params)
+    else
+      with {:ok, periods} <- periods(scope, company),
+           %{period_start: first, period_end: last} <-
+             Enum.find(periods, &(Date.to_iso8601(&1.period_start) == params["period"])) do
+        bounds(first, last)
+      else
+        nil -> {:error, :report_period_unavailable}
+        error -> error
+      end
+    end
+  end
+
+  defp bounds(first, last),
+    do:
+      {:ok, DateTime.new!(first, ~T[00:00:00], "Etc/UTC"),
+       DateTime.new!(Date.add(last, 1), ~T[00:00:00], "Etc/UTC")}
 
   defp facts(scope, company, first, last) do
     latest =

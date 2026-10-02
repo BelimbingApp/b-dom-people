@@ -30,6 +30,10 @@ defmodule Bilimbi.People.Training.Web.Support do
   def message(:invalid_insight_range),
     do: "Choose valid dates in order, covering at most 366 days."
 
+  def message(:report_period_unavailable),
+    do:
+      "Choose a frozen Effectiveness reporting period. Periods appear once an operator freezes them."
+
   def message(:forbidden),
     do:
       "You cannot access or generate this document. Ask an operator to check your access and workforce connection."

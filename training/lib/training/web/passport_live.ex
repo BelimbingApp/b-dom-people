@@ -176,7 +176,7 @@ defmodule Bilimbi.People.Training.Web.PassportLive do
             <:col :let={row} label="Completed"><.datetime id={"passport-date-#{row.fact_id}"} value={row.ends_at} /></:col>
             <:col :let={row} label="Attendance">{row.status} (revision {row.revision})</:col>
             <:col :let={row} label="Evidence"><a :for={document <- row.evidence} href={@path <> "/evidence/#{@company.id}/#{document.artifact_id}"}>Download evidence PDF</a><span :if={row.evidence == []}>No evidence on this revision</span></:col>
-            <:empty title="No training records yet" reason="An authorized training operator can confirm session attendance and attach evidence." />
+            <:empty :if={@records.entries == []} title="No training records yet" reason="An authorized training operator can confirm session attendance and attach evidence." />
           </.table>
           <.pagination id="passport-pagination" page={@records} filters_form={@filters} filters_event="filter" />
           <.button :if={@can_generate?} phx-click="generate" phx-disable-with="Generating…">Generate passport PDF</.button>

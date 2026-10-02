@@ -417,10 +417,14 @@ old reporting line. Unavailable employee linkage has a recovery message.
 No local age heuristic or fallback freshness status replaces Workforce authority.
 
 `learning_insights/3` groups latest attendance by course in an explicit inclusive
-UTC completion-date window of at most 366 days. Counts distinguish attendance
-from distinct employees. Company evaluation `minimum_cohort`, managed on
-Effectiveness and Base Operator Settings, suppresses all counts in small groups;
-an unset threshold refuses the report. Evaluation scores are never recomputed
+UTC completion-date window of at most 366 days for viewers holding company-wide
+`people.training.records.view`. Aggregate-only viewers choose only a whole,
+closed reporting period frozen on Effectiveness (the same chained
+`report_months` periods), so overlapping windows cannot be differenced.
+Counts distinguish attendance from distinct employees. Company evaluation
+`minimum_cohort`, managed on Effectiveness and Base Operator Settings,
+suppresses all counts in small groups and both attendance counts whenever
+either is below it; an unset threshold refuses the report. Evaluation scores are never recomputed
 for arbitrary windows: the one Effectiveness page retains frozen, suppressed
 period summaries. `learning_insight_drill/4` additionally requires company-wide
 `people.training.records.view`; aggregate-only viewers cannot drill. Summary,
@@ -467,14 +471,3 @@ explicit Training route/capability absence and unmounted migration validation
 also passed. The repository migration-version and composition graph/mandate
 checks passed. No additional Training migration or compatibility table is
 introduced by this slice.
-
-Live browser validation was skipped after the permitted fresh-page attempt
-failed with “No page is currently selected”; real-host LiveView and controller
-tests cover the new pages, task shells and document responses.
-
-A second attempt used a fresh named browser session and an isolated host on
-port 4017 with separate employee and HR accounts. Page selection and fresh
-snapshots worked, but filling the login form immediately failed with
-`STALE_REF` (latest snapshot generation 5, bridge reported current generation
-14). The employee/HR walkthrough remains unverified in the live browser;
-this bridge failure must be carried into the PR validation notes.
