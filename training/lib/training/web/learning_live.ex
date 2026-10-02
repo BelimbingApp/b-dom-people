@@ -421,7 +421,7 @@ defmodule Bilimbi.People.Training.Web.LearningLive do
             <.button :if={@kind == :plan and r.status == "approved" and @can_create?} phx-click="open_entry" phx-value-prior_id={r.id}>Amend</.button>
             <.button :if={@kind == :budget and is_nil(r.superseded_by) and @can_create?} phx-click="open_entry" phx-value-prior_id={r.id}>Correct</.button>
           </:col>
-          <:empty title="No learning records yet" reason="Choose a company and add a request, plan or budget when you have the required access." />
+          <:empty :if={@record_page.entries == []} title="No learning records yet" reason="Choose a company and add a request, plan or budget when you have the required access." />
         </.table>
         <.pagination :if={is_nil(@error)} id="learning-pagination" page={@record_page} filters_form={@filters} filters_event="select_company" />
         <.confirm_dialog :if={@pending_decision} id="learning-decision-confirm"

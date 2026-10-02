@@ -169,6 +169,7 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     live |> element("button", "Add request") |> render_click()
     live |> form("#learning-entry-form", entry: attrs()) |> render_submit()
     assert has_element?(live, "#learning-records", "Learning need")
+    refute has_element?(live, "#learning-records-empty")
     {:ok, [r]} = Training.learning_requests(s[91], 73, :self)
 
     live
@@ -177,11 +178,12 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
 
     live |> element("#learning-decision-confirm-confirm") |> render_click()
     assert has_element?(live, "#learning-records", "pending_hod")
-    {:ok, %{r.id => history}} = Training.learning_histories(s[91], 73, :request, [r.id], :self)
+    request_id = r.id
+    {:ok, %{^request_id => history}} = Training.learning_histories(s[91], 73, :request, [r.id], :self)
     assert Enum.map(history, & &1.action) == ["create", "submit"]
     assert Enum.all?(history, &(&1.actor_user_id == 91))
 
-    assert {:ok, %{r.id => ^history}} =
+    assert {:ok, %{^request_id => ^history}} =
              Training.learning_histories(s[92], 73, :request, [r.id], :team)
 
     grant(95, ~w(requests.submit requests.recommend))
@@ -452,7 +454,8 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     assert {:error, :currency_unavailable} =
              Training.decide_learning_request(s[94], 73, r3.id, "approve", "Disabled currency")
 
-    {:ok, %{r1.id => history}} = Training.learning_histories(s[93], 73, :request, [r1.id], :hr)
+    r1_id = r1.id
+    {:ok, %{^r1_id => history}} = Training.learning_histories(s[93], 73, :request, [r1.id], :hr)
     assert Enum.map(history, & &1.actor_user_id) == [91, 91, 92, 93, 94]
   end
 
