@@ -16,6 +16,49 @@ defmodule Bilimbi.People.Training do
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
+  alias Bilimbi.People.Training.Governance
+  defdelegate learning_currencies(scope, company_id), to: Governance, as: :currencies
+
+  defdelegate put_learning_currencies(scope, company_id, values),
+    to: Governance,
+    as: :put_currencies
+
+  defdelegate create_budget_policy(scope, company_id, attrs), to: Governance, as: :create_budget
+
+  defdelegate supersede_budget_policy(scope, company_id, id, attrs),
+    to: Governance,
+    as: :supersede_budget
+
+  defdelegate learning_budgets(scope, company_id), to: Governance, as: :budgets
+
+  defdelegate create_learning_request(scope, company_id, attrs),
+    to: Governance,
+    as: :create_request
+
+  defdelegate learning_requests(scope, company_id, audience), to: Governance, as: :requests
+
+  defdelegate decide_learning_request(scope, company_id, id, action, reason),
+    to: Governance,
+    as: :decide_request
+
+  defdelegate create_learning_plan(scope, company_id, attrs, items),
+    to: Governance,
+    as: :create_plan
+
+  defdelegate amend_learning_plan(scope, company_id, id, attrs, items),
+    to: Governance,
+    as: :amend_plan
+
+  defdelegate learning_plans(scope, company_id, audience), to: Governance, as: :plans
+
+  defdelegate decide_learning_plan(scope, company_id, id, action, reason),
+    to: Governance,
+    as: :decide_plan
+
+  defdelegate learning_histories(scope, company_id, kind, ids, audience),
+    to: Governance,
+    as: :histories
+
   def allowed?(%Scope{} = scope, company_id, capability),
     do: match?({:ok, _}, authorize(scope, company_id, capability))
 
