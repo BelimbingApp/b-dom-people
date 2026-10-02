@@ -1,4 +1,4 @@
-# Training courses and sessions
+# Training courses, sessions and participation
 
 Slices 6B and 6C own a company-scoped course catalog, delivery events, sessions,
 confirmed attendance, corrections as history, and private evidence.
@@ -21,7 +21,9 @@ stale/unavailable workforce results refuse writes and show a recovery message.
 
 Capabilities are `people.training.courses.view`,
 `people.training.courses.manage`, `people.training.sessions.view`, and
-`people.training.sessions.manage`. Manage does not silently grant view.
+`people.training.sessions.manage`; participation capabilities are listed under
+[Participation and evidence](#participation-and-evidence). Manage does not
+silently grant view.
 Session managers can select active courses through `event_courses/2` without
 receiving course-management permission.
 
@@ -63,7 +65,7 @@ through the existing Core Company UI and Base Settings.
 
 ## Fresh schema and deployment
 
-The migration is declared `:bilimbi_only` with a globally unique version in
+Each migration is declared `:bilimbi_only` with a globally unique version in
 `bilimbi.module.exs`. All five `people_training_*` relations are owned here.
 Composite foreign keys enforce event/course and session/event tenant/company
 identity. Checks enforce positive capacity and ordered instants. Database
@@ -76,7 +78,7 @@ read-only for existing People/Training table existence and row counts. The
 owner reports no People data to preserve; the disposable validation database
 only proves fresh creation and does not certify an existing deployment. Stop
 that deployment if unexpected live rows are found and obtain a migration
-decision. This migration neither adopts nor deletes source data.
+decision. These migrations neither adopt nor delete source data.
 
 The contract stays unregistered because pre-migration compatibility checking
 must not demand pending fresh tables. After `mix bilimbi.migrate`, verify it:
