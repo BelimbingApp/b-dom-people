@@ -87,7 +87,11 @@ key is refused.
   and skill that mirrors the newest finalized assessment no finalized correction
   supersedes. A trigger refuses a score that does not copy a finalized
   assessment. `standing/2` returns the signed-in employee's scores, with a
-  `current`, `overdue` or `expired` state, and their actions and reassessments;
+  `current`, `overdue` or `expired` state, and their actions and reassessments.
+  Score maps also expose `assessment_profile_id`, `assessment_profile_version`
+  and `assessment_scale_id`. Consumers comparing levels against a published
+  policy must match its pinned profile version; a score from other requirements
+  is missing evidence for that policy;
   `gaps/2` lists the scores with a gap inside the actor's reach, mandatory and
   highest priority first; `coverage/3` counts, for company-wide holders, the
   working employees who hold each critical skill at the level their own
