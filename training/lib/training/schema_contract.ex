@@ -3,7 +3,9 @@ defmodule Bilimbi.People.Training.SchemaContract do
   @behaviour Bilimbi.Base.Database.SchemaContract
   @impl true
   def tables do
-    catalog_tables() ++ Bilimbi.People.Training.ParticipationContract.tables()
+    catalog_tables() ++
+      Bilimbi.People.Training.ParticipationContract.tables() ++
+      Bilimbi.People.Training.EvaluationContract.tables()
   end
 
   defp catalog_tables do

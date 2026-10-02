@@ -1,13 +1,13 @@
 # Training
 
-Slices 6B, 6C and 6D own a company-scoped course catalog, delivery events, sessions,
+Slices 6B through 6E own a company-scoped course catalog, delivery events, sessions,
 confirmed attendance, corrections as history, private evidence, governed requests,
-versioned plans and company budgets.
+versioned plans, company budgets, employee evaluations and HOD effectiveness reviews.
 Authorized direct routes are `/people/training/courses`,
 `/people/training/sessions`, and `/people/training/records`.
 All Training menu leaves stay hidden until the whole area's acceptance passes.
 There is no legacy migration inventory, source adoption or cutover workflow.
-Effectiveness, passports and insights remain later slices.
+Passports and insights remain later slices.
 
 ## Public API and scope
 
@@ -243,3 +243,142 @@ legacy imports, migration inventory or participation dependency. The fresh
 schema contract above includes these six relations. Verification used newly
 created disposable development and test databases; target deployment inventory
 is still the read-only operator prerequisite described above.
+
+## Evaluation and effectiveness (slice 6E)
+
+Employees answer their own evaluations in the **My evaluations** section of
+My learning (`/people/training/my`), beside their learning requests. That
+section requires the own-learning entry `people.training.requests.submit` and
+`people.training.evaluation.submit`; it does not require Effectiveness access.
+
+`/people/training/effectiveness` is one authorized destination with HOD Review,
+the frozen HR Summary, policy publication and maintenance sections filtered by
+capability. It has one reserved **Effectiveness** menu entry under Development,
+returned by `Contributions.effectiveness_menu/0`; the runtime contribution
+remains empty until the whole Training area's acceptance passes. No separate
+HOD and HR menu roots are introduced.
+
+Grant `people.training.effectiveness.view` for Effectiveness entry, then
+independently grant the tasks the actor needs:
+
+| Capability suffix (after `people.training.`) | Task |
+| --- | --- |
+| `evaluation.submit` | With `requests.submit`, read and answer the linked employee's own evaluations under My learning |
+| `effectiveness.answer` | Read and answer effectiveness reviews for current direct reports |
+| `effectiveness.summary.view` | Read the frozen, privacy-protected company HR summaries |
+| `evaluation.policy.manage` | Read and publish effective-dated criteria versions; configure evaluation settings |
+| `evaluation.reminders.manage` | Prepare completed-session reviews, refresh the due-reminder worklist and freeze closed reporting periods |
+
+Task rights do not imply one another. An HOD must have a current working
+employee link and a current Workforce reporting line to the subject. HR
+summary access exposes no individual answers, reasons, names or employee IDs.
+All reads and writes recheck tenant, explicit platform company, active company
+and live capability. Workforce identity is consumed only through its public
+API and `ReadResult.require_current/1`. Lost links and reporting lines refuse
+answers. A company's scope is never inferred from an employee or review ID.
+The LiveView also refuses forged write events before processing them.
+
+An operator with `people.training.evaluation.policy.manage` edits these
+company-scoped Base Settings in the evaluation settings form on Effectiveness
+(`put_evaluation_settings/3`), which validates and saves all six together.
+Saved company values are the governed data. All except the reporting period
+start unset, so publication and freezing fail closed until an operator saves.
+For any unset field the form proposes an editable starting value: evaluation
+due 7 days, checkpoints 30 and 90 days, reminder lead 3 days, disclosure
+minimum 5, a 3-month calendar quarter and 14 answer grace days. These
+proposals are not saved, captured or used until the operator submits the
+form; there are no fallback criterion names.
+
+| Setting under `people.training.evaluation.` | Meaning |
+| --- | --- |
+| `evaluation_days` | Evaluation deadline after the session's local completion day |
+| `checkpoints` | A distinct list of positive day offsets for effectiveness deadlines |
+| `reminder_days` | Days before a deadline when the worklist reminder becomes available |
+| `minimum_cohort` | At least two distinct employees; disclosure also requires this many distinct employees with known scores |
+| `report_months` | Fixed reporting period length in months; it must divide 12. Defaults to 3, a calendar quarter. A change applies from the day after the last frozen period |
+| `report_grace_days` | Days after a period ends during which late answers still count before it freezes |
+
+`publish_evaluation_policy/3` takes inclusive effective dates, separate employee
+and HOD criterion lists and a publication reason. Each criterion is governed
+data with `code`, `label`, `minimum` and `maximum` integer score bounds.
+Publication appends a company version, refuses overlapping periods and
+captures the configured due offsets and reminder lead. Changing Settings does
+not alter an existing policy or an existing review. Criteria and deadlines
+are permanent; publish the next effective period to introduce changed criteria.
+`evaluation_policies/2` returns the history. Persisted criterion lists are
+JSON objects under `items`, and checkpoints under `days`; callers submit lists
+through the facade and receive schema-free maps.
+
+`prepare_evaluation_reviews/4` takes a session ID and UTC clock instant. It
+requires the session to have ended, a policy covering the session's completion
+date in its own IANA time zone, and a current Workforce read. Latest confirmed
+attendance of each current employee produces one employee evaluation and one
+HOD review per checkpoint. Attendees who are no longer current employees are
+skipped and counted in the result's explicit `unknown` outcome, so one leaver
+never blocks the rest of the session; the result is
+`%{reviews: reviews, unknown: count}`.
+The review captures the attendance fact and policy version. Repeat runs return
+the same obligations; a confirmed attendance correction cannot duplicate them.
+An absent correction removes an obligation from current reads, reminders and
+summaries and refuses an answer, while retaining historical facts. The
+operator runs this explicitly; no automatic schedule or enrollment is implied.
+
+`evaluation_reviews/3` accepts `"evaluation"` or `"effectiveness"` and applies
+self or current direct-report scope. `answer_evaluation/5` receives a review ID,
+criterion values and evidence/explanation. Every criterion key must be present;
+a value is an integer within the captured criterion's bounds or explicit `nil`
+for unknown. Unknown does not mean zero. The sealed login actor and optional
+impersonator provide attribution. One answer per review is permanent and the
+UI confirms submission. Answers do not amend course, request, plan, attendance,
+skill or performance data.
+
+`evaluation_reminders/3` takes the company's reporting day and creates a
+reminder once when `today >= due_on - reminder_days`, including the due day
+and overdue tasks. Answered and currently absent obligations are skipped.
+The recipient is the current employee for an evaluation or current HOD for an
+effectiveness review. Missing subjects or supervisors increment the run's
+explicit `unknown` outcome rather than inventing a recipient. My evaluations
+and the HOD Review list show available reminders to the current actor. This is
+a durable worklist, not an email-delivery log; this slice sends no mail and installs no system
+principal or unattended worker. A changed reporting line changes who can see
+and answer the obligation, and never grants access through the historical
+reminder recipient.
+
+`freeze_effectiveness_summaries/3` takes the company's reporting day. Frozen
+periods form one contiguous chain with no gap or overlap. The first period is
+the calendar-aligned period containing the earliest effectiveness deadline;
+each next period starts the day after the last frozen period end and runs for
+the currently configured length. A changed length therefore takes effect from
+that date: after a frozen January–March quarter, a change to 6 months freezes
+April–September next. `effectiveness_period_start/2` returns that date for
+policy managers, and the Effectiveness page shows it beside the evaluation
+settings form. A period is computed only after it ends and its answer grace
+window has passed, including empty periods, which freeze as suppressed. It is
+then stored as a permanent snapshot in `people_training_effectiveness_summaries`.
+A frozen period never recomputes: later answers, late-prepared reviews and
+attendance corrections cannot change it. This keeps an HR reader from
+differencing two readings to recover one answer. Each snapshot keeps separate
+policy-version/checkpoint groups so different criterion versions are never
+averaged together, and records the disclosure minimum it applied. Both a
+cohort and its known-score population must meet that minimum; below it,
+scores and counts remain suppressed in the snapshot. Unknown scores are
+excluded from the mean, not imputed; a criterion with insufficient known data
+has no count or mean. Means are stored rounded to two decimals. Stale or
+unavailable workforce refuses the freeze with no snapshot.
+
+`effectiveness_summary/2` only reads the frozen snapshots, newest period first;
+page loads never compute scores. The UI offers no arbitrary employee/cohort
+drill, complement totals or individual export.
+
+Migration `20261002060501` declares `:bilimbi_only` and adds five fresh relations
+with composite tenant/company references. PostgreSQL enforces policy versions,
+nonoverlapping periods, criterion bounds, review deadlines and uniqueness,
+and permanent policy/review/answer/reminder/summary history. The schema contract is
+included in `Training.SchemaContract.tables/0` and stays unregistered until
+fresh migration, as described above. Focused real-host tests cover due-day and
+repeat reminder behavior, unknown answers and recipients, skipped leavers,
+small cohorts, frozen summaries that later answers cannot change,
+role/company/tenant refusal, lost reporting lines, attendance corrections,
+publication and answer history, forged events and the fresh schema verifier.
+The target deployment inventory prerequisite remains unchanged: disposable
+databases prove fresh creation, not the contents of either deployment.

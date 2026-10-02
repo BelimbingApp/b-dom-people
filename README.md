@@ -30,8 +30,9 @@ Training owns a company-scoped course catalog, delivery events and a session
 calendar with explicit capacity and IANA time zones, append-only attendance
 corrections and private evidence through Base Artifacts. Training also owns
 governed learning requests, versioned team plans and effective-dated company
-budgets; these workflows use direct authorized routes while their menu leaves
-stay hidden.
+budgets, versioned evaluation criteria, employee evaluations under My learning,
+HOD effectiveness answers and frozen, suppressed HR period summaries; these
+workflows use direct authorized routes while their menu leaves stay hidden.
 Progression owns published policy versions and an employee eligibility
 explanation. No sample rows are installed.
 
@@ -46,7 +47,7 @@ explanation. No sample rows are installed.
 | `people/leave` | Leave types, policies, balance ledger, requests, approval and carry-forward |
 | `people/claims` | Claim catalog, policies, currencies, requests, approval, and reimbursement |
 | `people/skills` | Skill catalog, requirement profiles, assessments, reassessment, development actions and reminders |
-| `people/training` | Courses, sessions, learning records, requests, plans and budgets |
+| `people/training` | Courses, sessions, learning records, requests, plans, budgets and effectiveness |
 | `people/performance` | Position descriptions, KPI targets, versioned evidence and performance reviews |
 | `people/progression` | Immutable policy publication and employee eligibility explanations |
 | `people/payroll` | Payroll setup, mappings, frozen runs, contributions, calculation, approval and private documents |

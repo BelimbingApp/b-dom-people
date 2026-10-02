@@ -23,6 +23,40 @@ defmodule Bilimbi.People.Training.Web.Support do
     end
   end
 
+  def message(:policy_not_configured),
+    do: "Save this company's evaluation settings on Effectiveness before publication."
+
+  def message(:report_not_configured),
+    do: "Save this company's evaluation settings on Effectiveness first."
+
+  def message(:invalid_checkpoints),
+    do: "Set distinct positive checkpoint day offsets in the evaluation settings."
+
+  def message(:invalid_evaluation_settings),
+    do:
+      "Enter whole-number days, a disclosure minimum of at least 2, a reporting period that divides 12 months, and 1 to 24 distinct checkpoint days."
+
+  def message(:invalid_criteria),
+    do: "Supply unique criterion codes, labels and ordered whole-number score bounds."
+
+  def message(:invalid_answers),
+    do: "Answer every criterion within its score bounds, or leave its outcome explicitly unknown."
+
+  def message(:overlapping_policy),
+    do: "Choose an effective period that does not overlap a published policy."
+
+  def message(:invalid_period), do: "The effective end date must be on or after the start."
+  def message(:reason_required), do: "Supply an explanation for this permanent record."
+  def message(:session_not_finished), do: "Reviews can be prepared after this session ends."
+
+  def message(:policy_unavailable),
+    do: "Publish a policy covering the session's local completion date first."
+
+  def message(:attendance_unavailable),
+    do: "This employee's latest attendance is not confirmed. Check the session record."
+
+  def message(:already_answered), do: "This review already has a permanent answer."
+  def message(:outside_team), do: "This employee is outside your current direct-report team."
   def message(:session_unavailable), do: "Choose a session in this company."
   def message(:employee_unavailable), do: "Choose a current employee in this company."
 
@@ -60,6 +94,9 @@ defmodule Bilimbi.People.Training.Web.Support do
     do: "The workforce is not current. Try again when the connection is current."
 
   def message(:company_unavailable), do: "Choose an active company."
+
+  def message(%Ecto.Changeset{data: %Bilimbi.People.Training.EvaluationPolicy{}}),
+    do: "Enter valid effective dates and a publication reason."
 
   def message(%Ecto.Changeset{}),
     do:

@@ -16,6 +16,31 @@ defmodule Bilimbi.People.Training do
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.ReadResult
 
+  alias Bilimbi.People.Training.Evaluation
+  defdelegate evaluation_settings(scope, company), to: Evaluation, as: :settings
+
+  defdelegate put_evaluation_settings(scope, company, attrs),
+    to: Evaluation,
+    as: :put_settings
+
+  defdelegate evaluation_policies(scope, company), to: Evaluation, as: :policies
+  defdelegate publish_evaluation_policy(scope, company, attrs), to: Evaluation, as: :publish
+
+  defdelegate prepare_evaluation_reviews(scope, company, session, now),
+    to: Evaluation,
+    as: :prepare_reviews
+
+  defdelegate evaluation_reviews(scope, company, kind), to: Evaluation, as: :reviews
+  defdelegate answer_evaluation(scope, company, id, values, reason), to: Evaluation, as: :answer
+  defdelegate evaluation_reminders(scope, company, today), to: Evaluation, as: :remind
+  defdelegate effectiveness_summary(scope, company), to: Evaluation, as: :summary
+
+  defdelegate effectiveness_period_start(scope, company), to: Evaluation, as: :period_start
+
+  defdelegate freeze_effectiveness_summaries(scope, company, today),
+    to: Evaluation,
+    as: :freeze_summaries
+
   alias Bilimbi.People.Training.Governance
   defdelegate learning_currencies(scope, company_id), to: Governance, as: :currencies
 
