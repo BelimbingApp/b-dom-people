@@ -60,10 +60,12 @@ Capabilities:
 - `people.progression.self.view`: the actor's linked employee explanation.
 
 People > Development > Progression requires `people.progression.policy.view`.
-People > My work > My standing requires `people.progression.self.view`.
+People > My work > My standing requires `people.progression.self.view`. Its
+page links to `/people/performance/my` for actors who also hold
+`people.performance.self.view`.
 Routes enforce the same capabilities; publishing and evidence reads retain
 separate permissions. Training navigation is unchanged. See the repository's
-[menu rollout verification](../../docs/menu-rollout.md).
+[menu rollout verification](../../settings/docs/menu-rollout.md).
 
 The fresh table is `people_progression_policy_versions`, owned solely by this
 module. Migration `20261001070801` is `:bilimbi_only`; no legacy relation,

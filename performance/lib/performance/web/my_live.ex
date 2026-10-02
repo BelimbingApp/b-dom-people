@@ -6,7 +6,10 @@ defmodule Bilimbi.People.Performance.Web.MyLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, socket |> assign(:page_title, "My performance") |> assign(:active_nav, nil)}
+    {:ok,
+     socket
+     |> assign(:page_title, "My performance")
+     |> assign(:active_nav, "people.my_work.standing")}
   end
 
   @impl true

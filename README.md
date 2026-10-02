@@ -123,18 +123,19 @@ work > My skills shows an employee's own standing; and People > Settings >
 Skills policy holds the company's reassessment, priority and reminder settings,
 action types and the reminder run. See `skills/docs/README.md`.
 
-People > Settings > Payroll setup and People > Payroll > Pay-item mappings
-open the company setup workspace at `/people/payroll/setup`.
+People > Settings > Payroll setup opens the company setup workspace at
+`/people/payroll/setup`; People > Payroll > Pay-item mappings opens the same
+workspace at `/people/payroll/setup/mappings`, focused on its mappings section.
 People > Payroll > Runs opens `/people/payroll/runs`.
 See `payroll/docs/README.md` for explicit country/currency settings, effective
 versions and permanent run locking. Calculation and outputs are available at
 `/people/payroll/runs` through frozen contributions, independent approval and
 Base Artifacts documents.
 
-Performance is available from People > Development > Performance reviews and
-People > My work > My performance, using authorized routes at `/people/performance`
-for planning and authored reviews, and `/people/performance/my` for the login
-actor's own linked employee. Published content and evidence remain immutable;
+Performance is available from People > Development > Performance reviews at
+`/people/performance` for planning and authored reviews. The login actor's own
+linked employee view at `/people/performance/my` has no separate menu leaf; the
+People > My work > My standing page links to it. Published content and evidence remain immutable;
 corrections append versions with reasons. Performance leaves use their
 respective planning and self-view capabilities. See
 `performance/docs/README.md` for capabilities, release guards and verification.

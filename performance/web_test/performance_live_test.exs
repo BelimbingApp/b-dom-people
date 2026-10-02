@@ -149,7 +149,8 @@ defmodule Bilimbi.People.Performance.Web.PerformanceLiveTest do
              conn |> login(:viewer) |> live("/people/performance/my")
 
     {:ok, view, _} = build_conn() |> login(:employee) |> live("/people/performance/my")
-    assert has_element?(view, "a[href='/people/performance/my']", "My performance")
+    assert has_element?(view, "#my-performance-targets")
+    refute has_element?(view, "a[href='/people/performance/my']")
     {:ok, viewer, _} = build_conn() |> login(:viewer) |> live("/people/performance")
     assert has_element?(viewer, "a[href='/people/performance']", "Performance reviews")
     refute has_element?(viewer, "a[href='/people/performance/my']")

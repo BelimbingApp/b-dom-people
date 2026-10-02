@@ -61,8 +61,36 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
     {:ok, _} = Progression.publish(actor(ctx, :manager), 73, p.id)
     {:ok, view, _} = conn |> login(103) |> live("/people/progression/my?employee_id=999999")
     assert has_element?(view, "#my-progression", "Unknown")
-    assert has_element?(view, "a[href='/people/progression/my']", "My standing")
+
+    assert has_element?(
+             view,
+             "a[href='/people/progression/my'][aria-current='page']",
+             "My standing"
+           )
+
     refute has_element?(view, "a[href='/people/progression']")
+
+    assert {:ok, performance, _} =
+             view
+             |> element("#my-standing-performance a", "Open my performance")
+             |> render_click()
+             |> follow_redirect(build_conn() |> login(103))
+
+    assert has_element?(performance, "#my-performance-targets")
+    assert has_element?(performance, "a[href='/people/progression/my'][aria-current='page']")
+
+    {:ok, :stored} =
+      Bilimbi.Base.Authz.put_principal_capability(
+        ctx.scope,
+        73,
+        :user,
+        103,
+        "people.performance.self.view",
+        false
+      )
+
+    {:ok, view, _} = build_conn() |> login(103) |> live("/people/progression/my")
+    refute has_element?(view, "#my-standing-performance")
     {:ok, operator, _} = build_conn() |> login(101) |> live("/people/progression")
     assert has_element?(operator, "a[href='/people/progression']", "Progression")
     refute has_element?(operator, "a[href='/people/progression/my']")

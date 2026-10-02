@@ -68,6 +68,26 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     refute has_element?(dashboard, "a[href='/people/payroll/runs']")
   end
 
+  test "pay-item mappings leaf opens the setup page at its mappings section", %{conn: conn} do
+    assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/people/payroll/setup/mappings")
+    grant_capabilities!("people.payroll.view")
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/payroll/setup/mappings")
+
+    assert has_element?(
+             view,
+             "a[href='/people/payroll/setup/mappings'][aria-current='page']",
+             "Pay-item mappings"
+           )
+
+    refute has_element?(view, "a[href='/people/payroll/setup'][aria-current='page']")
+    assert has_element?(view, "#payroll-mappings-section[tabindex='-1'][phx-mounted]")
+    assert has_element?(view, "#mappings-empty")
+
+    view |> form("#payroll-company", company_id: "73") |> render_change()
+    assert_patch(view, "/people/payroll/setup/mappings?company_id=73")
+    assert has_element?(view, "a[href='/people/payroll/setup/mappings'][aria-current='page']")
+  end
+
   test "viewer sees empty states and forged writes are refused", %{conn: conn, scope: scope} do
     grant_capabilities!("people.payroll.view")
     {:ok, view, _} = conn |> log_in_as() |> live("/people/payroll/setup")
@@ -76,8 +96,15 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
           ~w(#classifications-empty #items-empty #periods-empty #mappings-empty #runs-empty),
         do: assert(has_element?(view, selector))
 
-    assert has_element?(view, "a[href='/people/payroll/setup']", "Payroll setup")
-    assert has_element?(view, "a[href='/people/payroll/setup']", "Pay-item mappings")
+    assert has_element?(
+             view,
+             "a[href='/people/payroll/setup'][aria-current='page']",
+             "Payroll setup"
+           )
+
+    assert has_element?(view, "a[href='/people/payroll/setup/mappings']", "Pay-item mappings")
+    refute has_element?(view, "a[href='/people/payroll/setup/mappings'][aria-current='page']")
+    refute has_element?(view, "#payroll-mappings-section[phx-mounted]")
     assert has_element?(view, "a[href='/people/payroll/runs']", "Runs")
     refute has_element?(view, "#attendance-mapping-link")
     refute has_element?(view, "#classification-form")

@@ -9,16 +9,21 @@ this rollout. The host pin is `cd98044ea278305380e0f7969cf9f347c42ec6fe`.
 | Menu location | Route | Required capability |
 | --- | --- | --- |
 | Payroll > Runs | `/people/payroll/runs` | `people.payroll.view` |
-| Payroll > Pay-item mappings | `/people/payroll/setup` | `people.payroll.view` |
+| Payroll > Pay-item mappings | `/people/payroll/setup/mappings` | `people.payroll.view` |
 | Settings > Payroll setup | `/people/payroll/setup` | `people.payroll.view` |
 | Development > Performance reviews | `/people/performance` | `people.performance.view` |
-| My work > My performance | `/people/performance/my` | `people.performance.self.view` |
 | Development > Progression | `/people/progression` | `people.progression.policy.view` |
 | My work > My standing | `/people/progression/my` | `people.progression.self.view` |
 
-Pay-item mappings belongs to the existing setup workspace. Its Attendance
-mapping task retains its separate capability and authorized route. The two
-setup links support the plan's task locations without duplicating the editor.
+Pay-item mappings belongs to the existing setup workspace. Its leaf opens the
+`/people/payroll/setup/mappings` variant, which focuses and scrolls to the
+mappings section and highlights only that leaf; Payroll setup highlights the
+general page. Switching company keeps the chosen variant. The Attendance
+mapping task retains its separate capability and authorized route.
+Employee performance self-view has no My work leaf, following the approved
+outline. My standing shows a My performance section linking to
+`/people/performance/my` for actors holding `people.performance.self.view`, and
+both pages highlight My standing. The route stays directly reachable.
 Performance insights remains absent because no insights page exists.
 
 ## Acceptance evidence
@@ -41,7 +46,7 @@ stay outside this repository. Desktop and 390 × 844 mobile snapshots cover:
 
 | Actor | Observed behavior |
 | --- | --- |
-| Employee | My performance and My standing are visible; own performance has communicated-target/released-review empty states; progression has a no-policy state and an explicit unknown explanation after publication without evidence. |
+| Employee | My standing is visible (the walkthrough predates removing the My performance leaf; the My standing link to own performance is covered by LiveView tests); own performance has communicated-target/released-review empty states; progression has a no-policy state and an explicit unknown explanation after publication without evidence. |
 | Manager | Performance reviews is visible; review, description, KPI and evidence tasks render; a governed measurement can be recorded. |
 | HR | Performance reviews and Progression are visible; release queue starts empty; policy draft, publication confirmation and published history work. |
 | Payroll operator | Runs, Pay-item mappings and Payroll setup are visible; company settings save; runs and Leave/Claims mappings have meaningful empty states; the separately authorized Attendance mapping page renders its no-rules state. |

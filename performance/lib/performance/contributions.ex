@@ -21,15 +21,6 @@ defmodule Bilimbi.People.Performance.Contributions do
           capability: "people.performance.view",
           icon: "clipboard-document-list",
           order: 100
-        },
-        %{
-          id: "people.my_work.performance",
-          label: "My performance",
-          parent: "people.my_work",
-          route: "/people/performance/my",
-          capability: "people.performance.self.view",
-          icon: "user-circle",
-          order: 60
         }
       ]
     }

@@ -57,7 +57,7 @@ defmodule Bilimbi.People.Payroll.Contributions do
           id: "people.payroll.mappings",
           label: "Pay-item mappings",
           parent: "people.payroll",
-          route: "/people/payroll/setup",
+          route: "/people/payroll/setup/mappings",
           capability: "people.payroll.view",
           icon: "squares-2x2",
           order: 20

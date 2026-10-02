@@ -99,7 +99,10 @@ client-supplied IDs on the confirm event.
 | `people.performance.self.view` | The linked employee's communicated targets, released reviews and responses |
 
 People > Development > Performance reviews requires `people.performance.view`.
-People > My work > My performance requires `people.performance.self.view`.
+There is no separate My work leaf for self-view: People > My work > My standing
+shows a My performance section linking to `/people/performance/my` when the
+actor holds `people.performance.self.view`, and the route stays directly
+reachable with that capability.
 Routes enforce the same capabilities independently of menu visibility.
 Performance insights has no implemented route and receives no menu entry.
 No configurable business
@@ -144,4 +147,4 @@ People rows exist. No existing installation is discarded or adopted here.
 Desktop and mobile browser verification now covers the authenticated manager,
 HR and employee routes, governed measurement creation, empty states, and denied
 navigation/direct routes. See the repository's
-[menu rollout verification](../../docs/menu-rollout.md).
+[menu rollout verification](../../settings/docs/menu-rollout.md).

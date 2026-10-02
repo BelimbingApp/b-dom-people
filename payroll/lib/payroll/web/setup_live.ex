@@ -32,12 +32,23 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   end
 
   @impl true
-  def handle_params(params, _uri, socket) do
+  def handle_params(params, uri, socket) do
     company =
       Enum.find(socket.assigns.companies, &(to_string(&1.id) == params["company_id"])) ||
         List.first(socket.assigns.companies)
 
-    {:noreply, socket |> assign(company: company, pending_lock: nil) |> load()}
+    mappings? = URI.parse(uri).path == "/people/payroll/setup/mappings"
+
+    {:noreply,
+     socket
+     |> assign(
+       company: company,
+       pending_lock: nil,
+       mappings?: mappings?,
+       active_nav:
+         if(mappings?, do: "people.payroll.mappings", else: "people.settings.payroll_setup")
+     )
+     |> load()}
   end
 
   @impl true
@@ -46,7 +57,15 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
       do: {:noreply, put_flash(socket, :error, "You cannot change this company's payroll setup.")}
 
   def handle_event("select_company", %{"company_id" => id}, socket),
-    do: {:noreply, push_patch(socket, to: ~p"/people/payroll/setup?company_id=#{id}")}
+    do:
+      {:noreply,
+       push_patch(socket,
+         to:
+           if(socket.assigns.mappings?,
+             do: ~p"/people/payroll/setup/mappings?company_id=#{id}",
+             else: ~p"/people/payroll/setup?company_id=#{id}"
+           )
+       )}
 
   def handle_event("save_settings", %{"country" => country, "currencies" => currencies}, socket),
     do:
@@ -203,7 +222,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav="people">
+    <Layouts.app flash={@flash} current_scope={@current_scope} active_nav={@active_nav}>
       <.page id="payroll-setup" variant={:list}>
         <.header>
           Payroll setup
@@ -358,7 +377,12 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
               <.button type="submit">Add period</.button>
             </.form>
           </.card>
-          <.card inner_class="p-5">
+          <.card
+            id="payroll-mappings-section"
+            tabindex="-1"
+            phx-mounted={@mappings? && JS.focus()}
+            inner_class="p-5"
+          >
             <.section_heading id="payroll-mappings" title="Pay-item mappings" />
             <p
               :if={@can_map_attendance?}

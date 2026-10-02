@@ -6,8 +6,9 @@ runs. It installs no sample rows, statutory packs, country rules or bank
 formats. Calculation, contribution intake, approvals, artifacts and output
 are implemented by slice 6A below.
 
-The authenticated `/people/payroll/setup` route requires
-`people.payroll.view`. Editing requires `people.payroll.manage` both in the
+The authenticated `/people/payroll/setup` route and its
+`/people/payroll/setup/mappings` variant require `people.payroll.view`; the
+variant opens the same workspace focused on the Pay-item mappings section. Editing requires `people.payroll.manage` both in the
 LiveView event guard and the public facade. Payroll setup and Pay-item mappings
 are visible to viewers; editing controls remain management-gated. Company
 selection comes from Core Company's public selectable-company API. APIs require a validated tenant scope with a
@@ -204,4 +205,4 @@ route. Management and independent approval retain their own action permissions.
 Pay-item mappings and Payroll setup open the shared setup workspace; its
 Attendance mappings link additionally requires
 `people.payroll.attendance-mappings.manage`. See the repository's
-[menu rollout verification](../../docs/menu-rollout.md).
+[menu rollout verification](../../settings/docs/menu-rollout.md).
