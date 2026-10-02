@@ -98,9 +98,11 @@ client-supplied IDs on the confirm event.
 | `people.performance.reviews.approve` | Independent company review release and candidate inspection |
 | `people.performance.self.view` | The linked employee's communicated targets, released reviews and responses |
 
-The Performance menu contribution is intentionally empty pending the whole
-area's rollout acceptance. Routes are capability-gated independently of menu
-visibility. Training and Progression stay hidden. No configurable business
+People > Development > Performance reviews requires `people.performance.view`.
+People > My work > My performance requires `people.performance.self.view`.
+Routes enforce the same capabilities independently of menu visibility.
+Performance insights has no implemented route and receives no menu entry.
+No configurable business
 names, outcomes, currencies, countries or provider values are hard-coded;
 operators author descriptions and measurement definitions/interpretation in
 their company. This slice introduces no reminder thresholds or retention policy
@@ -139,7 +141,7 @@ operators must run read-only table-existence/row-count inventories in both
 target environments and stop for a new migration decision if unexpected live
 People rows exist. No existing installation is discarded or adopted here.
 
-Live browser verification is deferred for this hidden area: Chrome DevTools AXI
-recovered page selection, but the scratch browser fixture did not retain its
-authenticated session. The eight real-host LiveView tests passed. Verify desktop
-and mobile browser behavior before exposing Performance menu leaves.
+Desktop and mobile browser verification now covers the authenticated manager,
+HR and employee routes, governed measurement creation, empty states, and denied
+navigation/direct routes. See the repository's
+[menu rollout verification](../../docs/menu-rollout.md).

@@ -16,6 +16,7 @@
     "core/user",
     "people/performance",
     "people/skills",
+    "people/settings",
     "people/workforce"
   ],
   migrations: "priv/repo/migrations",

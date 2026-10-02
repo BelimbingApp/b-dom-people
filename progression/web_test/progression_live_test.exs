@@ -61,6 +61,10 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
     {:ok, _} = Progression.publish(actor(ctx, :manager), 73, p.id)
     {:ok, view, _} = conn |> login(103) |> live("/people/progression/my?employee_id=999999")
     assert has_element?(view, "#my-progression", "Unknown")
-    assert Bilimbi.People.Progression.Contributions.contributions().menu == []
+    assert has_element?(view, "a[href='/people/progression/my']", "My standing")
+    refute has_element?(view, "a[href='/people/progression']")
+    {:ok, operator, _} = build_conn() |> login(101) |> live("/people/progression")
+    assert has_element?(operator, "a[href='/people/progression']", "Progression")
+    refute has_element?(operator, "a[href='/people/progression/my']")
   end
 end

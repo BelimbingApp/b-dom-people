@@ -43,7 +43,35 @@ defmodule Bilimbi.People.Payroll.Contributions do
           }
         }
       },
-      menu: []
+      menu: [
+        %{
+          id: "people.payroll.runs",
+          label: "Runs",
+          parent: "people.payroll",
+          route: "/people/payroll/runs",
+          capability: "people.payroll.view",
+          icon: "circle-stack",
+          order: 10
+        },
+        %{
+          id: "people.payroll.mappings",
+          label: "Pay-item mappings",
+          parent: "people.payroll",
+          route: "/people/payroll/setup",
+          capability: "people.payroll.view",
+          icon: "squares-2x2",
+          order: 20
+        },
+        %{
+          id: "people.settings.payroll_setup",
+          label: "Payroll setup",
+          parent: "people.settings",
+          route: "/people/payroll/setup",
+          capability: "people.payroll.view",
+          icon: "cog-6-tooth",
+          order: 70
+        }
+      ]
     }
   end
 end

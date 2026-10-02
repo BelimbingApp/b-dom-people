@@ -63,6 +63,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   test "route refuses anonymous and ungranted actors", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/people/payroll/setup")
     assert {:error, {_kind, _}} = conn |> log_in_as() |> live("/people/payroll/setup")
+    {:ok, dashboard, _} = conn |> log_in_as() |> live("/dashboard")
+    refute has_element?(dashboard, "a[href='/people/payroll/setup']")
+    refute has_element?(dashboard, "a[href='/people/payroll/runs']")
   end
 
   test "viewer sees empty states and forged writes are refused", %{conn: conn, scope: scope} do
@@ -73,6 +76,9 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
           ~w(#classifications-empty #items-empty #periods-empty #mappings-empty #runs-empty),
         do: assert(has_element?(view, selector))
 
+    assert has_element?(view, "a[href='/people/payroll/setup']", "Payroll setup")
+    assert has_element?(view, "a[href='/people/payroll/setup']", "Pay-item mappings")
+    assert has_element?(view, "a[href='/people/payroll/runs']", "Runs")
     refute has_element?(view, "#attendance-mapping-link")
     refute has_element?(view, "#classification-form")
 

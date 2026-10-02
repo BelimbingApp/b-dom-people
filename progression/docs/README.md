@@ -59,8 +59,11 @@ Capabilities:
 - `people.progression.policy.manage`: draft and publish for an authorized company.
 - `people.progression.self.view`: the actor's linked employee explanation.
 
-Routes are available for acceptance, while all Progression menu entries remain
-hidden pending area rollout acceptance. Training navigation is unchanged.
+People > Development > Progression requires `people.progression.policy.view`.
+People > My work > My standing requires `people.progression.self.view`.
+Routes enforce the same capabilities; publishing and evidence reads retain
+separate permissions. Training navigation is unchanged. See the repository's
+[menu rollout verification](../../docs/menu-rollout.md).
 
 The fresh table is `people_progression_policy_versions`, owned solely by this
 module. Migration `20261001070801` is `:bilimbi_only`; no legacy relation,

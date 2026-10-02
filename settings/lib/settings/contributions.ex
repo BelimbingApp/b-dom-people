@@ -49,6 +49,14 @@ defmodule Bilimbi.People.Settings.Contributions do
           order: 40
         },
         %{
+          id: "people.payroll",
+          label: "Payroll",
+          parent: "people",
+          route: nil,
+          capability: nil,
+          order: 50
+        },
+        %{
           id: "people.reports",
           label: "Reports",
           parent: "people",

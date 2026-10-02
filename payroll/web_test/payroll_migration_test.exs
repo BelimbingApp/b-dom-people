@@ -21,7 +21,8 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
 
   setup do
     unique = System.unique_integer([:positive])
-    database = "bilimbi_people_payroll_migration_#{unique}"
+    # Separate BEAMs share PostgreSQL; a VM-local integer can name another run's database.
+    database = "bilimbi_payroll_migration_#{String.replace(Ecto.UUID.generate(), "-", "")}"
     quoted = SchemaVerifier.quote_identifier!(database)
     Sandbox.unboxed_run(Repo, fn -> SQL.query!(Repo, "CREATE DATABASE #{quoted}", []) end)
 

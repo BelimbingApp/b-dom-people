@@ -12,8 +12,26 @@ defmodule Bilimbi.People.Performance.Contributions do
           people.performance.kpis.approve people.performance.reviews.submit
           people.performance.reviews.approve people.performance.self.view)
       },
-      # Hidden until the entire Performance area meets its rollout acceptance.
-      menu: []
+      menu: [
+        %{
+          id: "people.development.performance",
+          label: "Performance reviews",
+          parent: "people.development",
+          route: "/people/performance",
+          capability: "people.performance.view",
+          icon: "clipboard-document-list",
+          order: 100
+        },
+        %{
+          id: "people.my_work.performance",
+          label: "My performance",
+          parent: "people.my_work",
+          route: "/people/performance/my",
+          capability: "people.performance.self.view",
+          icon: "user-circle",
+          order: 60
+        }
+      ]
     }
   end
 end
