@@ -5,39 +5,109 @@ defmodule Bilimbi.People.Training.Web.InsightsLive do
   alias Bilimbi.People.Training.{Insights, Passport}
   alias Bilimbi.People.Training.Web.Support
   @impl true
-  def mount(_, _, socket), do: {:ok, assign(socket, page_title: "Learning insights", active_nav: "people.reports.learning_insights", companies: Support.companies(socket.assigns.current_scope, "people.training.insights.view"))}
+  def mount(_, _, socket),
+    do:
+      {:ok,
+       assign(socket,
+         page_title: "Learning insights",
+         active_nav: "people.reports.learning_insights",
+         companies:
+           Support.companies(socket.assigns.current_scope, "people.training.insights.view")
+       )}
+
   @impl true
   def handle_params(params, _, socket) do
     today = Date.utc_today()
     company = Support.company(socket.assigns.companies, params)
     scope = socket.assigns.current_scope.scope
-    drill? = company != nil and Training.allowed?(scope, company.id, "people.training.records.view")
-    periods = if company && not drill?, do: (case Insights.periods(scope, company.id) do {:ok, periods} -> periods; _ -> [] end), else: []
-    defaults = case {drill?, periods} do
-      {true, _} -> %{"from" => Date.to_iso8601(Date.new!(today.year, 1, 1)), "until" => Date.to_iso8601(today)}
-      {false, [latest | _]} -> %{"period" => Date.to_iso8601(latest.period_start)}
-      {false, []} -> %{}
-    end
+
+    drill? =
+      company != nil and Training.allowed?(scope, company.id, "people.training.records.view")
+
+    periods =
+      if company && not drill?,
+        do:
+          (case Insights.periods(scope, company.id) do
+             {:ok, periods} -> periods
+             _ -> []
+           end),
+        else: []
+
+    defaults =
+      case {drill?, periods} do
+        {true, _} ->
+          %{
+            "from" => Date.to_iso8601(Date.new!(today.year, 1, 1)),
+            "until" => Date.to_iso8601(today)
+          }
+
+        {false, [latest | _]} ->
+          %{"period" => Date.to_iso8601(latest.period_start)}
+
+        {false, []} ->
+          %{}
+      end
+
     params = Map.merge(defaults, params)
-    result = cond do
-      company == nil -> {:error, :company_unavailable}
-      params["course_id"] -> Insights.drill(scope, company.id, params["course_id"], params)
-      true -> Insights.summary(scope, company.id, params)
-    end
-    empty_page = %{entries: [], page: 1, page_size: Passport.page_size(params), total_entries: 0, total_pages: 0}
-    {page, error} = case result do
-      {:ok, page} -> {page, nil}
-      {:error, reason} -> {empty_page, Support.message(reason)}
-    end
-    {:noreply, assign(socket, company: company, params: params, page: page, error: error, can_drill?: drill?, periods: periods, drilling?: params["course_id"] != nil, filters: to_form(Map.put(params, "company_id", if(company, do: company.id, else: "")), as: :filters))}
+
+    result =
+      cond do
+        company == nil -> {:error, :company_unavailable}
+        params["course_id"] -> Insights.drill(scope, company.id, params["course_id"], params)
+        true -> Insights.summary(scope, company.id, params)
+      end
+
+    empty_page = %{
+      entries: [],
+      page: 1,
+      page_size: Passport.page_size(params),
+      total_entries: 0,
+      total_pages: 0
+    }
+
+    {page, error} =
+      case result do
+        {:ok, page} -> {page, nil}
+        {:error, reason} -> {empty_page, Support.message(reason)}
+      end
+
+    {:noreply,
+     assign(socket,
+       company: company,
+       params: params,
+       page: page,
+       error: error,
+       can_drill?: drill?,
+       periods: periods,
+       drilling?: params["course_id"] != nil,
+       filters:
+         to_form(Map.put(params, "company_id", if(company, do: company.id, else: "")),
+           as: :filters
+         )
+     )}
   end
+
   @impl true
   def handle_event("filter", %{"filters" => params}, socket) do
     company = socket.assigns.company
-    params = if company && params["company_id"] == to_string(company.id), do: params, else: Map.drop(params, ~w(period page course_id))
+
+    params =
+      if company && params["company_id"] == to_string(company.id),
+        do: params,
+        else: Map.drop(params, ~w(period page course_id))
+
     {:noreply, push_patch(socket, to: "/people/training/insights?" <> URI.encode_query(params))}
   end
-  def handle_event("page", %{"page" => page}, socket), do: {:noreply, push_patch(socket, to: "/people/training/insights?" <> URI.encode_query(Map.put(socket.assigns.params, "page", page)))}
+
+  def handle_event("page", %{"page" => page}, socket),
+    do:
+      {:noreply,
+       push_patch(socket,
+         to:
+           "/people/training/insights?" <>
+             URI.encode_query(Map.put(socket.assigns.params, "page", page))
+       )}
+
   @impl true
   def render(assigns) do
     ~H"""
