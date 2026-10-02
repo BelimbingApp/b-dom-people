@@ -99,10 +99,13 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
              "Progression"
            )
 
-    refute has_element?(operator, "a[href='/people/progression/my']")
+    assert has_element?(operator, "a[href='/people/progression/my']", "My standing")
   end
 
   test "My standing and own performance follow each self-view grant separately", %{ctx: ctx} do
+    {:ok, policy} = Progression.draft(actor(ctx, :manager), 73, attrs(ctx))
+    {:ok, _} = Progression.publish(actor(ctx, :manager), 73, policy.id)
+
     set = fn grants ->
       for cap <- ~w(people.progression.self.view people.performance.self.view),
           do:
@@ -119,24 +122,53 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
 
     open = fn path -> build_conn() |> login(103) |> live(path) end
 
+    telemetry_id = {__MODULE__, make_ref()}
+
+    :ok =
+      :telemetry.attach(
+        telemetry_id,
+        [:bilimbi, :base, :repo, :query],
+        &__MODULE__.observe_progression_read/4,
+        self()
+      )
+
+    on_exit(fn -> :telemetry.detach(telemetry_id) end)
+
     set.(~w(people.progression.self.view people.performance.self.view))
     {:ok, both, _} = open.("/people/progression/my")
-    assert has_element?(both, "#my-progression-unavailable")
+    assert has_element?(both, "#my-progression", "Unknown")
+    assert progression_reads() > 0
+    assert has_element?(both, "h1", "My standing")
+    assert has_element?(both, "a[href='/people/progression/my'][aria-current='page']")
     assert has_element?(both, "#my-standing-performance a", "Open my performance")
     assert {:ok, _, _} = open.("/people/performance/my")
 
     set.(~w(people.progression.self.view))
     {:ok, progression_only, _} = open.("/people/progression/my")
-    assert has_element?(progression_only, "#my-progression-unavailable")
+    assert has_element?(progression_only, "#my-progression", "Unknown")
+    assert progression_reads() > 0
     assert has_element?(progression_only, "a[href='/people/progression/my']", "My standing")
     refute has_element?(progression_only, "#my-standing-performance")
     assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/performance/my")
 
     set.(~w(people.performance.self.view))
-    assert {:error, {:redirect, %{to: "/dashboard"}}} = open.("/people/progression/my")
-    {:ok, performance_only, _} = open.("/people/performance/my")
+    {:ok, standing, _} = open.("/people/progression/my")
+    assert has_element?(standing, "h1", "My standing")
+    assert has_element?(standing, "a[href='/people/progression/my'][aria-current='page']")
+    assert has_element?(standing, "#my-standing-performance a", "Open my performance")
+    refute has_element?(standing, "#my-progression")
+    refute has_element?(standing, "#my-progression-unavailable")
+    assert {:error, :unauthorized} = Progression.explain(actor(ctx, :employee), 73)
+    assert progression_reads() == 0
+
+    assert {:ok, performance_only, _} =
+             standing
+             |> element("#my-standing-performance a", "Open my performance")
+             |> render_click()
+             |> follow_redirect(build_conn() |> login(103))
+
     assert has_element?(performance_only, "#my-performance-targets")
-    refute has_element?(performance_only, "a[href='/people/progression/my']")
+    assert has_element?(performance_only, "a[href='/people/progression/my'][aria-current='page']")
     refute has_element?(performance_only, "a[href='/people/performance/my']")
 
     set.([])
@@ -145,5 +177,18 @@ defmodule Bilimbi.People.Progression.Web.ProgressionLiveTest do
     {:ok, dashboard, _} = open.("/dashboard")
     refute has_element?(dashboard, "a[href='/people/progression/my']")
     refute has_element?(dashboard, "a[href='/people/performance/my']")
+  end
+
+  defp progression_reads do
+    receive do
+      :progression_read -> 1 + progression_reads()
+    after
+      0 -> 0
+    end
+  end
+
+  def observe_progression_read(_event, _measurements, metadata, observer) do
+    if metadata[:source] == "people_progression_policy_versions",
+      do: send(observer, :progression_read)
   end
 end
