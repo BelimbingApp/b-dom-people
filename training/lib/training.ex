@@ -17,6 +17,12 @@ defmodule Bilimbi.People.Training do
   alias Bilimbi.People.Workforce.ReadResult
 
   alias Bilimbi.People.Training.Evaluation
+  defdelegate evaluation_settings(scope, company), to: Evaluation, as: :settings
+
+  defdelegate put_evaluation_settings(scope, company, attrs),
+    to: Evaluation,
+    as: :put_settings
+
   defdelegate evaluation_policies(scope, company), to: Evaluation, as: :policies
   defdelegate publish_evaluation_policy(scope, company, attrs), to: Evaluation, as: :publish
 

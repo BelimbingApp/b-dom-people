@@ -565,7 +565,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
     assert has_element?(view, "#effectiveness-forbidden")
 
     for event <-
-          ~w(open_answer save_answer confirm_answer open_policy save_policy confirm_policy prepare_reviews run_reminders freeze_summaries) do
+          ~w(open_answer save_answer confirm_answer open_policy save_policy confirm_policy save_settings prepare_reviews run_reminders freeze_summaries) do
       assert render_hook(view, event, %{}) =~ "cannot"
     end
 
@@ -650,6 +650,61 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
       assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
                Ecto.Adapters.SQL.query(Repo, sql, [id], mode: :savepoint)
     end
+  end
+
+  test "operator saves company evaluation settings on Effectiveness, then publishes", %{
+    conn: conn,
+    scopes: s
+  } do
+    {:ok, view, _} =
+      conn
+      |> log_in_as(session_user(%{"user_id" => 93}))
+      |> live("/people/training/effectiveness")
+
+    assert {:error, :policy_not_configured} = policy(s)
+
+    settings = %{
+      evaluation_days: "7",
+      checkpoints: "30, 90",
+      reminder_days: "2",
+      minimum_cohort: "3",
+      report_months: "6",
+      report_grace_days: "10"
+    }
+
+    assert view
+           |> render_hook("save_settings", %{"settings" => %{settings | report_months: "5"}}) =~
+             "reporting period that divides 12 months"
+
+    assert view
+           |> form("#evaluation-settings-form", settings: %{settings | checkpoints: "30, 30"})
+           |> render_submit() =~ "distinct checkpoint days"
+
+    assert {:ok, %{"checkpoints" => nil, "report_months" => 3}} =
+             Training.evaluation_settings(s[93], 73)
+
+    assert view
+           |> form("#evaluation-settings-form", settings: settings)
+           |> render_submit() =~ "Evaluation settings saved."
+
+    assert {:ok,
+            %{
+              "evaluation_days" => 7,
+              "checkpoints" => [30, 90],
+              "reminder_days" => 2,
+              "minimum_cohort" => 3,
+              "report_months" => 6,
+              "report_grace_days" => 10
+            }} = Training.evaluation_settings(s[93], 73)
+
+    assert has_element?(view, "#evaluation-settings-form input[value='30, 90']")
+    assert {:ok, p} = policy(s)
+    assert p.evaluation_days == 7 and p.checkpoints == %{"days" => [30, 90]}
+
+    assert {:error, :unauthorized} = Training.evaluation_settings(s[92], 73)
+
+    assert {:error, :unauthorized} =
+             Training.put_evaluation_settings(s[93], 74, %{"evaluation_days" => 1})
   end
 
   test "operator publication form captures configured offsets and later Settings cannot rewrite reviews",

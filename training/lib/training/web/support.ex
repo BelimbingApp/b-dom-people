@@ -25,13 +25,17 @@ defmodule Bilimbi.People.Training.Web.Support do
 
   def message(:policy_not_configured),
     do:
-      "Set evaluation due days, checkpoints and reminder lead in Operator Settings before publication."
+      "Save this company's evaluation settings on Effectiveness before publication."
 
   def message(:report_not_configured),
-    do: "Set the reporting period, answer grace and disclosure minimum in Operator Settings."
+    do: "Save this company's evaluation settings on Effectiveness first."
 
   def message(:invalid_checkpoints),
-    do: "Set distinct positive checkpoint day offsets in Operator Settings."
+    do: "Set distinct positive checkpoint day offsets in the evaluation settings."
+
+  def message(:invalid_evaluation_settings),
+    do:
+      "Enter whole-number days, a disclosure minimum of at least 2, a reporting period that divides 12 months, and 1 to 24 distinct checkpoint days."
 
   def message(:invalid_criteria),
     do: "Supply unique criterion codes, labels and ordered whole-number score bounds."

@@ -24,6 +24,54 @@ defmodule Bilimbi.People.Training.Evaluation do
     "effectiveness" => ~w(effectiveness.view effectiveness.answer)
   }
 
+  @settings ~w(evaluation_days checkpoints reminder_days minimum_cohort report_months report_grace_days)
+
+  def settings(%Scope{} = scope, company) do
+    with :ok <- auth(scope, company, "evaluation.policy.manage"),
+         do: {:ok, Map.new(@settings, &{&1, setting(scope, company, &1)})}
+  end
+
+  # Every value is checked before any write, since Base Settings raises on a
+  # value its definition rejects.
+  def put_settings(%Scope{} = scope, company, attrs) do
+    with :ok <- auth(scope, company, "evaluation.policy.manage") do
+      values = Map.new(@settings, &{&1, Map.get(stringify(attrs), &1)})
+      checkpoints = values["checkpoints"]
+
+      valid? =
+        Enum.all?(@settings -- ["checkpoints"], &setting_value?(&1, values[&1])) and
+          rem(12, values["report_months"]) == 0 and is_list(checkpoints) and
+          length(checkpoints) in 1..24 and
+          Enum.all?(checkpoints, &(is_integer(&1) and &1 in 1..3650)) and
+          Enum.uniq(checkpoints) == checkpoints
+
+      if valid? do
+        Repo.transaction(fn ->
+          for {key, value} <- values,
+              do:
+                {:ok, _} =
+                  Settings.put(
+                    "people.training.evaluation." <> key,
+                    value,
+                    SettingScope.company(company, Scope.tenant_id(scope))
+                  )
+
+          values
+        end)
+      else
+        {:error, :invalid_evaluation_settings}
+      end
+    end
+  end
+
+  defp setting_value?(key, value),
+    do:
+      is_integer(value) and
+        Settings.Definition.accepts?(
+          Settings.definition!("people.training.evaluation." <> key),
+          value
+        )
+
   def policies(%Scope{} = scope, company) do
     with :ok <- auth(scope, company, "evaluation.policy.manage") do
       {:ok,

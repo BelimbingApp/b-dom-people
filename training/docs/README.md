@@ -279,12 +279,11 @@ API and `ReadResult.require_current/1`. Lost links and reporting lines refuse
 answers. A company's scope is never inferred from an employee or review ID.
 The LiveView also refuses forged write events before processing them.
 
-An operator configures these company-scoped Base Settings at `/system/settings`.
+An operator with `people.training.evaluation.policy.manage` edits these
+company-scoped Base Settings in the evaluation settings form on Effectiveness
+(`put_evaluation_settings/3`), which validates and saves all six together.
 All except the reporting period start unset; there are no fallback checkpoint
 schedules or criterion names.
-The shared settings screen additionally requires `base.settings.global.manage`
-for route entry and `base.settings.company.manage` for company edits; Training
-policy authority does not grant those Base permissions:
 
 | Setting under `people.training.evaluation.` | Meaning |
 | --- | --- |

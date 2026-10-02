@@ -4,7 +4,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
   alias Bilimbi.People.Training
   alias Bilimbi.People.Training.Web.Support
   @answer_events ~w(open_answer save_answer confirm_answer)
-  @policy_events ~w(open_policy add_criterion save_policy confirm_policy)
+  @policy_events ~w(open_policy add_criterion save_policy confirm_policy save_settings)
   @maintenance_events ~w(prepare_reviews run_reminders freeze_summaries)
 
   @impl true
@@ -158,6 +158,29 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
      )}
   end
 
+  def handle_event("save_settings", %{"settings" => attrs}, socket) do
+    values =
+      Map.new(attrs, fn
+        {"checkpoints", value} ->
+          {"checkpoints",
+           value |> String.split(",", trim: true) |> Enum.map(&Support.integer(String.trim(&1)))}
+
+        {key, value} ->
+          {key, Support.integer(value)}
+      end)
+
+    {:noreply,
+     finish(
+       socket,
+       Training.put_evaluation_settings(
+         socket.assigns.current_scope.scope,
+         socket.assigns.company.id,
+         values
+       ),
+       "Evaluation settings saved."
+     )}
+  end
+
   def handle_event("cancel_confirm", _, socket), do: {:noreply, assign(socket, pending: nil)}
 
   def handle_event("prepare_reviews", %{"entry" => attrs}, socket) do
@@ -274,6 +297,14 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
         _ -> nil
       end
 
+    settings =
+      with true <- policy?,
+           {:ok, values} <- Training.evaluation_settings(scope, company.id) do
+        Map.update!(values, "checkpoints", &Enum.join(&1 || [], ", "))
+      else
+        _ -> %{}
+      end
+
     {summaries, summary_error} =
       read_rows(summary?, fn -> Training.effectiveness_summary(scope, company.id) end)
 
@@ -300,7 +331,8 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           },
           as: :filters
         ),
-      maintenance_form: to_form(%{}, as: :entry)
+      maintenance_form: to_form(%{}, as: :entry),
+      settings_form: to_form(settings, as: :settings)
     )
   end
 
@@ -359,7 +391,16 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
           </div>
         </div>
         <.section_heading :if={@can_policy?} title="Published criteria"><:description>Versions and answers are permanent. Publish another effective period to change criteria.</:description></.section_heading>
-        <p :if={@can_policy?} class="text-sm">Set due days, checkpoints, reminder lead, reporting period, answer grace and disclosure minimum in <.link navigate="/system/settings" class="text-link">Operator Settings</.link> before publication.</p>
+        <.form :if={@can_policy?} for={@settings_form} id="evaluation-settings-form" phx-submit="save_settings" class="space-y-3">
+          <p class="text-sm">Set this company's evaluation settings before publication. Each published version captures due days, checkpoints and reminder lead.</p>
+          <.input field={@settings_form[:evaluation_days]} type="number" label="Evaluation due days" min="0" max="3650" required />
+          <.input field={@settings_form[:checkpoints]} label="Effectiveness checkpoints (days after a session, comma-separated)" required />
+          <.input field={@settings_form[:reminder_days]} type="number" label="Reminder lead days" min="0" max="3650" required />
+          <.input field={@settings_form[:minimum_cohort]} type="number" label="Disclosure minimum" min="2" max="1000" required />
+          <.input field={@settings_form[:report_months]} type="select" label="Reporting period months" options={[1, 2, 3, 4, 6, 12]} required />
+          <.input field={@settings_form[:report_grace_days]} type="number" label="Answer grace days" min="0" max="3650" required />
+          <.button type="submit" phx-disable-with="Saving…">Save settings</.button>
+        </.form>
         <p :if={@can_policy? and @period_start} id="report-period-start" class="text-sm">The configured reporting period length takes effect from {@period_start}; a changed length starts the day after the last frozen period.</p>
         <.table :if={@can_policy?} id="evaluation-policies" rows={@policies}>
           <:col :let={p} label="Version">{p.version}</:col>
