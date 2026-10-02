@@ -2,6 +2,7 @@ defmodule Bilimbi.People.Payroll.DocumentOwner do
   @moduledoc "Trusted payroll adapter for Base Artifacts; documents require final approval."
   @behaviour Bilimbi.Base.Artifacts.Owner
   @behaviour Bilimbi.Base.Artifacts.PDF
+  alias Bilimbi.Base.Artifacts.PDF.Renderer
   alias Bilimbi.People.Payroll
 
   @impl true
@@ -14,9 +15,10 @@ defmodule Bilimbi.People.Payroll.DocumentOwner do
   def render_pdf(scope, company, reference, data) do
     # Re-read the approved frozen result rather than trusting caller PDF data.
     with {:ok, frozen} <- Payroll.document_data(scope, company, reference, data.employee_id) do
+      title = "Payroll #{reference.kind} - run #{reference.subject}"
+
       text =
         [
-          "Payroll #{reference.kind} - run #{reference.subject}",
           "Currency: #{frozen.currency}",
           "Calculation: #{frozen.digest}"
         ] ++
@@ -29,7 +31,7 @@ defmodule Bilimbi.People.Payroll.DocumentOwner do
               "deductions #{total["deduction"]}, net #{total["net"]}, employer #{total["employer"]}"
           end)
 
-      {:ok, Bilimbi.People.Payroll.PDF.render(text)}
+      Renderer.render(%{title: title, blocks: Enum.map(text, &{:text, &1})})
     end
   end
 end

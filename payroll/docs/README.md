@@ -175,10 +175,12 @@ payslip for an employee with a frozen result. `DocumentOwner` implements the
 Base Artifacts Owner and PDF contracts. It re-reads approved frozen data before
 rendering; arbitrary caller PDF contents are never trusted. The compact,
 paginated PDF contains employee/item identifiers, exact rate calculations,
-totals, currency and the replay digest. The renderer uses built-in fonts and
-fetches no resources or external executables. No executable vendor bank format
-is provided. The serializer implements the Base Artifacts PDF behaviour and is
-expected to move into Base Artifacts when a second domain needs PDF rendering.
+totals, currency and the replay digest. The adapter uses the shared
+`Bilimbi.Base.Artifacts.PDF.Renderer.render/1` text-document renderer;
+identical frozen data produces identical bytes. See
+`apps/base/artifacts/README.md` in Bilimbi for its document shape, layout and
+supported text. The renderer uses built-in fonts and fetches no resources or
+external executables. No executable vendor bank format is provided.
 
 Base Artifacts owns bytes, reservations, integrity, retention and audit. Payroll
 stores only provenance and the returned artifact UUID, never paths or duplicate
