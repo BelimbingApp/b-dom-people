@@ -707,6 +707,56 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
              Training.put_evaluation_settings(s[93], 74, %{"evaluation_days" => 1})
   end
 
+  test "a fresh company saves the proposed settings unchanged, then publishes", %{
+    conn: conn,
+    scopes: s
+  } do
+    {:ok, view, _} =
+      conn
+      |> log_in_as(session_user(%{"user_id" => 93}))
+      |> live("/people/training/effectiveness")
+
+    assert has_element?(view, "#evaluation-settings-form input[value='30, 90']")
+
+    assert {:ok, %{"evaluation_days" => nil, "checkpoints" => nil, "minimum_cohort" => nil}} =
+             Training.evaluation_settings(s[93], 73)
+
+    assert {:error, :policy_not_configured} = policy(s)
+
+    assert view |> form("#evaluation-settings-form") |> render_submit() =~
+             "Evaluation settings saved."
+
+    assert {:ok,
+            %{
+              "evaluation_days" => 7,
+              "checkpoints" => [30, 90],
+              "reminder_days" => 3,
+              "minimum_cohort" => 5,
+              "report_months" => 3,
+              "report_grace_days" => 14
+            }} = Training.evaluation_settings(s[93], 73)
+
+    view |> element("button", "Publish criteria") |> render_click()
+
+    view
+    |> form("#evaluation-policy-form",
+      entry: %{
+        effective_from: "2026-10-01",
+        effective_to: "2026-10-31",
+        criteria: %{"1" => criterion()},
+        effectiveness_criteria: %{"1" => criterion()},
+        reason: "Starting criteria"
+      }
+    )
+    |> render_submit()
+
+    view |> element("#evaluation-policy-confirm-confirm") |> render_click()
+    assert {:ok, [p]} = Training.evaluation_policies(s[93], 73)
+
+    assert p.evaluation_days == 7 and p.reminder_days == 3 and
+             p.checkpoints == %{"days" => [30, 90]}
+  end
+
   test "operator publication form captures configured offsets and later Settings cannot rewrite reviews",
        %{conn: conn, scopes: s} do
     configure(s)

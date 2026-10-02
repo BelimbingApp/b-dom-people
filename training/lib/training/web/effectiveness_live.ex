@@ -5,6 +5,14 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
   alias Bilimbi.People.Training.Web.Support
   @answer_events ~w(open_answer save_answer confirm_answer)
   @policy_events ~w(open_policy add_criterion save_policy confirm_policy save_settings)
+  @proposed_settings %{
+    "evaluation_days" => 7,
+    "checkpoints" => [30, 90],
+    "reminder_days" => 3,
+    "minimum_cohort" => 5,
+    "report_months" => 3,
+    "report_grace_days" => 14
+  }
   @maintenance_events ~w(prepare_reviews run_reminders freeze_summaries)
 
   @impl true
@@ -300,7 +308,11 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
     settings =
       with true <- policy?,
            {:ok, values} <- Training.evaluation_settings(scope, company.id) do
-        Map.update!(values, "checkpoints", &Enum.join(&1 || [], ", "))
+        @proposed_settings
+        |> Map.merge(values, fn _, proposed, saved ->
+          if is_nil(saved), do: proposed, else: saved
+        end)
+        |> Map.update!("checkpoints", &Enum.join(&1, ", "))
       else
         _ -> %{}
       end
@@ -392,7 +404,7 @@ defmodule Bilimbi.People.Training.Web.EffectivenessLive do
         </div>
         <.section_heading :if={@can_policy?} title="Published criteria"><:description>Versions and answers are permanent. Publish another effective period to change criteria.</:description></.section_heading>
         <.form :if={@can_policy?} for={@settings_form} id="evaluation-settings-form" phx-submit="save_settings" class="space-y-3">
-          <p class="text-sm">Set this company's evaluation settings before publication. Each published version captures due days, checkpoints and reminder lead.</p>
+          <p class="text-sm">Set this company's evaluation settings before publication. Unsaved fields show proposed starting values; nothing applies until you save. Each published version captures due days, checkpoints and reminder lead.</p>
           <.input field={@settings_form[:evaluation_days]} type="number" label="Evaluation due days" min="0" max="3650" required />
           <.input field={@settings_form[:checkpoints]} label="Effectiveness checkpoints (days after a session, comma-separated)" required />
           <.input field={@settings_form[:reminder_days]} type="number" label="Reminder lead days" min="0" max="3650" required />

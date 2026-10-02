@@ -281,8 +281,13 @@ The LiveView also refuses forged write events before processing them.
 An operator with `people.training.evaluation.policy.manage` edits these
 company-scoped Base Settings in the evaluation settings form on Effectiveness
 (`put_evaluation_settings/3`), which validates and saves all six together.
-All except the reporting period start unset; there are no fallback checkpoint
-schedules or criterion names.
+Saved company values are the governed data. All except the reporting period
+start unset, so publication and freezing fail closed until an operator saves.
+For any unset field the form proposes an editable starting value: evaluation
+due 7 days, checkpoints 30 and 90 days, reminder lead 3 days, disclosure
+minimum 5, a 3-month calendar quarter and 14 answer grace days. These
+proposals are not saved, captured or used until the operator submits the
+form; there are no fallback criterion names.
 
 | Setting under `people.training.evaluation.` | Meaning |
 | --- | --- |
@@ -346,8 +351,8 @@ each next period starts the day after the last frozen period end and runs for
 the currently configured length. A changed length therefore takes effect from
 that date: after a frozen January–March quarter, a change to 6 months freezes
 April–September next. `effectiveness_period_start/2` returns that date for
-policy managers, and the Effectiveness page shows it beside the Operator
-Settings link. A period is computed only after it ends and its answer grace
+policy managers, and the Effectiveness page shows it beside the evaluation
+settings form. A period is computed only after it ends and its answer grace
 window has passed, including empty periods, which freeze as suppressed. It is
 then stored as a permanent snapshot in `people_training_effectiveness_summaries`.
 A frozen period never recomputes: later answers, late-prepared reviews and
