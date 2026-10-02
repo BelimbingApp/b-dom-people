@@ -1,5 +1,11 @@
 [
   %{
+    path: "/people/training/effectiveness",
+    live: Bilimbi.People.Training.Web.EffectivenessLive,
+    session: :auth,
+    capability: "people.training.effectiveness.view"
+  },
+  %{
     path: "/people/training/courses",
     live: Bilimbi.People.Training.Web.CoursesLive,
     session: :auth,

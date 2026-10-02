@@ -57,6 +57,28 @@ defmodule Bilimbi.People.Training.TestFixtures do
     )
   end
 
+  def migrate_evaluation_tables! do
+    migrate_governance_tables!()
+
+    Code.require_file(
+      Path.expand(
+        "../../priv/repo/migrations/20261002060501_create_training_evaluation.exs",
+        __DIR__
+      )
+    )
+
+    Ecto.Migration.Runner.run(
+      Repo,
+      Repo.config(),
+      20_261_002_060_501,
+      Bilimbi.People.Training.Migrations.CreateEvaluation,
+      :forward,
+      :change,
+      :up,
+      log: false
+    )
+  end
+
   def migrate_governance_tables! do
     for {file, module, version} <- [
           {"20261001060101_create_people_training_catalog.exs",

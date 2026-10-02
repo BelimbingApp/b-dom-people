@@ -23,6 +23,37 @@ defmodule Bilimbi.People.Training.Web.Support do
     end
   end
 
+  def message(:policy_not_configured),
+    do:
+      "Set evaluation due days, checkpoints and reminder lead in Operator Settings before publication."
+
+  def message(:report_not_configured),
+    do: "Set the reporting window and disclosure minimum in Operator Settings."
+
+  def message(:invalid_checkpoints),
+    do: "Set distinct positive checkpoint day offsets in Operator Settings."
+
+  def message(:invalid_criteria),
+    do: "Supply unique criterion codes, labels and ordered whole-number score bounds."
+
+  def message(:invalid_answers),
+    do: "Answer every criterion within its score bounds, or leave its outcome explicitly unknown."
+
+  def message(:overlapping_policy),
+    do: "Choose an effective period that does not overlap a published policy."
+
+  def message(:invalid_period), do: "The effective end date must be on or after the start."
+  def message(:reason_required), do: "Supply an explanation for this permanent record."
+  def message(:session_not_finished), do: "Reviews can be prepared after this session ends."
+
+  def message(:policy_unavailable),
+    do: "Publish a policy covering the session's local completion date first."
+
+  def message(:attendance_unavailable),
+    do: "This employee's latest attendance is not confirmed. Check the session record."
+
+  def message(:already_answered), do: "This review already has a permanent answer."
+  def message(:outside_team), do: "This employee is outside your current direct-report team."
   def message(:session_unavailable), do: "Choose a session in this company."
   def message(:employee_unavailable), do: "Choose a current employee in this company."
 
@@ -60,6 +91,9 @@ defmodule Bilimbi.People.Training.Web.Support do
     do: "The workforce is not current. Try again when the connection is current."
 
   def message(:company_unavailable), do: "Choose an active company."
+
+  def message(%Ecto.Changeset{data: %Bilimbi.People.Training.EvaluationPolicy{}}),
+    do: "Enter valid effective dates and a publication reason."
 
   def message(%Ecto.Changeset{}),
     do:

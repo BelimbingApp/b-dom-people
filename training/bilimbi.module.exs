@@ -23,7 +23,8 @@
   migration_dispositions: %{
     20_261_001_060_101 => :bilimbi_only,
     20_261_001_060_201 => :bilimbi_only,
-    20_261_001_060_401 => :bilimbi_only
+    20_261_001_060_401 => :bilimbi_only,
+    20_261_002_060_501 => :bilimbi_only
   },
   web: "priv/web_routes.exs",
   # Fresh tables are verified after migration, not during baseline adoption.

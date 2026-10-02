@@ -1,13 +1,13 @@
 # Training
 
-Slices 6B, 6C and 6D own a company-scoped course catalog, delivery events, sessions,
+Slices 6B through 6E own a company-scoped course catalog, delivery events, sessions,
 confirmed attendance, corrections as history, private evidence, governed requests,
-versioned plans and company budgets.
+versioned plans, company budgets, employee evaluations and HOD effectiveness reviews.
 Authorized direct routes are `/people/training/courses`,
 `/people/training/sessions`, and `/people/training/records`.
 All Training menu leaves stay hidden until the whole area's acceptance passes.
 There is no legacy migration inventory, source adoption or cutover workflow.
-Effectiveness, passports and insights remain later slices.
+Passports and insights remain later slices.
 
 ## Public API and scope
 
@@ -243,3 +243,110 @@ legacy imports, migration inventory or participation dependency. The fresh
 schema contract above includes these six relations. Verification used newly
 created disposable development and test databases; target deployment inventory
 is still the read-only operator prerequisite described above.
+
+
+## Evaluation and effectiveness (slice 6E)
+
+`/people/training/effectiveness` is one authorized destination with Review,
+Summary, policy publication and due-reminder sections filtered by capability.
+It has one reserved **Effectiveness** menu entry under Development, returned by
+`Contributions.effectiveness_menu/0`; the runtime contribution remains empty
+until the whole Training area's acceptance passes. No separate HOD and HR
+menu roots are introduced.
+
+Grant `people.training.effectiveness.view` for route entry, then independently
+grant the tasks the actor needs:
+
+| Capability suffix (after `people.training.`) | Task |
+| --- | --- |
+| `evaluation.submit` | Read and answer the linked employee's own evaluations |
+| `effectiveness.answer` | Read and answer effectiveness reviews for current direct reports |
+| `effectiveness.summary.view` | Read the privacy-protected company HR summary |
+| `evaluation.policy.manage` | Read and publish effective-dated criteria versions; configure evaluation settings |
+| `evaluation.reminders.manage` | Prepare completed-session reviews and refresh the due-reminder worklist |
+
+Task rights do not imply one another. An HOD must have a current working
+employee link and a current Workforce reporting line to the subject. HR
+summary access exposes no individual answers, reasons, names or employee IDs.
+All reads and writes recheck tenant, explicit platform company, active company
+and live capability. Workforce identity is consumed only through its public
+API and `ReadResult.require_current/1`. Lost links and reporting lines refuse
+answers. A company's scope is never inferred from an employee or review ID.
+The LiveView also refuses forged write events before processing them.
+
+An operator configures these company-scoped Base Settings at `/system/settings`.
+All start unset; there are no fallback checkpoint schedules or criterion names.
+The shared settings screen additionally requires `base.settings.global.manage`
+for route entry and `base.settings.company.manage` for company edits; Training
+policy authority does not grant those Base permissions:
+
+| Setting under `people.training.evaluation.` | Meaning |
+| --- | --- |
+| `evaluation_days` | Evaluation deadline after the session's local completion day |
+| `checkpoints` | A distinct list of positive day offsets for effectiveness deadlines |
+| `reminder_days` | Days before a deadline when the worklist reminder becomes available |
+| `minimum_cohort` | At least two distinct employees; disclosure also requires this many distinct employees with known scores |
+| `report_days` | Company summary window ending on the requested reporting day |
+
+`publish_evaluation_policy/3` takes inclusive effective dates, separate employee
+and HOD criterion lists and a publication reason. Each criterion is governed
+data with `code`, `label`, `minimum` and `maximum` integer score bounds.
+Publication appends a company version, refuses overlapping periods and
+captures the configured due offsets and reminder lead. Changing Settings does
+not alter an existing policy or an existing review. Criteria and deadlines
+are permanent; publish the next effective period to introduce changed criteria.
+`evaluation_policies/2` returns the history. Persisted criterion lists are
+JSON objects under `items`, and checkpoints under `days`; callers submit lists
+through the facade and receive schema-free maps.
+
+`prepare_evaluation_reviews/4` takes a session ID and UTC clock instant. It
+requires the session to have ended, a policy covering the session's completion
+date in its own IANA time zone, and current workforce subjects. Latest confirmed
+attendance produces one employee evaluation and one HOD review per checkpoint.
+The review captures the attendance fact and policy version. Repeat runs return
+the same obligations; a confirmed attendance correction cannot duplicate them.
+An absent correction removes an obligation from current reads, reminders and
+summaries and refuses an answer, while retaining historical facts. The
+operator runs this explicitly; no automatic schedule or enrollment is implied.
+
+`evaluation_reviews/3` accepts `"evaluation"` or `"effectiveness"` and applies
+self or current direct-report scope. `answer_evaluation/5` receives a review ID,
+criterion values and evidence/explanation. Every criterion key must be present;
+a value is an integer within the captured criterion's bounds or explicit `nil`
+for unknown. Unknown does not mean zero. The sealed login actor and optional
+impersonator provide attribution. One answer per review is permanent and the
+UI confirms submission. Answers do not amend course, request, plan, attendance,
+skill or performance data.
+
+`evaluation_reminders/3` takes the company's reporting day and creates a
+reminder once when `today >= due_on - reminder_days`, including the due day
+and overdue tasks. Answered and currently absent obligations are skipped.
+The recipient is the current employee for an evaluation or current HOD for an
+effectiveness review. Missing subjects or supervisors increment the run's
+explicit `unknown` outcome rather than inventing a recipient. The current
+actor-scoped Review list shows available reminders. This is a durable worklist,
+not an email-delivery log; this slice sends no mail and installs no system
+principal or unattended worker. A changed reporting line changes who can see
+and answer the obligation, and never grants access through the historical
+reminder recipient.
+
+`effectiveness_summary/3` reports effectiveness deadlines in a fixed company
+window, with separate policy/checkpoint groups so different criterion versions
+are never averaged together. Both a cohort and its known-score population must
+meet the company's disclosure minimum. Below it, scores and counts remain
+suppressed. Unknown scores are excluded from the mean, not imputed; a criterion
+with insufficient known data has no count or mean. Stale/unavailable workforce
+returns its native `ReadResult.require_current/1` refusal with no scores. The UI offers no arbitrary
+employee/cohort drill, complement totals or individual export.
+
+Migration `20261002060501` declares `:bilimbi_only` and adds four fresh relations
+with composite tenant/company references. PostgreSQL enforces policy versions,
+nonoverlapping periods, criterion bounds, review deadlines and uniqueness,
+and permanent policy/review/answer/reminder history. The schema contract is
+included in `Training.SchemaContract.tables/0` and stays unregistered until
+fresh migration, as described above. Focused real-host tests cover due-day and
+repeat reminder behavior, unknown answers and recipients, small cohorts,
+role/company/tenant refusal, lost reporting lines, attendance corrections,
+publication and answer history, forged events and the fresh schema verifier.
+The target deployment inventory prerequisite remains unchanged: disposable
+databases prove fresh creation, not the contents of either deployment.
