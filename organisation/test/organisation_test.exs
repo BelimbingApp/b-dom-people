@@ -456,14 +456,19 @@ defmodule Bilimbi.People.OrganisationTest do
     assert {:error, :not_found} = Workforce.positions(scope, 75)
   end
 
-  test "cursor iteration survives inserts and deletes between pages", %{scope: scope} do
+  test "cursor iteration survives inserts and deletes between pages", %{
+    scope: scope,
+    system: system
+  } do
     positions =
       for number <- 1..5 do
         {:ok, position} = Organisation.create_position(scope, 73, %{code: "PAGE-#{number}"})
         position
       end
 
-    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "PAGE-OTHER"})
+    UserFixtures.insert_user!(%{id: 93, company_id: 74, name: "Other", email: "o@example.com"})
+    sibling = AuthorizationFixtures.sign_in!(system, 74, 93, [@manage])
+    {:ok, foreign} = Organisation.create_position(sibling, 74, %{code: "PAGE-OTHER"})
     day = ~D[2026-10-01]
     high_water_id = foreign.id
 
