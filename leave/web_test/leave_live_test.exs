@@ -87,6 +87,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
       assert has_element?(view, "#leave-policy-versions", "14.00")
 
       view |> form("#leave-grant-form", leave_year: "#{year}") |> render_submit()
+
       assert render(view) =~
                "2 entitlements granted; 0 were already granted; " <>
                  "0 skipped because the year is carried forward."

@@ -7,13 +7,17 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
           :people_payroll_calculations,
           :people_payroll_decisions,
           :people_payroll_documents,
-          :people_payroll_result_lines
+          :people_payroll_calculation_entries
         ] do
       create table(name) do
         add(:tenant_id, :bigint, null: false)
         add(:company_id, :bigint, null: false)
         add(:created_by_actor_id, :bigint, null: false)
-        add(:run_id, references(:people_payroll_runs, on_delete: :restrict), null: false)
+
+        add(:run_id, references(:people_payroll_setup_snapshots, on_delete: :restrict),
+          null: false
+        )
+
         timestamps(type: :naive_datetime)
       end
 
@@ -48,7 +52,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
       )
     )
 
-    alter table(:people_payroll_result_lines) do
+    alter table(:people_payroll_calculation_entries) do
       add(:contribution_id, references(:people_payroll_contributions, on_delete: :restrict),
         null: false
       )
@@ -58,10 +62,10 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
       add(:amount, :decimal, precision: 40, scale: 12, null: false)
     end
 
-    create(unique_index(:people_payroll_result_lines, [:contribution_id]))
+    create(unique_index(:people_payroll_calculation_entries, [:contribution_id]))
 
     create(
-      constraint(:people_payroll_result_lines, :people_payroll_result_lines_amount,
+      constraint(:people_payroll_calculation_entries, :people_payroll_calculation_entries_amount,
         check: "amount >= 0"
       )
     )
@@ -103,18 +107,18 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
 
     execute("""
     CREATE FUNCTION people_payroll_output_stage() RETURNS trigger LANGUAGE plpgsql AS $$
-    DECLARE r people_payroll_runs%ROWTYPE;
+    DECLARE r people_payroll_setup_snapshots%ROWTYPE;
     DECLARE c people_payroll_calculations%ROWTYPE;
     BEGIN
-      SELECT * INTO r FROM people_payroll_runs WHERE id = NEW.run_id FOR UPDATE;
+      SELECT * INTO r FROM people_payroll_setup_snapshots WHERE id = NEW.run_id FOR UPDATE;
       IF r.id IS NULL OR r.company_id <> NEW.company_id OR r.tenant_id <> NEW.tenant_id THEN
         RAISE EXCEPTION 'payroll output scope mismatch' USING ERRCODE = '23514';
       END IF;
       SELECT * INTO c FROM people_payroll_calculations WHERE run_id = NEW.run_id;
-      IF TG_TABLE_NAME IN ('people_payroll_contributions', 'people_payroll_result_lines') AND c.id IS NOT NULL THEN
+      IF TG_TABLE_NAME IN ('people_payroll_contributions', 'people_payroll_calculation_entries') AND c.id IS NOT NULL THEN
         RAISE EXCEPTION 'payroll calculation is frozen' USING ERRCODE = '23514';
       END IF;
-      IF TG_TABLE_NAME IN ('people_payroll_calculations', 'people_payroll_result_lines') AND r.locked_at IS NULL THEN
+      IF TG_TABLE_NAME IN ('people_payroll_calculations', 'people_payroll_calculation_entries') AND r.locked_at IS NULL THEN
         RAISE EXCEPTION 'payroll setup must be locked' USING ERRCODE = '23514';
       END IF;
       IF TG_TABLE_NAME = 'people_payroll_decisions' THEN
@@ -132,7 +136,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
     """)
 
     for name <-
-          ~w(people_payroll_contributions people_payroll_result_lines people_payroll_calculations people_payroll_decisions people_payroll_documents) do
+          ~w(people_payroll_contributions people_payroll_calculation_entries people_payroll_calculations people_payroll_decisions people_payroll_documents) do
       execute(
         "CREATE TRIGGER #{name}_stage BEFORE INSERT ON #{name} FOR EACH ROW EXECUTE FUNCTION people_payroll_output_stage()"
       )
@@ -144,7 +148,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateOutputs do
           :people_payroll_documents,
           :people_payroll_decisions,
           :people_payroll_calculations,
-          :people_payroll_result_lines,
+          :people_payroll_calculation_entries,
           :people_payroll_contributions
         ],
         do: drop(table(name))

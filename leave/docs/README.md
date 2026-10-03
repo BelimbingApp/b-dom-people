@@ -3,9 +3,9 @@
 Module ID: `people/leave`. Leave types, entitlement policies, balances,
 requests with approval, and year-end carry-forward.
 
-This module owns fresh `people_leave_types`, `people_leave_policies`,
-`people_leave_ledger_entries`, `people_leave_requests`,
-`people_leave_request_days`, `people_leave_request_events` and
+This module owns fresh `people_leave_catalog_types`, `people_leave_policies`,
+`people_leave_ledger_entries`, `people_leave_applications`,
+`people_leave_application_dates`, `people_leave_request_events` and
 `people_leave_carry_forward_skips` tables. Call
 `Bilimbi.People.Leave` with a validated `Bilimbi.Base.Tenancy.Scope` and
 explicit company ID; company and employee identity come from

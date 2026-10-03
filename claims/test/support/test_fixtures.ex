@@ -9,12 +9,12 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_claim_categories (
+      CREATE TEMPORARY TABLE people_claim_catalog_groups (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         code varchar(60) NOT NULL, name varchar(120) NOT NULL,
         active boolean NOT NULL DEFAULT true,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_claim_categories_company_code_unique UNIQUE (company_id, code)
+        CONSTRAINT people_claim_catalog_groups_company_code_unique UNIQUE (company_id, code)
       ) ON COMMIT PRESERVE ROWS
       """,
       []
@@ -23,9 +23,9 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_claim_types (
+      CREATE TEMPORARY TABLE people_claim_catalog_types (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        category_id bigint NOT NULL REFERENCES people_claim_categories (id),
+        category_id bigint NOT NULL REFERENCES people_claim_catalog_groups (id),
         code varchar(60) NOT NULL, name varchar(120) NOT NULL,
         receipt_requirement varchar(20) NOT NULL
           CHECK (receipt_requirement IN ('always', 'above_threshold', 'never')),
@@ -33,7 +33,7 @@ defmodule Bilimbi.People.Claims.TestFixtures do
           CHECK (eligibility IN ('all_employees', 'assigned_only')),
         active boolean NOT NULL DEFAULT true,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_claim_types_company_code_unique UNIQUE (company_id, code)
+        CONSTRAINT people_claim_catalog_types_company_code_unique UNIQUE (company_id, code)
       ) ON COMMIT PRESERVE ROWS
       """,
       []
@@ -42,9 +42,9 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_claim_policies (
+      CREATE TEMPORARY TABLE people_claim_policy_versions (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        claim_type_id bigint NOT NULL REFERENCES people_claim_types (id),
+        claim_type_id bigint NOT NULL REFERENCES people_claim_catalog_types (id),
         effective_from date NOT NULL, effective_to date,
         currency varchar(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
         per_claim_limit numeric(14, 2), monthly_limit numeric(14, 2),
@@ -61,11 +61,11 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_claim_requests (
+      CREATE TEMPORARY TABLE people_claim_submissions (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL,
-        claim_type_id bigint NOT NULL REFERENCES people_claim_types (id),
-        claim_policy_id bigint NOT NULL REFERENCES people_claim_policies (id),
+        claim_type_id bigint NOT NULL REFERENCES people_claim_catalog_types (id),
+        claim_policy_id bigint NOT NULL REFERENCES people_claim_policy_versions (id),
         incurred_on date NOT NULL, amount numeric(14, 2) NOT NULL CHECK (amount > 0),
         currency varchar(3) NOT NULL CHECK (currency ~ '^[A-Z]{3}$'),
         description varchar(500), receipt_number varchar(100),
@@ -80,7 +80,7 @@ defmodule Bilimbi.People.Claims.TestFixtures do
         payment_reference varchar(100),
         handoff_batch_id bigint REFERENCES people_claim_handoff_batches (id),
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_claim_requests_decision_check CHECK (
+        CONSTRAINT people_claim_submissions_decision_check CHECK (
           (status IN ('submitted', 'withdrawn') AND approved_amount IS NULL
             AND decided_by_actor_id IS NULL AND decided_at IS NULL) OR
           (status IN ('approved', 'reimbursed') AND approved_amount > 0
@@ -89,12 +89,12 @@ defmodule Bilimbi.People.Claims.TestFixtures do
           (status = 'rejected' AND approved_amount IS NULL
             AND decided_by_actor_id IS NOT NULL AND decided_at IS NOT NULL
             AND decision_reason IS NOT NULL)),
-        CONSTRAINT people_claim_requests_reimbursement_check CHECK (
+        CONSTRAINT people_claim_submissions_reimbursement_check CHECK (
           (status = 'reimbursed' AND reimbursed_by_actor_id IS NOT NULL
             AND reimbursed_at IS NOT NULL) OR
           (status <> 'reimbursed' AND reimbursed_by_actor_id IS NULL
             AND reimbursed_at IS NULL AND payment_reference IS NULL)),
-        CONSTRAINT people_claim_requests_handoff_check CHECK (
+        CONSTRAINT people_claim_submissions_handoff_check CHECK (
           handoff_batch_id IS NULL OR status IN ('approved', 'reimbursed'))
       ) ON COMMIT PRESERVE ROWS
       """,
@@ -104,8 +104,8 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE UNIQUE INDEX people_claim_requests_receipt_unique
-        ON people_claim_requests (company_id, employee_id, receipt_number)
+      CREATE UNIQUE INDEX people_claim_submissions_receipt_unique
+        ON people_claim_submissions (company_id, employee_id, receipt_number)
         WHERE receipt_number IS NOT NULL AND status NOT IN ('withdrawn', 'rejected')
       """,
       []
@@ -116,7 +116,7 @@ defmodule Bilimbi.People.Claims.TestFixtures do
       """
       CREATE TEMPORARY TABLE people_claim_request_events (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        request_id bigint NOT NULL REFERENCES people_claim_requests (id),
+        request_id bigint NOT NULL REFERENCES people_claim_submissions (id),
         from_status varchar(20), to_status varchar(20) NOT NULL,
         actor_id bigint NOT NULL, reason varchar(500), occurred_at timestamp(0) NOT NULL
       ) ON COMMIT PRESERVE ROWS
@@ -129,12 +129,12 @@ defmodule Bilimbi.People.Claims.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_claim_assignments (
+      CREATE TEMPORARY TABLE people_claim_employee_enrolments (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         code varchar(60) NOT NULL, name varchar(120) NOT NULL,
         effective_from date NOT NULL, effective_to date,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_claim_assignments_company_code_unique UNIQUE (company_id, code),
+        CONSTRAINT people_claim_employee_enrolments_company_code_unique UNIQUE (company_id, code),
         CHECK (effective_to IS NULL OR effective_to >= effective_from)
       ) ON COMMIT PRESERVE ROWS
       """,
@@ -146,8 +146,8 @@ defmodule Bilimbi.People.Claims.TestFixtures do
       """
       CREATE TEMPORARY TABLE people_claim_assignment_types (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        assignment_id bigint NOT NULL REFERENCES people_claim_assignments (id),
-        claim_type_id bigint NOT NULL REFERENCES people_claim_types (id),
+        assignment_id bigint NOT NULL REFERENCES people_claim_employee_enrolments (id),
+        claim_type_id bigint NOT NULL REFERENCES people_claim_catalog_types (id),
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
         CONSTRAINT people_claim_assignment_types_unique UNIQUE (assignment_id, claim_type_id)
       ) ON COMMIT PRESERVE ROWS
@@ -160,7 +160,7 @@ defmodule Bilimbi.People.Claims.TestFixtures do
       """
       CREATE TEMPORARY TABLE people_claim_assignment_employees (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
-        assignment_id bigint NOT NULL REFERENCES people_claim_assignments (id),
+        assignment_id bigint NOT NULL REFERENCES people_claim_employee_enrolments (id),
         employee_id bigint NOT NULL,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
         CONSTRAINT people_claim_assignment_employees_unique UNIQUE (assignment_id, employee_id)

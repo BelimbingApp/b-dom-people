@@ -5,9 +5,9 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
     for name <- [
           :people_payroll_classifications,
           :people_payroll_items,
-          :people_payroll_periods,
+          :people_payroll_pay_windows,
           :people_payroll_mappings,
-          :people_payroll_runs
+          :people_payroll_setup_snapshots
         ] do
       create table(name) do
         add(:tenant_id, :bigint, null: false)
@@ -40,7 +40,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
       add(:effective_to, :date)
     end
 
-    alter table(:people_payroll_periods) do
+    alter table(:people_payroll_pay_windows) do
       add(:code, :string, size: 60, null: false)
       add(:starts_on, :date, null: false)
       add(:ends_on, :date, null: false)
@@ -55,8 +55,8 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
       add(:effective_to, :date)
     end
 
-    alter table(:people_payroll_runs) do
-      add(:period_id, references(:people_payroll_periods, on_delete: :restrict), null: false)
+    alter table(:people_payroll_setup_snapshots) do
+      add(:period_id, references(:people_payroll_pay_windows, on_delete: :restrict), null: false)
       add(:country, :string, size: 100, null: false)
       add(:currency, :string, size: 3, null: false)
       add(:snapshot, :map, null: false)
@@ -64,8 +64,8 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
       add(:locked_by_actor_id, :bigint)
     end
 
-    create(unique_index(:people_payroll_periods, [:company_id, :code]))
-    create(unique_index(:people_payroll_runs, [:period_id, :currency]))
+    create(unique_index(:people_payroll_pay_windows, [:company_id, :code]))
+    create(unique_index(:people_payroll_setup_snapshots, [:period_id, :currency]))
 
     for name <- [:people_payroll_classifications, :people_payroll_items, :people_payroll_mappings] do
       create(
@@ -76,7 +76,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
     end
 
     create(
-      constraint(:people_payroll_periods, :people_payroll_periods_dates,
+      constraint(:people_payroll_pay_windows, :people_payroll_pay_windows_dates,
         check: "ends_on >= starts_on AND pay_on >= ends_on"
       )
     )
@@ -94,13 +94,13 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
     )
 
     create(
-      constraint(:people_payroll_runs, :people_payroll_runs_lock,
+      constraint(:people_payroll_setup_snapshots, :people_payroll_setup_snapshots_lock,
         check: "(locked_at IS NULL) = (locked_by_actor_id IS NULL)"
       )
     )
 
     create(
-      constraint(:people_payroll_runs, :people_payroll_runs_currency,
+      constraint(:people_payroll_setup_snapshots, :people_payroll_setup_snapshots_currency,
         check: "currency ~ '^[A-Z]{3}$'"
       )
     )
@@ -115,7 +115,7 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
     """)
 
     for table <-
-          ~w(people_payroll_classifications people_payroll_items people_payroll_periods people_payroll_mappings) do
+          ~w(people_payroll_classifications people_payroll_items people_payroll_pay_windows people_payroll_mappings) do
       execute(
         "CREATE TRIGGER #{table}_immutable BEFORE UPDATE OR DELETE ON #{table} FOR EACH ROW EXECUTE FUNCTION people_payroll_immutable()"
       )
@@ -136,17 +136,17 @@ defmodule Bilimbi.People.Payroll.Migrations.CreateFoundation do
     """)
 
     execute(
-      "CREATE TRIGGER people_payroll_runs_guard BEFORE UPDATE OR DELETE ON people_payroll_runs FOR EACH ROW EXECUTE FUNCTION people_payroll_guard_run()"
+      "CREATE TRIGGER people_payroll_setup_snapshots_guard BEFORE UPDATE OR DELETE ON people_payroll_setup_snapshots FOR EACH ROW EXECUTE FUNCTION people_payroll_guard_run()"
     )
   end
 
   def down do
     for name <- [
-          :people_payroll_runs,
+          :people_payroll_setup_snapshots,
           :people_payroll_mappings,
           :people_payroll_items,
           :people_payroll_classifications,
-          :people_payroll_periods
+          :people_payroll_pay_windows
         ],
         do: drop(table(name))
 

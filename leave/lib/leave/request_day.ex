@@ -4,7 +4,7 @@ defmodule Bilimbi.People.Leave.RequestDay do
 
   # A live request holds the half-day slots of each counted date; the partial
   # unique indexes on active slots make overlapping live requests impossible.
-  schema "people_leave_request_days" do
+  schema "people_leave_application_dates" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)

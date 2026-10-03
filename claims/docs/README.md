@@ -5,9 +5,12 @@ assignments, employee claim requests, decisions, reimbursement, and hand-off.
 
 ## Ownership
 
-This module owns nine fresh Bilimbi-only tables: claim categories, claim
-types, claim policies, claim requests, the append-only request status history,
-assignments with their claim types and employees, and hand-off batches. Call `Bilimbi.People.Claims` with a validated
+This module owns nine fresh Bilimbi-only tables. The catalog uses
+`people_claim_catalog_groups` and `people_claim_catalog_types`; effective policies,
+assignments and requests use `people_claim_policy_versions`,
+`people_claim_employee_enrolments` and `people_claim_submissions`. It also owns
+the append-only request status history, assignment claim-type and employee
+links, and hand-off batches. Call `Bilimbi.People.Claims` with a validated
 `Bilimbi.Base.Tenancy.Scope` and an explicit platform company ID; callers do
 not query its schemas. Core Company validates the company, Core User links a
 login actor to an employee, the People workforce seam decides who is a working

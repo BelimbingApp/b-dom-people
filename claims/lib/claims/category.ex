@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Claims.Category do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_claim_categories" do
+  schema "people_claim_catalog_groups" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:code, :string)
@@ -21,7 +21,7 @@ defmodule Bilimbi.People.Claims.Category do
     |> validate_length(:code, max: 60)
     |> validate_length(:name, max: 120)
     |> unique_constraint([:company_id, :code],
-      name: :people_claim_categories_company_code_unique
+      name: :people_claim_catalog_groups_company_code_unique
     )
   end
 end

@@ -218,25 +218,25 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     %{rows: [[other_id]]} =
       Repo.query!(
         """
-        INSERT INTO people_leave_requests
+        INSERT INTO people_leave_applications
           (tenant_id, company_id, employee_id, leave_type_id, leave_year, starts_on, ends_on,
            day_part, quantity, unit, status, request_key, requested_by_user_id,
            inserted_at, updated_at)
         SELECT tenant_id, company_id, employee_id, leave_type_id, leave_year, starts_on, ends_on,
            'am', 0.5, unit, 'pending', 'raw', requested_by_user_id, inserted_at, updated_at
-        FROM people_leave_requests WHERE id = $1
+        FROM people_leave_applications WHERE id = $1
         RETURNING id
         """,
         [request.id]
       )
 
-    assert_raise Postgrex.Error, ~r/people_leave_request_days_am_unique/, fn ->
+    assert_raise Postgrex.Error, ~r/people_leave_application_dates_am_unique/, fn ->
       Repo.query!(
         """
-        INSERT INTO people_leave_request_days
+        INSERT INTO people_leave_application_dates
           (tenant_id, company_id, employee_id, request_id, on_date, am, pm, quantity, active)
         SELECT tenant_id, company_id, employee_id, id, starts_on, true, false, 0.5, true
-        FROM people_leave_requests WHERE id = $1
+        FROM people_leave_applications WHERE id = $1
         """,
         [other_id]
       )

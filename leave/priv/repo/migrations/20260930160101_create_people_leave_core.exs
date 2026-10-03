@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
   use Ecto.Migration
 
   def up do
-    create table(:people_leave_types, primary_key: false) do
+    create table(:people_leave_catalog_types, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -15,19 +15,21 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
     end
 
     create(
-      unique_index(:people_leave_types, [:company_id, :code],
-        name: :people_leave_types_company_code_unique
+      unique_index(:people_leave_catalog_types, [:company_id, :code],
+        name: :people_leave_catalog_types_company_code_unique
       )
     )
 
-    create(index(:people_leave_types, [:tenant_id, :company_id]))
+    create(index(:people_leave_catalog_types, [:tenant_id, :company_id]))
 
     create table(:people_leave_policies, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
 
-      add(:leave_type_id, references(:people_leave_types, type: :bigint, on_delete: :restrict),
+      add(
+        :leave_type_id,
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
         null: false
       )
 
@@ -71,7 +73,9 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
       add(:company_id, :bigint, null: false)
       add(:employee_id, :bigint, null: false)
 
-      add(:leave_type_id, references(:people_leave_types, type: :bigint, on_delete: :restrict),
+      add(
+        :leave_type_id,
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
         null: false
       )
 
@@ -122,6 +126,6 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
     drop(table(:people_leave_ledger_entries))
     execute("DROP FUNCTION people_leave_ledger_entries_append_only()")
     drop(table(:people_leave_policies))
-    drop(table(:people_leave_types))
+    drop(table(:people_leave_catalog_types))
   end
 end
