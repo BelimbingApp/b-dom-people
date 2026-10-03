@@ -104,7 +104,9 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
     )
 
     create(
-      constraint(:people_training_team_plans, :people_training_team_plans_version, check: "version > 0")
+      constraint(:people_training_team_plans, :people_training_team_plans_version,
+        check: "version > 0"
+      )
     )
 
     create table(:people_training_team_plan_items) do
