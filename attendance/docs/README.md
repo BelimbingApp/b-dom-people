@@ -10,8 +10,8 @@ workforce read refuses the operation.
 
 ## Clock facts and days
 
-This module owns fresh `people_attendance_days` and
-`people_attendance_clock_events` tables. `Attendance.record_clock/4` validates a
+This module owns fresh `people_attendance_daily_summaries` and
+`people_attendance_clock_facts` tables. `Attendance.record_clock/4` validates a
 live workforce employee in an explicit company, deduplicates by
 company/source/key, and projects the day from ordered events. A conflicting
 replay is refused. The first clock-in and last clock-out provide a raw worked
@@ -32,7 +32,7 @@ with `:location_required` and one outside every active location with
 
 ## Shift templates and rosters
 
-`people_attendance_shift_templates` holds each company's shifts: a code, name,
+`people_attendance_shift_definitions` holds each company's shifts: a code, name,
 start and end as minutes past local midnight, and break minutes. An end at or
 before the start crosses midnight. Templates are retired, not deleted, so
 published rosters keep their meaning.
@@ -52,7 +52,7 @@ for the signed-in actor's linked employee.
 
 ## Adjustment requests
 
-`people_attendance_adjustment_requests` records missed clock events that an
+`people_attendance_corrections` records missed clock events that an
 employee asks to add. `submit_adjustment/4` resolves the signed-in user to their
 linked working employee, reads the local time in the company's attendance time
 zone, and refuses a future time, a date outside the company's request window,
@@ -97,6 +97,7 @@ seeded.
 
 ## Allowance rules and Payroll source
 
+Allowance rules are stored in `people_attendance_allowance_policies`.
 Operators manage a company's effective-dated allowance catalog at
 `/people/attendance/rules/allowances` with the separate
 `people.attendance.allowances.manage` capability. Each version carries an
@@ -167,3 +168,6 @@ describes all attendance migrations and verifies against a freshly migrated
 database with `Bilimbi.Base.Database.SchemaVerifier.verify/2`; it is not
 registered in the descriptor, because pending Bilimbi-only migrations would
 otherwise fail compatibility verification.
+
+`test/schema_contract_test.exs` runs all three original attendance migrations
+in a fresh database and verifies the complete owned contract.

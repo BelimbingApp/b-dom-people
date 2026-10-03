@@ -3,7 +3,7 @@ defmodule Bilimbi.People.ReferenceData.Entry do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_reference_entries" do
+  schema "people_reference_data_entries" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:kind, :string)
@@ -24,7 +24,7 @@ defmodule Bilimbi.People.ReferenceData.Entry do
     |> validate_length(:code, min: 1, max: 100)
     |> validate_length(:label, min: 1, max: 200)
     |> unique_constraint([:company_id, :kind, :code],
-      name: :people_reference_entries_company_kind_code_unique
+      name: :people_reference_data_entries_company_kind_code_unique
     )
   end
 end

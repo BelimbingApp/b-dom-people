@@ -3,7 +3,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.WorkProfile do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_employee_work_profiles" do
+  schema "people_employee_workspace_profiles" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)

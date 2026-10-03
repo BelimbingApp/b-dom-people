@@ -22,7 +22,8 @@ cross-company employees are refused. Pages also use Core Company's actor-aware
 target authorization and separate read, manage, and review capabilities.
 
 Migration `20260930120101` is fresh `:bilimbi_only` schema. It creates no
-employee rows and copies no source table names or migration sequence. Run
+employee rows and copies no source table names or migration sequence. Work
+profiles are stored in `people_employee_workspace_profiles`. Run
 `mix bilimbi.migrate` from a mounted Bilimbi root.
 `Bilimbi.People.EmployeeWorkspace.SchemaContract` stays unregistered;
 `test/schema_contract_test.exs` checks it against a freshly migrated database

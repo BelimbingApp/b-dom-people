@@ -2,8 +2,9 @@
 
 Module ID: `people/reference_data`. People reference entries and calendar exceptions.
 
-This module owns three fresh Bilimbi-only tables: reference entries, aliases,
-and calendar exceptions. Call `Bilimbi.People.ReferenceData` with a validated
+This module owns three fresh Bilimbi-only tables:
+`people_reference_data_entries`, `people_reference_data_aliases`, and
+`people_reference_data_calendar_overrides`. Call `Bilimbi.People.ReferenceData` with a validated
 `Bilimbi.Base.Tenancy.Scope` and explicit company ID. The facade checks that
 company through Core Company before reading or writing; callers do not query
 its schemas. An alias label is unique per reference kind within a company.
@@ -22,3 +23,7 @@ globally unique. No Belimbing table or data adoption is involved.
 The owned `SchemaContract` describes the fresh tables, but the descriptor does
 not register it with compatibility verification: that verifier also runs before
 pending Bilimbi-only migrations, when these tables correctly do not exist.
+
+`test/schema_contract_test.exs` runs the original migration in a fresh database
+and verifies the owned contract with
+`Bilimbi.Base.Database.SchemaVerifier.verify/2`.

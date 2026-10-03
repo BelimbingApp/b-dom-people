@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Attendance.AllowanceRule do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_attendance_allowance_rules" do
+  schema "people_attendance_allowance_policies" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:code, :string)
@@ -53,7 +53,7 @@ defmodule Bilimbi.People.Attendance.AllowanceRule do
     |> validate_format(:currency, ~r/^[A-Z]{3}$/)
     |> validate_date_order()
     |> unique_constraint([:company_id, :code, :effective_from],
-      name: :people_attendance_allowance_rules_company_code_from_unique
+      name: :people_attendance_allowance_policies_company_code_from_unique
     )
   end
 

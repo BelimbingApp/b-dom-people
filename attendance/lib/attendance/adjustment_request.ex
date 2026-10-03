@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Attendance.AdjustmentRequest do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_attendance_adjustment_requests" do
+  schema "people_attendance_corrections" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)
@@ -42,7 +42,7 @@ defmodule Bilimbi.People.Attendance.AdjustmentRequest do
     |> validate_length(:request_key, min: 1, max: 160)
     |> validate_length(:reason, min: 1, max: 500)
     |> unique_constraint([:company_id, :request_key],
-      name: :people_attendance_adjustment_requests_company_key_unique
+      name: :people_attendance_corrections_company_key_unique
     )
   end
 

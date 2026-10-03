@@ -7,13 +7,13 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_attendance_days (
+      CREATE TEMPORARY TABLE people_attendance_daily_summaries (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL, on_date date NOT NULL, status varchar(32) NOT NULL,
         first_in_at timestamp(0), last_out_at timestamp(0),
         worked_minutes integer NOT NULL DEFAULT 0,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_attendance_days_company_employee_date_unique
+        CONSTRAINT people_attendance_daily_summaries_company_employee_date_unique
           UNIQUE (company_id, employee_id, on_date)
       ) ON COMMIT PRESERVE ROWS
       """,
@@ -23,7 +23,7 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_attendance_clock_events (
+      CREATE TEMPORARY TABLE people_attendance_clock_facts (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL, day_id bigint NOT NULL,
         event_key varchar(160) NOT NULL, event_type varchar(16) NOT NULL,
@@ -41,13 +41,13 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_attendance_shift_templates (
+      CREATE TEMPORARY TABLE people_attendance_shift_definitions (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         code varchar(40) NOT NULL, name varchar(120) NOT NULL,
         start_minute integer NOT NULL, end_minute integer NOT NULL,
         break_minutes integer NOT NULL DEFAULT 0, status varchar(16) NOT NULL,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_attendance_shift_templates_company_code_unique UNIQUE (company_id, code),
+        CONSTRAINT people_attendance_shift_definitions_company_code_unique UNIQUE (company_id, code),
         CHECK (start_minute BETWEEN 0 AND 1439 AND end_minute BETWEEN 0 AND 1439 AND
           start_minute <> end_minute AND break_minutes >= 0)
       ) ON COMMIT PRESERVE ROWS
@@ -61,9 +61,9 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
       CREATE TEMPORARY TABLE people_attendance_roster_entries (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL, on_date date NOT NULL, kind varchar(16) NOT NULL,
-        shift_template_id bigint REFERENCES people_attendance_shift_templates(id),
+        shift_template_id bigint REFERENCES people_attendance_shift_definitions(id),
         published_kind varchar(16),
-        published_shift_template_id bigint REFERENCES people_attendance_shift_templates(id),
+        published_shift_template_id bigint REFERENCES people_attendance_shift_definitions(id),
         published_at timestamp(0), published_by_user_id bigint,
         revision integer NOT NULL DEFAULT 1, updated_by_user_id bigint,
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
@@ -96,16 +96,16 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_attendance_adjustment_requests (
+      CREATE TEMPORARY TABLE people_attendance_corrections (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL, request_key varchar(160) NOT NULL,
         event_type varchar(16) NOT NULL, proposed_at timestamp(0) NOT NULL,
         on_date date NOT NULL, timezone varchar(100) NOT NULL, reason varchar(500) NOT NULL,
         status varchar(16) NOT NULL, requested_by_user_id bigint NOT NULL,
         decided_by_user_id bigint, decided_at timestamp(0), decision_note varchar(500),
-        applied_clock_event_id bigint REFERENCES people_attendance_clock_events(id),
+        applied_clock_event_id bigint REFERENCES people_attendance_clock_facts(id),
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_attendance_adjustment_requests_company_key_unique
+        CONSTRAINT people_attendance_corrections_company_key_unique
           UNIQUE (company_id, request_key),
         CHECK ((status = 'pending') = (decided_at IS NULL) AND
           (status = 'approved') = (applied_clock_event_id IS NOT NULL))
@@ -117,14 +117,14 @@ defmodule Bilimbi.People.Attendance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_attendance_allowance_rules (
+      CREATE TEMPORARY TABLE people_attendance_allowance_policies (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         code varchar(40) NOT NULL, name varchar(120) NOT NULL, unit varchar(32) NOT NULL,
         value numeric(14,4) NOT NULL, currency varchar(3) NOT NULL,
         effective_from date NOT NULL, effective_until date,
         status varchar(16) NOT NULL DEFAULT 'active',
         inserted_at timestamp(0) NOT NULL, updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_attendance_allowance_rules_company_code_from_unique
+        CONSTRAINT people_attendance_allowance_policies_company_code_from_unique
           UNIQUE (company_id, code, effective_from),
         CHECK (status IN ('active', 'retired')), CHECK (value > 0),
         CHECK (effective_until IS NULL OR effective_until >= effective_from)
