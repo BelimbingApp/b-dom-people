@@ -47,13 +47,13 @@ records a `people.attendance.roster_published` Base Audit action. `roster/5`
 returns a planner's grid for up to 31 days and 200 employees, with an optional
 name or number search. Its pending count covers every pending entry of the
 company in the period, including employees the grid does not show, because
-publishing releases all of them. `self_roster/5` returns only published entries
+publishing releases all of them. `self_roster/4` returns only published entries
 for the signed-in actor's linked employee.
 
 ## Adjustment requests
 
 `people_attendance_corrections` records missed clock events that an
-employee asks to add. `submit_adjustment/4` resolves the signed-in user to their
+employee asks to add. `submit_adjustment/3` resolves the signed-in user to their
 linked working employee, reads the local time in the company's attendance time
 zone, and refuses a future time, a date outside the company's request window,
 and a second pending or approved request for the same event. The request key

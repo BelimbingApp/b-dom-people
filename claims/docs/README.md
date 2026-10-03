@@ -26,9 +26,10 @@ capability for the scope's signed-in actor at the moment it runs, through
 decisions and the operator queue need `people.claims.approve`; paying,
 hand-off batches and the CSV export need `people.claims.reimburse`;
 self-service needs `people.claims.submit`. No function takes an actor or
-actor ID: attribution comes from the scope's actor. A page's route grant is
-proven at mount only, so a grant revoked while a page stays open refuses the
-next event.
+actor ID: attribution comes from the scope's actor. Claim operations rechecks
+both `people.claims.approve` and the operation's capability before preparing
+or confirming an action or exporting a batch, so revoking either grant while
+the page stays open refuses the next action.
 
 Self-service functions (`self_service_employee/2`, `self_open_claim_types/2`,
 `self_requests/2`, `submit_request/3`, `withdraw_request/3`) act on the
