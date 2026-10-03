@@ -138,6 +138,10 @@ jobs:
       - name: Install Tailwind
         run: (cd apps/web && mix tailwind.install --if-missing)
 
+      # The module hooks test bundles mounted hooks with the pinned esbuild binary.
+      - name: Install esbuild
+        run: (cd apps/web && mix esbuild.install --if-missing)
+
       # `mix precommit` runs the LiveView hook tests in Node (`mix assets.test`).
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -146,6 +150,9 @@ jobs:
 
       - name: Run Bilimbi's precommit with People mounted
         run: mix precommit
+
+      - name: Test attendance browser location hook
+        run: node --test apps/domains/people/attendance/assets/test/clock_location.test.mjs
 
       # Precommit formats and unlocks unused dependencies in place. Neither
       # repository nor the pinned composition lock may change.
@@ -240,6 +247,9 @@ jobs:
 
       - name: Install Tailwind
         run: (cd apps/web && mix tailwind.install --if-missing)
+
+      - name: Install esbuild
+        run: (cd apps/web && mix esbuild.install --if-missing)
 
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

@@ -135,10 +135,25 @@ the logged-in Core User to a Core Employee through public APIs. It shows
 clocking, the next 14 days of published shifts, up to 31 recent days, and the
 employee's adjustment requests, with explicit unavailable and empty states.
 
-A browser page cannot report a location yet: a Domain module's colocated hook
-is not bundled into the Web assets. When a company requires a clocking
-location, My attendance hides web clocking and points the employee to a
-clocking point or an adjustment request.
+My attendance captures a fresh browser location only when the company's policy
+requires one and the employee clicks Clock in or Clock out. The colocated
+`ClockLocation` hook ships through Bilimbi's composed static hook bundle; it
+requires a secure browser context and location permission. Coordinates pass
+through the same active, company-scoped geofence validation as ingestion.
+Missing or invalid coordinates and points outside every approved location
+produce no clock event. Permission refusal and unavailable location explain
+how to retry and keep adjustment requests available as the fallback. Browser
+coordinates are browser-reported evidence, not proof against location spoofing.
+
+`self_clock/5` checks the scope's authenticated, non-impersonated user, current
+self-view capability, company and linked working employee before recording.
+Ingestion and independently approved adjustments retain their existing paths.
+
+After host compilation and `mix cmd --app web mix esbuild.install --if-missing`,
+run the browser-hook behavior tests from Bilimbi's root:
+`node --test apps/domains/people/attendance/assets/test/clock_location.test.mjs`.
+The tests execute the host's selected hook bundle, including the compiled
+location hook, instead of selecting potentially stale extraction files.
 
 ## Deployment
 

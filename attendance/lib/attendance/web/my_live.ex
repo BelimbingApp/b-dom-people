@@ -2,6 +2,7 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
   @moduledoc "Self attendance with account-to-employee resolution through Core User."
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Attendance
+  alias Phoenix.LiveView.JS
   alias Bilimbi.People.Attendance.Web.Components, as: AttendanceComponents
 
   # Published shifts shown ahead of today, kept short for a mobile page.
@@ -14,29 +15,37 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
      |> assign(:page_title, "My attendance")
      |> assign(:active_nav, "people.attendance.my")
      |> assign(:request_key, Ecto.UUID.generate())
-     |> load()}
+     |> load()
+     |> attach_hook(:clock_authority, :handle_event, fn
+       "clock", _params, socket -> {:cont, refresh_clock_authority(socket)}
+       _event, _params, socket -> {:cont, socket}
+     end)}
   end
 
   @impl true
+  def handle_event("clock", _params, %{assigns: %{can_self_clock?: false}} = socket),
+    do: {:noreply, put_flash(socket, :error, "Self clocking is unavailable for this account.")}
+
   def handle_event("clock", params, socket) do
     current = socket.assigns.current_scope
 
     case Attendance.self_clock(
            current.scope,
            current.actor.company_id,
-           current.actor,
            params["type"],
-           socket.assigns.clock_key
+           socket.assigns.clock_key,
+           Map.take(params, ["latitude", "longitude"])
          ) do
       {:ok, _} ->
         {:noreply, socket |> load() |> put_flash(:success, "Clock event recorded.")}
 
-      {:error, reason} when reason in [:location_required, :outside_clocking_location] ->
+      {:error, reason}
+      when reason in [:location_required, :outside_clocking_location, :invalid_event] ->
         {:noreply,
          put_flash(
            socket,
            :error,
-           "Clock events here must come from an approved clocking location."
+           clock_refusal(reason)
          )}
 
       {:error, :unavailable} ->
@@ -45,6 +54,19 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Clock event could not be recorded.")}
     end
+  end
+
+  def handle_event("clock_location_error", %{"reason" => reason}, socket) do
+    message =
+      case reason do
+        "permission_denied" ->
+          "Location permission was refused. Allow location access in your browser and try again, or request an adjustment below."
+
+        _ ->
+          "Your location is unavailable. Check location access and try again, or request an adjustment below."
+      end
+
+    {:noreply, put_flash(socket, :error, message)}
   end
 
   def handle_event("request_adjustment", %{"adjustment" => attrs}, socket) do
@@ -88,6 +110,18 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
     end
   end
 
+  defp clock_refusal(:outside_clocking_location),
+    do:
+      "You are outside this company's approved clocking locations. Move to an approved location and try again, or request an adjustment below."
+
+  defp clock_refusal(_),
+    do: "A valid location is required to clock here. Try again, or request an adjustment below."
+
+  defp refresh_clock_authority(socket) do
+    %{scope: scope, actor: actor} = socket.assigns.current_scope
+    assign(socket, :can_self_clock?, Attendance.can_self_clock?(scope, actor.company_id))
+  end
+
   def refusal(:invalid_time), do: "Enter a valid date and time."
   def refusal(:future_time), do: "The time cannot be in the future."
   def refusal(:outside_window), do: "That date is outside the adjustment request window."
@@ -114,6 +148,7 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
     socket
     |> assign(:clock_key, Ecto.UUID.generate())
     |> assign(:state, state)
+    |> refresh_clock_authority()
   end
 
   defp shift_label(%{kind: "rest"}), do: "Rest day"
@@ -139,20 +174,30 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
         <div :if={@state != :unavailable} class="space-y-6">
           <section aria-labelledby="my-attendance-clock-heading">
             <h2 id="my-attendance-clock-heading" class="sr-only">Clocking</h2>
-            <div :if={@state.rules.self_clock_enabled and not @state.rules.location_required} class="flex gap-2 mt-5">
-              <.button phx-click="clock" phx-value-type="in">
-                Clock in
-              </.button>
-              <.button phx-click="clock" phx-value-type="out">
-                Clock out
-              </.button>
+            <div :if={@state.rules.self_clock_enabled} id="my-attendance-clock"
+              phx-hook=".ClockLocation" data-authorized={to_string(@can_self_clock?)} data-location-required={to_string(@state.rules.location_required)} class="mt-5">
+              <p :if={@state.rules.location_required} id="my-attendance-location-required" class="text-sm text-ink-muted">
+                This company requires your location inside an approved clocking location.
+                Your browser will ask for location access when you clock. If it is unavailable, request an adjustment below.
+              </p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <.button data-clock-type="in" disabled={!@can_self_clock?}
+                  phx-click={JS.dispatch("attendance:clock", detail: %{type: "in"})}>
+                  Clock in
+                </.button>
+                <.button data-clock-type="out" disabled={!@can_self_clock?}
+                  phx-click={JS.dispatch("attendance:clock", detail: %{type: "out"})}>
+                  Clock out
+                </.button>
+              </div>
+              <p id="my-attendance-location-status" phx-update="ignore" role="status" aria-live="polite"
+                class="mt-2 text-sm text-ink-muted"></p>
+              <p :if={!@can_self_clock?} class="mt-2 text-sm text-ink-muted">
+                Self clocking is unavailable for this account.
+              </p>
             </div>
             <.empty_state :if={!@state.rules.self_clock_enabled} id="my-attendance-clocking-off" class="mt-5"
               title="Self clocking is off." reason="An operator can enable it in Attendance rules." />
-            <.empty_state :if={@state.rules.self_clock_enabled and @state.rules.location_required}
-              id="my-attendance-location-required" class="mt-5"
-              title="Clock in at an approved clocking location."
-              reason="This company requires a verified location, which this page cannot report. Use a clocking point, or request an adjustment below." />
           </section>
 
           <section aria-labelledby="my-attendance-shifts-heading">
@@ -213,6 +258,91 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
         </div>
       </.page>
     </Layouts.app>
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".ClockLocation">
+      export default {
+        mounted() {
+          this.busy = false
+          this.generation = 0
+          this.connected = true
+          this.onClock = event => {
+            const type = event.detail.type
+            if (this.busy || !this.connected || !["in", "out"].includes(type)) return
+            const button = this.el.querySelector(`[data-clock-type="${type}"]`)
+            if (!button || button.disabled) return
+            this.busy = true
+            const generation = ++this.generation
+            this.setBusy(true)
+            const current = () => this.connected && this.generation === generation
+            const finish = () => {
+              if (!current()) return
+              this.busy = false
+              this.setBusy(false)
+              this.status("")
+            }
+            const failed = reason => {
+              if (!current()) return
+              this.pushEvent("clock_location_error", {reason}, finish)
+            }
+            const record = coordinates => {
+              if (!current()) return
+              this.status("Recording clock event…")
+              this.pushEvent("clock", {type, ...coordinates}, finish)
+            }
+            if (this.el.dataset.locationRequired !== "true") {
+              record({})
+              return
+            }
+            this.status("Finding your location…")
+            if (!window.isSecureContext || !navigator.geolocation) {
+              failed("unavailable")
+              return
+            }
+            try {
+              navigator.geolocation.getCurrentPosition(position => {
+              const {latitude, longitude} = position.coords || {}
+              if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+                failed("unavailable")
+                return
+              }
+              record({latitude, longitude})
+            }, error => failed(error.code === 1 ? "permission_denied" : "unavailable"),
+              {enableHighAccuracy: true, maximumAge: 0, timeout: 15000})
+            } catch (_error) {
+              failed("unavailable")
+            }
+          }
+          this.el.addEventListener("attendance:clock", this.onClock)
+        },
+        status(message) {
+          this.el.querySelector("[role=status]").textContent = message
+        },
+        setBusy(busy) {
+          this.el.setAttribute("aria-busy", String(busy))
+          this.el.querySelectorAll("[data-clock-type]").forEach(button => {
+            button.disabled = busy || this.el.dataset.authorized !== "true"
+          })
+        },
+        updated() {
+          if (this.busy) this.setBusy(true)
+        },
+        disconnected() {
+          this.connected = false
+          this.generation++
+          this.busy = false
+          this.setBusy(false)
+          this.status("Clocking is unavailable while reconnecting. Try again when connected, or request an adjustment.")
+        },
+        reconnected() {
+          this.connected = true
+          this.status("")
+        },
+        destroyed() {
+          this.connected = false
+          this.generation++
+          this.el.removeEventListener("attendance:clock", this.onClock)
+        }
+      }
+    </script>
     """
   end
 
