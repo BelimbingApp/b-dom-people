@@ -6,6 +6,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Payroll
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
 
   setup do
     UserFixtures.create_user_tables!()
@@ -225,6 +226,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
   test "attendance mappings are item-backed versions that runs freeze", %{scope: scope} do
     grant_capabilities!([
+      "people.attendance.allowances.manage",
       "people.payroll.view",
       "people.payroll.manage",
       "people.payroll.attendance-mappings.manage"
@@ -308,6 +310,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     scope: scope
   } do
     grant_capabilities!([
+      "people.attendance.allowances.manage",
       "people.payroll.view",
       "people.payroll.manage",
       "people.payroll.attendance-mappings.manage"
@@ -414,6 +417,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
 
   test "Leave and Claims sources are validated and Attendance refuses mapping", %{scope: scope} do
     grant()
+    grant_capabilities!(~w(people.leave.policies.manage people.claims.manage))
     %{item: item} = catalog(scope)
 
     {:ok, leave} =
@@ -485,6 +489,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     scope: scope
   } do
     grant()
+    grant_capabilities!(~w(people.leave.policies.manage))
     %{classification: classification, item: item, period: period} = catalog(scope)
 
     {:ok, other} =
@@ -555,6 +560,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
     system: system
   } do
     grant()
+    grant_capabilities!(~w(people.leave.policies.manage people.claims.manage))
     %{period: past} = catalog(scope)
     Bilimbi.People.ReferenceData.TestFixtures.create_reference_tables!()
     :ok = Bilimbi.Core.Employee.ensure_system_types()
@@ -594,11 +600,16 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
         {code, type}
       end)
 
+    employee_scope =
+      AuthorizationFixtures.sign_in!(system, 73, 93, ~w(
+        people.leave.self.view
+        people.claims.submit
+      ))
+
     assert {:ok, _} =
              Bilimbi.People.Leave.submit_request(
-               system,
+               employee_scope,
                73,
-               %{type: :user, id: 93, company_id: 73},
                %{
                  leave_type_id: types["used"].id,
                  starts_on: ~D[2099-03-02],
@@ -636,7 +647,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLiveTest do
       end)
 
     assert {:ok, _} =
-             Bilimbi.People.Claims.submit_request(system, 73, employee.id, 93, %{
+             Bilimbi.People.Claims.submit_request(employee_scope, 73, %{
                claim_type_id: claims["used"].id,
                incurred_on: "2026-01-15",
                amount: "40",

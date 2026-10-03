@@ -4,7 +4,6 @@ defmodule Bilimbi.People.SkillsAccessTest do
   import Ecto.Query
 
   alias Bilimbi.Base.Authz
-  alias Bilimbi.Base.Authz.ContributionValidator, as: AuthzValidator
   alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
@@ -17,6 +16,7 @@ defmodule Bilimbi.People.SkillsAccessTest do
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.{Contributions, Reminder, Reminders, Score}
   alias Bilimbi.People.Skills.TestFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
   alias Ecto.Adapters.SQL
 
@@ -33,36 +33,9 @@ defmodule Bilimbi.People.SkillsAccessTest do
         %{descriptor: %{id: "people/skills"}, payload: Contributions.contributions().settings}
       ])
 
-    authz =
-      AuthzValidator.validate_contributions!([
-        %{
-          descriptor: %{id: "base/authz", otp_app: :bilimbi_base_authz},
-          payload: Bilimbi.Base.Authz.Contributions.contributions()[:authz]
-        },
-        %{
-          descriptor: %{id: "core/company", otp_app: :bilimbi_core_company},
-          payload: %{
-            domains: %{"core" => "Core platform modules"},
-            capabilities: ["admin.company.view", "admin.company.list", "admin.company.manage"],
-            roles: %{},
-            company_directory: Bilimbi.Core.Company.AuthzCompanyDirectory
-          }
-        },
-        # Base Tiling declares the publish verb in a composed application.
-        %{
-          descriptor: %{id: "base/tiling", otp_app: :bilimbi_base_tiling},
-          payload: %{domains: %{}, verbs: ["publish"], capabilities: [], roles: %{}}
-        },
-        %{
-          descriptor: %{id: "people/skills", otp_app: :bilimbi_people_skills},
-          payload: Contributions.contributions().authz
-        }
-      ])
-
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "skills-access-test",
-      consumers:
-        Map.merge(ContributionRegistry.build!([]).consumers, %{settings: settings, authz: authz})
+    AuthorizationFixtures.install_snapshot!("skills-access-test", %{
+      settings: settings,
+      authz: AuthorizationFixtures.authz_consumer!([Contributions])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
@@ -80,13 +53,24 @@ defmodule Bilimbi.People.SkillsAccessTest do
     owner_employee = employee(scope, "E-3", nil)
     unrelated = employee(scope, "E-4", nil)
 
+    # Catalog writes authorize the scope's actor: an operator holds the
+    # catalog grant, and the manager user (90) publishes the requirement.
+    UserFixtures.insert_user!(%{id: 89, company_id: 73, email: "catalog@example.com"})
+
+    operator =
+      AuthorizationFixtures.sign_in!(scope, 73, 89, [
+        "people.skills.catalog.manage",
+        "people.skills.profiles.publish"
+      ])
+
     %{
       scope: scope,
+      operator: operator,
       supervisor: supervisor,
       subject: subject,
       owner_employee: owner_employee,
       unrelated: unrelated,
-      skill: skill(scope)
+      skill: skill(operator)
     }
   end
 
@@ -147,7 +131,9 @@ defmodule Bilimbi.People.SkillsAccessTest do
     owner = user(scope, 91, ctx.owner_employee.id, ~w(actions.view actions.update))
     lead = user(scope, 92, supervisor.id, ~w(actions.view))
     stranger = user(scope, 93, ctx.unrelated.id, ~w(actions.view actions.update))
-    {:ok, type} = Skills.create_action_type(scope, 73, %{code: "coaching", name: "Coaching"})
+
+    {:ok, type} =
+      Skills.create_action_type(ctx.operator, 73, %{code: "coaching", name: "Coaching"})
 
     {:ok, action} =
       Skills.propose_action(manager, 73, %{
@@ -192,7 +178,7 @@ defmodule Bilimbi.People.SkillsAccessTest do
                                        assessments.manage profiles.publish))
     assessor = user(scope, 92, ctx.supervisor.id, ~w(assessments.submit))
     today = Date.utc_today()
-    requirement(scope, manager, skill, Date.add(today, -100))
+    requirement(ctx, skill, Date.add(today, -100))
 
     submit = fn key, level, on, supersedes ->
       {:ok, row} =
@@ -228,7 +214,7 @@ defmodule Bilimbi.People.SkillsAccessTest do
     assert assessment_id == correction.id
   end
 
-  defp requirement(scope, manager, skill, effective_from) do
+  defp requirement(%{operator: scope} = ctx, skill, effective_from) do
     {:ok, scale} = Skills.create_scale(scope, 73, %{code: "standard", name: "Standard"})
 
     for {name, level} <- Enum.with_index(~w(None Aware Competent)) do
@@ -255,11 +241,12 @@ defmodule Bilimbi.People.SkillsAccessTest do
       })
 
     {:ok, _} = Skills.add_selector(scope, 73, profile.id, :company)
-    {:ok, _} = Skills.publish_profile(manager, 73, profile.id, effective_from)
+    publisher = AuthorizationFixtures.sign_in(ctx.scope, 90, 73)
+    {:ok, _} = Skills.publish_profile(publisher, 73, profile.id, effective_from)
   end
 
   test "coverage gaps are due to a reminder sender without assessment capabilities", ctx do
-    critical = skill_in(ctx.scope, "rigging", true)
+    critical = skill_in(ctx.operator, "rigging", true)
     sender = user(ctx.scope, 95, nil, ~w(reminders.send))
 
     assert {:ok, due} = Skills.due_reminders(sender, 73)

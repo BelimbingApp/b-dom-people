@@ -47,13 +47,13 @@ records a `people.attendance.roster_published` Base Audit action. `roster/5`
 returns a planner's grid for up to 31 days and 200 employees, with an optional
 name or number search. Its pending count covers every pending entry of the
 company in the period, including employees the grid does not show, because
-publishing releases all of them. `self_roster/5` returns only published entries
+publishing releases all of them. `self_roster/4` returns only published entries
 for the signed-in actor's linked employee.
 
 ## Adjustment requests
 
 `people_attendance_corrections` records missed clock events that an
-employee asks to add. `submit_adjustment/4` resolves the signed-in user to their
+employee asks to add. `submit_adjustment/3` resolves the signed-in user to their
 linked working employee, reads the local time in the company's attendance time
 zone, and refuses a future time, a date outside the company's request window,
 and a second pending or approved request for the same event. The request key
@@ -149,6 +149,23 @@ coordinates are browser-reported evidence, not proof against location spoofing.
 `self_clock/5` checks the scope's authenticated, non-impersonated user, current
 self-view capability, company and linked working employee before recording.
 Ingestion and independently approved adjustments retain their existing paths.
+
+## Per-operation authorization
+
+A page proves its route capability at mount, but the facade is the authority:
+every operator write (`put_rules/3`, shift templates, clocking locations,
+allowance rules, roster planning and publishing, adjustment decisions) and the
+approval queue and planner roster reads call
+`Bilimbi.People.Workforce.Authorization.authorize/3` with the scope they are
+handed, so a grant revoked while a page stays connected refuses the next
+event with `:unauthorized`. Self-service (`self_days/2`, `self_roster/4`,
+`self_adjustments/2`, `submit_adjustment/3`, `cancel_adjustment/3`,
+`self_clock/5`) resolves the signed-in account's current linked working
+employee on every call; writes prove the link again under the Core Employee
+affiliation lock in the same transaction, so an unlinked or relinked account
+gets `:not_linked` and My attendance shows its unavailable state. No facade
+function takes an actor or employee argument for the performer; attribution
+comes from the scope's sealed actor.
 
 After host compilation and `mix cmd --app web mix esbuild.install --if-missing`,
 run the browser-hook behavior tests from Bilimbi's root:

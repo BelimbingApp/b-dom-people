@@ -9,6 +9,7 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
   @manage_capability "people.skills.catalog.manage"
   @write_events ~w(create_category set_category_active create_skill set_skill_active
                    create_scale put_level delete_level scale_action create_profile)
+  @forbidden "You cannot change this company's skills."
 
   @impl true
   def mount(_params, _session, socket) do
@@ -35,9 +36,11 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
   end
 
   @impl true
+  # The assign only hides controls; `manage/4` and the facade authorize the
+  # write itself when it runs.
   def handle_event(event, _params, %{assigns: %{can_manage?: false}} = socket)
       when event in @write_events,
-      do: {:noreply, put_flash(socket, :error, "You cannot change this company's skills.")}
+      do: {:noreply, put_flash(socket, :error, @forbidden)}
 
   def handle_event("select_company", %{"company_id" => id}, socket),
     do: {:noreply, push_patch(socket, to: ~p"/people/skills?company_id=#{id}")}
@@ -103,7 +106,7 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
     {fun, success} =
       case action do
         "publish" ->
-          {&Skills.publish_scale(&1, &2, scale_id, actor_user_id(socket)), "Scale published."}
+          {&Skills.publish_scale(&1, &2, scale_id), "Scale published."}
 
         "retire" ->
           {&Skills.retire_scale(&1, &2, scale_id), "Scale retired."}
@@ -131,17 +134,21 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
     actor = socket.assigns.current_scope.actor
 
     with %{id: company_id} <- socket.assigns.company,
+         {:ok, _} <- Company.authorize_company_target(actor, company_id, @capability),
          {:ok, _} <- Company.authorize_company_target(actor, company_id, @manage_capability) do
       case fun.(socket.assigns.current_scope.scope, company_id) do
         {:ok, _} ->
           {:noreply, socket |> load() |> put_flash(:success, success)}
+
+        {:error, :unauthorized} ->
+          {:noreply, socket |> load() |> put_flash(:error, @forbidden)}
 
         {:error, reason} ->
           message = if is_function(failure), do: failure.(reason), else: failure
           {:noreply, put_flash(socket, :error, message)}
       end
     else
-      _ -> {:noreply, put_flash(socket, :error, "You cannot change this company's skills.")}
+      _ -> {:noreply, put_flash(socket, :error, @forbidden)}
     end
   end
 
@@ -150,6 +157,10 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
 
   defp scale_error(:draft_exists), do: "That scale already has an open draft."
   defp scale_error(:scale_in_use), do: "A requirement profile uses this draft."
+
+  defp scale_error(:unauthorized),
+    do: "You no longer have permission to change this company's skills."
+
   defp scale_error(_), do: "The scale could not be changed."
 
   defp load(%{assigns: %{company: nil}} = socket), do: assign_empty(socket)
@@ -193,13 +204,6 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
         scales: [],
         profiles: []
       )
-
-  defp actor_user_id(socket) do
-    case socket.assigns.current_scope.actor do
-      %{type: :user, id: id} -> id
-      _ -> nil
-    end
-  end
 
   defp to_integer(value) when is_binary(value) do
     case Integer.parse(String.trim(value)) do

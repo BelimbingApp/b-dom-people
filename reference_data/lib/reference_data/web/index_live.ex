@@ -49,6 +49,9 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
       {:ok, _entry} ->
         {:noreply, socket |> load_records() |> put_flash(:success, "Reference added.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, refused(socket)}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Check the reference fields and unique code.")}
     end
@@ -60,6 +63,9 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
     case ReferenceData.add_alias(scope(socket), socket.assigns.company_id, entry_id, attributes) do
       {:ok, _alias} ->
         {:noreply, socket |> load_records() |> put_flash(:success, "Alias added.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, refused(socket)}
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Choose a reference and a unique alias.")}
@@ -75,9 +81,21 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
       {:ok, _exception} ->
         {:noreply, socket |> load_records() |> put_flash(:success, "Calendar exception added.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, refused(socket)}
+
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Check the date and label.")}
     end
+  end
+
+  # The facade is the authority for a write: `can_manage?` only decides which
+  # controls render. A refusal it returns names the permission as its cause
+  # and withdraws the controls and private records.
+  defp refused(socket) do
+    socket
+    |> refresh_access()
+    |> put_flash(:error, "You no longer have permission to change this company's references.")
   end
 
   # The hook refreshes both capability and company reach before every event,

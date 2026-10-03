@@ -74,12 +74,13 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/companies/73/references")
       {:ok, scope} = Bilimbi.Base.Tenancy.scope(41)
 
+      # Writes refuse a system scope, so the seed is made as the operator.
       {:ok, entry} =
-        Bilimbi.People.ReferenceData.create_entry(scope, 73, %{
-          kind: "category",
-          code: "existing",
-          label: "Existing value"
-        })
+        Bilimbi.People.ReferenceData.create_entry(
+          Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73),
+          73,
+          %{kind: "category", code: "existing", label: "Existing value"}
+        )
 
       revoke!("people.references.manage")
 
@@ -98,6 +99,36 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
       assert id == entry.id
       assert {:ok, []} = Bilimbi.People.ReferenceData.list_aliases(scope, 73)
       assert {:ok, []} = Bilimbi.People.ReferenceData.list_calendar_exceptions(scope, 73)
+    end
+
+    # The audit's Finding 1 case: the facade, not only the page's access hook,
+    # refuses a write whose grant was revoked after the page connected.
+    test "a revoked grant refuses an entry sent to the open explicit route", %{conn: conn} do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/companies/73/references")
+      {:ok, scope} = Bilimbi.Base.Tenancy.scope(41)
+      revoke!("people.references.manage")
+
+      refute render_hook(view, "create_entry", %{
+               "entry" => %{
+                 "kind" => "category",
+                 "code" => "audit",
+                 "label" => "After revocation"
+               }
+             }) =~ "Reference added."
+
+      assert {:ok, []} = Bilimbi.People.ReferenceData.list_entries(scope, 73)
+      refute has_element?(view, "form[phx-submit='create_entry']")
+
+      # The grant alone is not enough: the facade also needs the actor's own
+      # company reach, so the signed-in scope is refused directly as well.
+      actor_scope = Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)
+
+      assert {:error, :unauthorized} =
+               Bilimbi.People.ReferenceData.create_entry(actor_scope, 73, %{
+                 kind: "category",
+                 code: "audit",
+                 label: "After revocation"
+               })
     end
 
     test "revoked tenant reach refuses a sibling write", %{conn: conn} do

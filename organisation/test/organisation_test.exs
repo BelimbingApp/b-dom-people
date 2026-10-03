@@ -3,6 +3,7 @@ defmodule Bilimbi.People.OrganisationTest do
 
   alias Bilimbi.Base.Audit
   alias Bilimbi.Base.Audit.TestFixtures, as: AuditFixtures
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
@@ -10,13 +11,18 @@ defmodule Bilimbi.People.OrganisationTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Organisation
+  alias Bilimbi.People.Organisation.Contributions
   alias Bilimbi.People.Organisation.PositionAssignment
   alias Bilimbi.People.Organisation.TestFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
   alias Bilimbi.People.Workforce.ReadResult
+
+  @manage "people.organisation.manage"
+  @workforce_settings "people.workforce.settings.manage"
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -30,14 +36,15 @@ defmodule Bilimbi.People.OrganisationTest do
         }
       ])
 
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "people-organisation-test",
-      consumers: %{settings: settings}
+    AuthorizationFixtures.install_snapshot!("people-organisation-test", %{
+      settings: settings,
+      authz: AuthorizationFixtures.authz_consumer!([Contributions, WorkforceContributions])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
 
-    EmployeeFixtures.create_employee_tables!()
+    UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     AuditFixtures.create_audit_tables!()
     TestFixtures.create_position_tables!()
@@ -48,10 +55,52 @@ defmodule Bilimbi.People.OrganisationTest do
     CompanyFixtures.insert_company!(%{id: 75, tenant_id: 42, name: "Company C", code: "c"})
     :ok = Employee.ensure_system_types()
 
-    {:ok, scope} = Tenancy.scope(41)
+    {:ok, system} = Tenancy.scope(41)
     {:ok, other_scope} = Tenancy.scope(42)
 
-    %{scope: scope, other_scope: other_scope}
+    # Writes are performed by a signed-in manager; the system scope stays for
+    # Core fixture setup and public reads.
+    UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Manager"})
+    scope = AuthorizationFixtures.sign_in!(system, 73, 91, [@manage, @workforce_settings])
+
+    %{scope: scope, system: system, other_scope: other_scope}
+  end
+
+  test "writes need the manage capability now, for the actor's own company", %{
+    scope: scope,
+    system: system
+  } do
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-AUTH"})
+
+    {:ok, holder} =
+      Employee.create_employee(system, 73, %{employee_number: "E-AUTH", full_name: "Holder"})
+
+    version = %{version: 1, title: "Title", effective_from: ~D[2026-01-01]}
+    placement = %{employee_id: holder.id, kind: "substantive", effective_from: ~D[2026-01-01]}
+
+    # A system scope names nobody.
+    assert {:error, :unauthorized} = Organisation.create_position(system, 73, %{code: "P-SYS"})
+    assert {:error, :unauthorized} = Organisation.record_version(system, 73, position.id, version)
+    assert {:error, :unauthorized} = Organisation.assign(system, 73, position.id, placement)
+    assert {:error, :unauthorized} = Organisation.set_parent(system, 73, position.id, nil)
+
+    # The grant is per company: a sibling company is out of reach.
+    assert {:error, :unauthorized} = Organisation.create_position(scope, 74, %{code: "P-SIB"})
+
+    {:ok, assignment} = Organisation.assign(scope, 73, position.id, placement)
+
+    # A grant revoked after sign-in is refused on the next write.
+    :ok = AuthorizationFixtures.revoke!(system, 73, 91, @manage)
+
+    assert {:error, :unauthorized} =
+             Organisation.end_assignment(scope, 73, assignment.id, ~D[2026-09-30])
+
+    assert {:error, :unauthorized} = Organisation.record_version(scope, 73, position.id, version)
+    assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
+
+    # Reads stay open to the tenant scope.
+    assert {:ok, [_position]} = Organisation.positions(system, 73, ~D[2026-06-01])
+    assert {:ok, 1} = Organisation.count_positions(system, 73)
   end
 
   test "versions and assignments have independent clocks; vacancy keeps the title", %{
@@ -344,10 +393,18 @@ defmodule Bilimbi.People.OrganisationTest do
     assert Enum.max(counts) < 10
   end
 
-  test "scope, company and cycles are refused", %{scope: scope, other_scope: other_scope} do
+  test "scope, company and cycles are refused", %{
+    scope: scope,
+    system: system,
+    other_scope: other_scope
+  } do
     {:ok, root} = Organisation.create_position(scope, 73, %{code: "ROOT"})
     {:ok, child} = Organisation.create_position(scope, 73, %{code: "CHILD", parent_id: root.id})
-    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "FOREIGN"})
+
+    # The sibling company's position is seeded by a manager signed in there.
+    UserFixtures.insert_user!(%{id: 93, company_id: 74, name: "Other", email: "o@example.com"})
+    sibling = AuthorizationFixtures.sign_in!(system, 74, 93, [@manage])
+    {:ok, foreign} = Organisation.create_position(sibling, 74, %{code: "FOREIGN"})
 
     {:ok, employee} =
       Employee.create_employee(scope, 74, %{employee_number: "E-4", full_name: "Employee Four"})
@@ -399,14 +456,19 @@ defmodule Bilimbi.People.OrganisationTest do
     assert {:error, :not_found} = Workforce.positions(scope, 75)
   end
 
-  test "cursor iteration survives inserts and deletes between pages", %{scope: scope} do
+  test "cursor iteration survives inserts and deletes between pages", %{
+    scope: scope,
+    system: system
+  } do
     positions =
       for number <- 1..5 do
         {:ok, position} = Organisation.create_position(scope, 73, %{code: "PAGE-#{number}"})
         position
       end
 
-    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "PAGE-OTHER"})
+    UserFixtures.insert_user!(%{id: 93, company_id: 74, name: "Other", email: "o@example.com"})
+    sibling = AuthorizationFixtures.sign_in!(system, 74, 93, [@manage])
+    {:ok, foreign} = Organisation.create_position(sibling, 74, %{code: "PAGE-OTHER"})
     day = ~D[2026-10-01]
     high_water_id = foreign.id
 

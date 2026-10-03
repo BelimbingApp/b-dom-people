@@ -1,11 +1,15 @@
 defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
-  @moduledoc "Company-scoped People employee workbench."
+  @moduledoc """
+  Company-scoped People employee workbench.
+
+  Every reload reads the directory through the facade, which requires
+  `people.employees.view` now, so a filter after the grant is withdrawn shows
+  the unavailable state instead of fresh employee facts.
+  """
   use Bilimbi.Base.UI, :live_view
 
   alias Bilimbi.Core.Company
   alias Bilimbi.People.EmployeeWorkspace
-
-  @capability "people.employees.view"
 
   # Saved views are self-service: each one belongs to the signed-in actor and
   # the facade scopes every write to that actor's own views.
@@ -16,7 +20,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
     actor = socket.assigns.current_scope.actor
     company_id = actor.company_id
 
-    case Company.authorize_company_target(actor, company_id, @capability) do
+    case Company.get_company(actor.scope, company_id) do
       {:ok, company} ->
         {:ok,
          socket
@@ -51,13 +55,9 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
       attrs =
         Map.merge(attrs, %{"search" => socket.assigns.search, "status" => socket.assigns.status})
 
-      case EmployeeWorkspace.save_view(
-             scope(socket),
-             socket.assigns.company_id,
-             actor_id(socket),
-             attrs
-           ) do
+      case EmployeeWorkspace.save_view(scope(socket), socket.assigns.company_id, attrs) do
         {:ok, _} -> {:noreply, socket |> load() |> put_flash(:info, "View saved.")}
+        {:error, :unauthorized} -> {:noreply, socket |> load() |> put_flash(:error, refusal())}
         _ -> {:noreply, put_flash(socket, :error, "Use a unique view name.")}
       end
     else
@@ -88,27 +88,22 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
   def handle_event("delete_view", %{"id" => raw_id}, socket) do
     with {id, ""} <- Integer.parse(raw_id),
          {:ok, :deleted} <-
-           EmployeeWorkspace.delete_view(
-             scope(socket),
-             socket.assigns.company_id,
-             actor_id(socket),
-             id
-           ) do
+           EmployeeWorkspace.delete_view(scope(socket), socket.assigns.company_id, id) do
       {:noreply, socket |> load() |> put_flash(:info, "View deleted.")}
     else
+      {:error, :unauthorized} -> {:noreply, socket |> load() |> put_flash(:error, refusal())}
       _ -> {:noreply, put_flash(socket, :error, "View unavailable.")}
     end
   end
 
+  defp refusal, do: "You no longer have permission to view this company's employees."
+
+  defp load(%{assigns: %{company_id: nil}} = socket), do: socket
+
   defp load(socket) do
     with {:ok, employees} <-
            EmployeeWorkspace.employees(scope(socket), socket.assigns.company_id),
-         {:ok, views} <-
-           EmployeeWorkspace.saved_views(
-             scope(socket),
-             socket.assigns.company_id,
-             actor_id(socket)
-           ) do
+         {:ok, views} <- EmployeeWorkspace.saved_views(scope(socket), socket.assigns.company_id) do
       search = String.downcase(socket.assigns.search)
       status = socket.assigns.status
 
@@ -126,5 +121,4 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
   end
 
   defp scope(socket), do: socket.assigns.current_scope.scope
-  defp actor_id(socket), do: socket.assigns.current_scope.actor.id
 end

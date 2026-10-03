@@ -13,6 +13,7 @@ for path <- [
   Code.require_file(Path.join(workspace_apps, path))
 end
 
+Code.require_file(Path.expand("../../workforce/test/support/authorization_fixtures.ex", __DIR__))
 Code.require_file(Path.expand("support/test_fixtures.ex", __DIR__))
 ExUnit.start()
 Ecto.Adapters.SQL.Sandbox.mode(Bilimbi.Base.Repo, :manual)

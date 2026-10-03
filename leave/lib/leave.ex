@@ -7,6 +7,15 @@ defmodule Bilimbi.People.Leave do
   Every operation takes a validated tenant scope and an explicit platform
   company ID. Company and employee identity come from `people/workforce` and
   must be current. Callers never query the schemas directly.
+
+  Every write, and every read of other employees' requests, authorizes the
+  scope's signed-in actor for its own capability when it runs, through
+  `Bilimbi.People.Workforce.Authorization`: `people.leave.policies.manage`
+  for policy, ledger and carry-forward work, `people.leave.requests.approve`
+  for the approval queue and decisions, and `people.leave.self.view` for
+  self-service, which also resolves the actor's current linked employee on
+  every call. A system scope, a revoked grant and an unlinked account are
+  refused with `:unauthorized` or `:not_linked`.
   """
   import Ecto.Query
   import Bilimbi.People.Leave.Input, only: [field: 2, parse_date: 1, parse_quantity: 1]
@@ -18,7 +27,6 @@ defmodule Bilimbi.People.Leave do
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
-  alias Bilimbi.Core.User
 
   alias Bilimbi.People.Leave.{
     CarryForward,
@@ -31,8 +39,11 @@ defmodule Bilimbi.People.Leave do
   }
 
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.ReadResult
 
+  @manage "people.leave.policies.manage"
+  @self "people.leave.self.view"
   @year_start_key "people.leave.year_start_month"
   @grant_source "policy"
   @reserved_sources ~w(policy request carry_forward)
@@ -47,7 +58,8 @@ defmodule Bilimbi.People.Leave do
 
   @doc "Refused once the company has ledger entries, which carry their leave year."
   def put_rules(%Scope{} = scope, company_id, month) when month in 1..12 do
-    with {:ok, company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, company} <- current_company(scope, company_id) do
       Repo.transaction(fn ->
         lock_types(scope, company_id)
         %{year_start_month: current} = unwrap(rules(scope, company_id))
@@ -110,7 +122,8 @@ defmodule Bilimbi.People.Leave do
   end
 
   def create_type(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- current_company(scope, company_id) do
       %LeaveType{tenant_id: Scope.tenant_id(scope), company_id: company_id}
       |> LeaveType.changeset(
         attrs
@@ -128,7 +141,8 @@ defmodule Bilimbi.People.Leave do
 
   def set_type_status(%Scope{} = scope, company_id, type_id, status)
       when status in ["active", "archived"] do
-    with {:ok, _company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- current_company(scope, company_id),
          %LeaveType{} = type <- get_type(scope, company_id, type_id) do
       type |> LeaveType.changeset(%{status: status}) |> Repo.update() |> view_result(&type_view/1)
     else
@@ -162,9 +176,9 @@ defmodule Bilimbi.People.Leave do
   balance that carry-forward moves into the next leave year; without one the
   type does not carry forward.
   """
-  def add_policy(%Scope{} = scope, company_id, type_id, attrs, actor_user_id \\ nil)
-      when is_map(attrs) do
-    with {:ok, _company} <- current_company(scope, company_id),
+  def add_policy(%Scope{} = scope, company_id, type_id, attrs) when is_map(attrs) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- current_company(scope, company_id),
          {:ok, effective_from} <- parse_date(field(attrs, :effective_from)),
          {:ok, entitlement} <- parse_quantity(field(attrs, :entitlement)),
          true <- Decimal.compare(entitlement, 0) != :lt || {:error, :invalid_policy},
@@ -197,7 +211,7 @@ defmodule Bilimbi.People.Leave do
               effective_from: effective_from,
               entitlement: entitlement,
               carry_forward_cap: cap,
-              actor_user_id: actor_user_id
+              actor_user_id: actor.id
             })
             |> Repo.insert()
             |> case do
@@ -227,11 +241,10 @@ defmodule Bilimbi.People.Leave do
   an employee and type whose year is already carried forward is counted as
   `closed` and not granted.
   """
-  def grant_entitlements(scope, company_id, leave_year, actor_user_id \\ nil)
-
-  def grant_entitlements(%Scope{} = scope, company_id, leave_year, actor_user_id)
+  def grant_entitlements(%Scope{} = scope, company_id, leave_year)
       when is_integer(leave_year) and leave_year in 1900..9998 do
-    with {:ok, read} <- Workforce.employees(scope, company_id),
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, read} <- Workforce.employees(scope, company_id),
          {:ok, employees} <- ReadResult.require_current(read) do
       Repo.transaction(fn ->
         types = scope |> lock_types(company_id) |> Enum.filter(&(&1.status == "active"))
@@ -263,7 +276,7 @@ defmodule Bilimbi.People.Leave do
                 occurred_on: first_day,
                 source: @grant_source,
                 entry_key: key,
-                actor_user_id: actor_user_id
+                actor_user_id: actor.id
               })
 
             # Checking first keeps a repeated grant from issuing a no-op insert;
@@ -283,7 +296,7 @@ defmodule Bilimbi.People.Leave do
     end
   end
 
-  def grant_entitlements(%Scope{}, _, _, _), do: {:error, :invalid_year}
+  def grant_entitlements(%Scope{}, _, _), do: {:error, :invalid_year}
 
   @doc """
   Records an opening balance or adjustment. Idempotent by company, source and
@@ -291,7 +304,8 @@ defmodule Bilimbi.People.Leave do
   leave year already carried forward for that employee and type.
   """
   def record_entry(%Scope{} = scope, company_id, employee_id, attrs) when is_map(attrs) do
-    with {:ok, _employee} <- current_employee(scope, company_id, employee_id),
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _employee} <- current_employee(scope, company_id, employee_id),
          {:ok, entry} <- normalize_entry(attrs) do
       Repo.transaction(fn ->
         type =
@@ -302,7 +316,11 @@ defmodule Bilimbi.People.Leave do
         attrs =
           entry
           |> Map.delete(:leave_type_id)
-          |> Map.merge(%{leave_year: leave_year(rules, entry.occurred_on), unit: type.unit})
+          |> Map.merge(%{
+            leave_year: leave_year(rules, entry.occurred_on),
+            unit: type.unit,
+            actor_user_id: actor.id
+          })
 
         case find_entry(scope, company_id, entry.source, entry.entry_key) do
           nil ->
@@ -393,35 +411,40 @@ defmodule Bilimbi.People.Leave do
   defdelegate put_request_rules(scope, company_id, attrs), to: Requests
 
   @doc """
-  Submits a request for the actor's linked working employee. `day_part` is
-  `full` over the range, `am` or `pm` for half of one day, or `hours` with
-  `hours` for an hour-unit type on one day. Idempotent by `request_key`.
+  Submits a request for the scope's signed-in actor's linked working
+  employee, resolved now and proven again under that employee's affiliation
+  lock. `day_part` is `full` over the range, `am` or `pm` for half of one
+  day, or `hours` with `hours` for an hour-unit type on one day. Idempotent
+  by `request_key`.
 
-  Refusals include `:invalid_request`, `:not_found`, `:spans_leave_years`,
-  `:too_far_back`, `:year_closed`, `:no_working_days`, `:overlapping_request`,
-  `:insufficient_balance`, `:request_key_conflict` and `:unavailable`.
+  Refusals include `:unauthorized`, `:not_linked`, `:invalid_request`,
+  `:not_found`, `:spans_leave_years`, `:too_far_back`, `:year_closed`,
+  `:no_working_days`, `:overlapping_request`, `:insufficient_balance`,
+  `:request_key_conflict` and `:unavailable`.
   """
-  defdelegate submit_request(scope, company_id, actor, attrs), to: Requests, as: :submit
+  defdelegate submit_request(scope, company_id, attrs), to: Requests, as: :submit
 
-  @doc "The actor's own latest requests, newest start first."
-  defdelegate self_requests(scope, company_id, actor), to: Requests
+  @doc "The signed-in actor's own latest requests, newest start first."
+  defdelegate self_requests(scope, company_id), to: Requests
 
   @doc """
-  Cancels the actor's own request: pending at any time, approved only before
-  its start date, which writes a `cancelled` entry returning the quantity.
+  Cancels the signed-in actor's own request: pending at any time, approved
+  only before its start date, which writes a `cancelled` entry returning the
+  quantity.
   """
-  defdelegate cancel_request(scope, company_id, actor, request_id), to: Requests, as: :cancel
+  defdelegate cancel_request(scope, company_id, request_id), to: Requests, as: :cancel
 
-  @doc "A company's pending requests, earliest start first, with employee names."
+  @doc "An approver's view of a company's pending requests, earliest start first, with employee names."
   defdelegate pending_requests(scope, company_id), to: Requests, as: :pending
 
   @doc """
   Approves (`:approve`) or rejects (`:reject`, note required) a pending
-  request. Refuses the requester and the employee (`:self_approval`), a
-  request no longer pending (`:not_pending`), a closed year and a balance
-  that no longer covers it. Approval writes the `taken` entry.
+  request as the scope's signed-in approver. Refuses the requester and the
+  employee (`:self_approval`), a request no longer pending (`:not_pending`),
+  a closed year and a balance that no longer covers it. Approval writes the
+  `taken` entry.
   """
-  defdelegate decide_request(scope, company_id, actor, request_id, decision, note),
+  defdelegate decide_request(scope, company_id, request_id, decision, note),
     to: Requests,
     as: :decide
 
@@ -436,9 +459,7 @@ defmodule Bilimbi.People.Leave do
   Returns counts of `carried` and `existing` balances and of each skip reason:
   `pending` and `previous_year_open`.
   """
-  defdelegate carry_forward(scope, company_id, from_year, actor_user_id \\ nil),
-    to: CarryForward,
-    as: :run
+  defdelegate carry_forward(scope, company_id, from_year), to: CarryForward, as: :run
 
   @doc "How many balances of `from_year` have been carried forward."
   defdelegate carried_forward_count(scope, company_id, from_year),
@@ -454,37 +475,48 @@ defmodule Bilimbi.People.Leave do
     to: CarryForward,
     as: :skipped
 
-  @doc "Queues `carry_forward/4` to run as the signed-in operator."
+  @doc "Queues `carry_forward/3` to run as the signed-in operator, who must hold the capability now."
   def enqueue_carry_forward(%Scope{} = scope, company_id, from_year)
       when is_integer(company_id) and is_integer(from_year) do
-    case Queue.enqueue_for(scope, CarryForwardWorker, %{
-           "company_id" => company_id,
-           "from_year" => from_year
-         }) do
-      {:ok, _job} -> :ok
-      {:error, reason} -> {:error, reason}
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _job} <-
+           Queue.enqueue_for(scope, CarryForwardWorker, %{
+             "company_id" => company_id,
+             "from_year" => from_year
+           }) do
+      :ok
     end
   end
 
   def enqueue_carry_forward(%Scope{}, _, _), do: {:error, :invalid_carry_forward}
 
   @doc """
-  Balances and entries of the logged-in actor's linked employee for the leave
-  year containing `on`, by default today in the company time zone.
+  Balances and entries of the signed-in actor's currently linked employee for
+  the leave year containing `on`, by default today in the company time zone.
+  Refuses `:unauthorized` without `people.leave.self.view` and `:not_linked`
+  without a current working employee.
   """
-  def self_summary(%Scope{} = scope, company_id, actor, on \\ nil) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor),
-         {:ok, rules} <- rules(scope, company_id),
-         {:ok, on} <- summary_date(scope, company_id, on),
-         year = leave_year(rules, on),
-         {:ok, balances} <- balances(scope, company_id, employee_id, year),
-         {:ok, entries} <- entries(scope, company_id, employee_id, year) do
-      {first, last} = year_range(rules, year)
+  def self_summary(%Scope{} = scope, company_id, on \\ nil) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self) do
+      with {:ok, rules} <- rules(scope, company_id),
+           {:ok, on} <- summary_date(scope, company_id, on),
+           year = leave_year(rules, on),
+           {:ok, balances} <- balances(scope, company_id, employee_id, year),
+           {:ok, entries} <- entries(scope, company_id, employee_id, year) do
+        {first, last} = year_range(rules, year)
 
-      {:ok,
-       %{leave_year: year, starts_on: first, ends_on: last, balances: balances, entries: entries}}
-    else
-      _ -> {:error, :unavailable}
+        {:ok,
+         %{
+           leave_year: year,
+           starts_on: first,
+           ends_on: last,
+           balances: balances,
+           entries: entries
+         }}
+      else
+        _ -> {:error, :unavailable}
+      end
     end
   end
 
@@ -512,17 +544,6 @@ defmodule Bilimbi.People.Leave do
   defp current_employee(scope, company_id, employee_id) do
     with {:ok, read} <- Workforce.employee(scope, company_id, employee_id),
          do: ReadResult.require_current(read)
-  end
-
-  defp self_employee(scope, company_id, actor) do
-    with true <- actor.type == :user and actor.company_id == company_id,
-         {:ok, user} <- User.get_user(scope, company_id, actor.id),
-         employee_id when is_integer(employee_id) <- user.employee_id,
-         {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
-      {:ok, employee_id}
-    else
-      _ -> {:error, :unavailable}
-    end
   end
 
   defp ledger_in_use?(scope, company_id),
@@ -661,7 +682,6 @@ defmodule Bilimbi.People.Leave do
          occurred_on: occurred_on,
          source: source,
          entry_key: key,
-         actor_user_id: field(attrs, :actor_user_id),
          note: note
        }}
     else

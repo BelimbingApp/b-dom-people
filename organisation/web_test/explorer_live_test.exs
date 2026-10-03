@@ -4,7 +4,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
   import Phoenix.LiveViewTest
 
   alias Bilimbi.Base.Audit
-  alias Bilimbi.Base.Authz.Actor
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Employee
@@ -13,6 +13,9 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
   alias Bilimbi.People.Organisation
   alias Bilimbi.People.Organisation.PositionAssignment
   alias Bilimbi.People.Organisation.TestFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
+
+  @manage "people.organisation.manage"
 
   setup do
     UserFixtures.create_user_tables!()
@@ -22,8 +25,13 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
     CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, name: "Company B", code: "b"})
     UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Operator"})
     :ok = Employee.ensure_system_types()
-    {:ok, scope} = Tenancy.scope(41)
-    %{scope: scope}
+    {:ok, system} = Tenancy.scope(41)
+
+    # Seed data is written by a separate manager account, so each test grants
+    # the signed-in user 91 exactly the capabilities it exercises.
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Seeder", email: "s@example.com"})
+    scope = AuthorizationFixtures.sign_in!(system, 73, 92, [@manage])
+    %{scope: scope, system: system}
   end
 
   test "the authorised explorer shows empty state and company-scoped positions", %{
@@ -89,7 +97,11 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
     refute has_element?(view, "#end-assignment-#{assignment.id}")
   end
 
-  test "ending an assignment requires the manage capability", %{conn: conn, scope: scope} do
+  test "ending an assignment requires the manage capability", %{
+    conn: conn,
+    scope: scope,
+    system: system
+  } do
     grant_capabilities!("people.organisation.view")
     {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-VIEW"})
 
@@ -109,12 +121,89 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
     assert render(view) =~ "Employee #{employee.id}"
     refute has_element?(view, "#end-assignment-#{assignment.id}")
 
-    actor = %Actor{type: :user, id: 91, company_id: 73, scope: scope}
+    viewer = AuthorizationFixtures.sign_in(system, 91, 73)
 
     assert {:error, :unauthorized} =
-             Organisation.end_assignment(actor, 73, assignment.id, ~D[2026-09-30])
+             Organisation.end_assignment(viewer, 73, assignment.id, ~D[2026-09-30])
 
     assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
+  end
+
+  test "ending an assignment after the grant is revoked changes nothing", %{
+    conn: conn,
+    scope: scope,
+    system: system
+  } do
+    grant_capabilities!(["people.organisation.view", @manage])
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-REVOKED"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-REV", full_name: "Holder"})
+
+    {:ok, assignment} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: employee.id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    {:ok, view, _html} =
+      conn |> log_in_as() |> live(~p"/people/organisation?company_id=73&as_of=2026-09-30")
+
+    assert has_element?(view, "#end-assignment-#{assignment.id}")
+
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(system, 73, :user, 91, @manage, false)
+
+    assert render_hook(view, "end_assignment", %{
+             "assignment_id" => Integer.to_string(assignment.id),
+             "effective_to" => "2026-09-30"
+           }) =~ "You no longer have permission to change this company"
+
+    assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
+    assert {:ok, []} = Audit.list_actions(system)
+  end
+
+  test "ending an assignment after only the view grant is revoked changes nothing", %{
+    conn: conn,
+    scope: scope,
+    system: system
+  } do
+    grant_capabilities!(["people.organisation.view", @manage])
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-REVOKED"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-REV", full_name: "Holder"})
+
+    {:ok, assignment} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: employee.id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    {:ok, view, _html} =
+      conn |> log_in_as() |> live(~p"/people/organisation?company_id=73&as_of=2026-09-30")
+
+    assert has_element?(view, "#end-assignment-#{assignment.id}")
+
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(
+               system,
+               73,
+               :user,
+               91,
+               "people.organisation.view",
+               false
+             )
+
+    assert render_hook(view, "end_assignment", %{
+             "assignment_id" => Integer.to_string(assignment.id),
+             "effective_to" => "2026-09-30"
+           }) =~ "You no longer have permission to change this company"
+
+    assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
+    assert {:ok, []} = Audit.list_actions(system)
   end
 
   test "route refuses an actor without the capability", %{conn: conn} do

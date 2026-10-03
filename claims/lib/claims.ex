@@ -12,6 +12,13 @@ defmodule Bilimbi.People.Claims do
   Submission is for a working employee read through the People workforce seam
   and is serialized per employee through Core Employee's affiliation lock, so
   duplicate and period-limit checks cannot race each other.
+
+  Every write, and every read of other employees' claims, authorizes its own
+  capability for the scope's signed-in actor when it runs, through
+  `Bilimbi.People.Workforce.Authorization`: a grant proven at page mount is
+  not authority. Self-service operations act on the employee the actor's
+  account is linked to now, proven again under the affiliation lock, so an
+  unlinked or relinked account cannot act on its former employee.
   """
 
   import Ecto.Query
@@ -40,9 +47,13 @@ defmodule Bilimbi.People.Claims do
   }
 
   alias Bilimbi.People.Workforce
-  alias Bilimbi.People.Workforce.ReadResult
+  alias Bilimbi.People.Workforce.Authorization
 
   @currencies_key "people.claims.currencies"
+  @submit "people.claims.submit"
+  @manage "people.claims.manage"
+  @approve "people.claims.approve"
+  @reimburse "people.claims.reimburse"
   @max_currencies 20
 
   @category_fields [:id, :code, :name, :active]
@@ -110,7 +121,8 @@ defmodule Bilimbi.People.Claims do
   An empty list closes new claims and policies for the company.
   """
   def put_currencies(%Scope{} = scope, company_id, codes) do
-    with {:ok, company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, company} <- company(scope, company_id),
          {:ok, codes} <- normalize_currencies(codes) do
       Settings.put(@currencies_key, codes, settings_scope(company))
     end
@@ -129,7 +141,8 @@ defmodule Bilimbi.People.Claims do
   end
 
   def create_category(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id) do
       %Category{tenant_id: Scope.tenant_id(scope), company_id: company_id}
       |> Category.changeset(attrs)
       |> Repo.insert()
@@ -139,7 +152,8 @@ defmodule Bilimbi.People.Claims do
 
   def set_category_active(%Scope{} = scope, company_id, category_id, active)
       when is_boolean(active) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          %Category{} = category <- fetch(Category, scope, company_id, category_id) do
       category
       |> Ecto.Changeset.change(active: active)
@@ -178,7 +192,8 @@ defmodule Bilimbi.People.Claims do
   end
 
   def create_claim_type(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          %Category{} = category <-
            fetch(Category, scope, company_id, attr_id(attrs, :category_id)) do
       %ClaimType{
@@ -197,7 +212,8 @@ defmodule Bilimbi.People.Claims do
 
   def set_claim_type_active(%Scope{} = scope, company_id, claim_type_id, active)
       when is_boolean(active) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          %ClaimType{} = claim_type <- fetch(ClaimType, scope, company_id, claim_type_id) do
       claim_type
       |> Ecto.Changeset.change(active: active)
@@ -229,7 +245,8 @@ defmodule Bilimbi.People.Claims do
   claim type asks for receipts above a threshold and is ignored otherwise.
   """
   def create_policy(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, company} <- company(scope, company_id) do
       transaction(fn ->
         with %ClaimType{} = claim_type <-
                lock_claim_type(scope, company_id, attr_id(attrs, :claim_type_id)),
@@ -258,7 +275,8 @@ defmodule Bilimbi.People.Claims do
   Refused when a live request under the policy was incurred after that date.
   """
   def end_policy(%Scope{} = scope, company_id, policy_id, effective_to) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          %Policy{} = unlocked <- fetch(Policy, scope, company_id, policy_id) do
       transaction(fn ->
         lock_claim_type(scope, company_id, unlocked.claim_type_id)
@@ -289,30 +307,43 @@ defmodule Bilimbi.People.Claims do
   ## Self-service
 
   @doc """
-  The working employee linked to a login actor in one company.
+  The working employee the scope's signed-in actor is linked to in one
+  company, resolved now, once the actor holds `people.claims.submit` there.
 
   A login actor is not an employee: only a Core User record linked to a Core
   Employee in the same company, visible through the workforce seam as
-  current, resolves.
+  current, resolves. Refusals: `:unauthorized`, `:not_found`, `:not_linked`.
   """
-  def self_service_employee(%Scope{} = scope, company_id, user_id)
-      when is_integer(user_id) and user_id > 0 do
-    with {:ok, %{employee_id: employee_id}} when is_integer(employee_id) <-
-           User.get_user(scope, company_id, user_id),
-         {:ok, result} <- Workforce.employee(scope, company_id, employee_id),
-         {:ok, employee} <- ReadResult.require_current(result) do
+  def self_service_employee(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @submit),
+         {:ok, result} <- Workforce.employee(scope, company_id, employee_id) do
+      employee = result.value
+
       {:ok,
        %{
          id: employee_id,
          display_name: employee.display_name,
          employee_number: employee.employee_number
        }}
-    else
-      _ -> {:error, :not_linked}
     end
   end
 
-  def self_service_employee(%Scope{}, _company_id, _user_id), do: {:error, :not_linked}
+  @doc "Claim types open today for the actor's own linked employee; see `open_claim_types/4`."
+  def self_open_claim_types(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @submit) do
+      open_claim_types(scope, company_id, nil, employee_id: employee_id)
+    end
+  end
+
+  @doc "The actor's own linked employee's claims, newest expense first."
+  def self_requests(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @submit) do
+      {:ok, requests_of(scope, company_id, employee_id)}
+    end
+  end
 
   @doc """
   Claim types open for claims on `on_date` (default: today in the company
@@ -363,19 +394,26 @@ defmodule Bilimbi.People.Claims do
 
   ## Requests
 
+  @doc "One employee's claims, for an actor holding `people.claims.approve` in the company."
   def employee_requests(%Scope{} = scope, company_id, employee_id) do
-    with :ok <- employee_exists(scope, company_id, employee_id) do
-      {:ok,
-       scoped(Request, scope, company_id)
-       |> where([r], r.employee_id == ^employee_id)
-       |> order_by([r], desc: r.incurred_on, desc: r.id)
-       |> Repo.all()
-       |> Enum.map(&Map.take(&1, @request_fields))}
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         :ok <- employee_exists(scope, company_id, employee_id) do
+      {:ok, requests_of(scope, company_id, employee_id)}
     end
   end
 
+  defp requests_of(scope, company_id, employee_id) do
+    scoped(Request, scope, company_id)
+    |> where([r], r.employee_id == ^employee_id)
+    |> order_by([r], desc: r.incurred_on, desc: r.id)
+    |> Repo.all()
+    |> Enum.map(&Map.take(&1, @request_fields))
+  end
+
+  @doc "A claim's status history, for an actor holding `people.claims.approve` in the company."
   def request_events(%Scope{} = scope, company_id, employee_id, request_id) do
-    with :ok <- employee_exists(scope, company_id, employee_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         :ok <- employee_exists(scope, company_id, employee_id),
          %Request{} = request <- fetch(Request, scope, company_id, request_id),
          true <- request.employee_id == employee_id do
       {:ok,
@@ -390,20 +428,23 @@ defmodule Bilimbi.People.Claims do
   end
 
   @doc """
-  Submits one claim for a working employee.
+  Submits one claim for the working employee the scope's actor is linked to.
 
-  Refusals: `:employee_unavailable`, `:claim_type_unavailable`,
+  The actor must hold `people.claims.submit` in the company now, and the
+  account link is proven again under the employee's affiliation lock.
+  Refusals: `:unauthorized`, `:not_linked`, `:claim_type_unavailable`,
   `:claim_type_not_assigned`, `:future_incurred_on`, `:no_effective_policy`, `:currency_not_allowed`,
   `:receipt_required`, `:per_claim_limit_exceeded`, `:monthly_limit_exceeded`,
   `:yearly_limit_exceeded`, `:duplicate_receipt`, and `:possible_duplicate`.
   The last is a claim of the same type, date, amount, and currency; the
   submitter may confirm it with `confirm_duplicate`, which is recorded.
   """
-  def submit_request(%Scope{} = scope, company_id, employee_id, actor_id, attrs)
-      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
-    with {:ok, company} <- company(scope, company_id),
-         :ok <- working_employee(scope, company_id, employee_id) do
-      with_employee_lock(scope, company_id, employee_id, fn ->
+  def submit_request(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @submit),
+         {:ok, company} <- company(scope, company_id) do
+      Authorization.with_self_employee_lock(scope, company_id, @submit, fn self ->
+        %{actor: %{id: actor_id}, employee_id: employee_id} = self
+
         changeset =
           %Request{
             tenant_id: Scope.tenant_id(scope),
@@ -441,10 +482,15 @@ defmodule Bilimbi.People.Claims do
     end
   end
 
-  @doc "Withdraws the employee's own submitted claim; history is kept."
-  def withdraw_request(%Scope{} = scope, company_id, employee_id, request_id, actor_id)
-      when is_integer(actor_id) and actor_id > 0 do
-    with_employee_lock(scope, company_id, employee_id, fn ->
+  @doc """
+  Withdraws a submitted claim of the employee the scope's actor is linked to
+  now; history is kept. Refusals: `:unauthorized`, `:not_linked`, `:not_found`
+  (including another employee's claim), and `:not_withdrawable`.
+  """
+  def withdraw_request(%Scope{} = scope, company_id, request_id) do
+    Authorization.with_self_employee_lock(scope, company_id, @submit, fn self ->
+      %{actor: %{id: actor_id}, employee_id: employee_id} = self
+
       request =
         if is_integer(request_id) do
           scoped(Request, scope, company_id)
@@ -501,7 +547,8 @@ defmodule Bilimbi.People.Claims do
   `set_assignment_members/5`.
   """
   def create_assignment(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id) do
       %Assignment{tenant_id: Scope.tenant_id(scope), company_id: company_id}
       |> Assignment.changeset(attrs)
       |> Repo.insert()
@@ -511,7 +558,8 @@ defmodule Bilimbi.People.Claims do
 
   @doc "Closes an open-ended assignment on `effective_to`."
   def end_assignment(%Scope{} = scope, company_id, assignment_id, effective_to) do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id) do
       transaction(fn ->
         with %Assignment{effective_to: nil} = assignment <-
                lock_assignment(scope, company_id, assignment_id),
@@ -534,7 +582,8 @@ defmodule Bilimbi.People.Claims do
   """
   def set_assignment_members(%Scope{} = scope, company_id, assignment_id, type_ids, employee_ids)
       when is_list(type_ids) and is_list(employee_ids) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          {:ok, type_ids} <- normalize_ids(type_ids, :claim_type_not_found),
          {:ok, employee_ids} <- normalize_ids(employee_ids, :employee_not_found),
          :ok <- company_employees(scope, company_id, employee_ids) do
@@ -555,15 +604,17 @@ defmodule Bilimbi.People.Claims do
     end
   end
 
-  @doc "Employees of the company an assignment may cover, by employee number."
+  @doc "Employees of the company an assignment may cover, by employee number, for a claims manager."
   def assignable_employees(%Scope{} = scope, company_id) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _company} <- company(scope, company_id),
          {:ok, employees} <- Employee.list_employees(scope, company_id) do
       {:ok,
        employees
        |> Enum.map(&%{id: &1.id, employee_number: &1.employee_number, name: &1.full_name})
        |> Enum.sort_by(&{&1.employee_number, &1.id})}
     else
+      {:error, :unauthorized} = error -> error
       _ -> {:error, :not_found}
     end
   end
@@ -573,9 +624,11 @@ defmodule Bilimbi.People.Claims do
   @doc """
   Operator queue of one status, newest decision context first: submitted
   claims oldest first, every other status newest first. At most 500 rows.
+  The actor must hold `people.claims.approve` in the company now.
   """
   def claim_queue(%Scope{} = scope, company_id, status) when status in @queue_statuses do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         {:ok, _company} <- company(scope, company_id) do
       order = if status == "submitted", do: [asc: :id], else: [desc: :id]
 
       requests =
@@ -603,7 +656,8 @@ defmodule Bilimbi.People.Claims do
   `{currency, count, total_approved_amount}` sorted by currency.
   """
   def handoff_waiting(%Scope{} = scope, company_id) do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         {:ok, _company} <- company(scope, company_id) do
       {:ok,
        scoped(Request, scope, company_id)
        |> where([r], r.status == "approved" and is_nil(r.handoff_batch_id))
@@ -618,33 +672,32 @@ defmodule Bilimbi.People.Claims do
   Approves a submitted claim, in full unless `approved_amount` is lower; a
   lower amount needs a `decision_reason`.
 
-  Refusals: `:not_found`, `:not_decidable` (not submitted), `:own_claim`, and
-  a changeset for invalid amounts. The decision and its history row are one
-  transaction.
+  The scope's actor must hold `people.claims.approve` in the company now.
+  Refusals: `:unauthorized`, `:not_found`, `:not_decidable` (not submitted),
+  `:own_claim`, and a changeset for invalid amounts. The decision and its
+  history row are one transaction.
   """
-  def approve_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
-      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
-    decide(scope, company_id, request_id, actor_id, "submitted", fn request, now ->
+  def approve_request(%Scope{} = scope, company_id, request_id, attrs) when is_map(attrs) do
+    decide(scope, company_id, request_id, @approve, "submitted", fn request, actor_id, now ->
       Request.approval_changeset(request, attrs, actor_id, now)
     end)
   end
 
   @doc "Rejects a submitted claim; a `decision_reason` is required."
-  def reject_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
-      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
-    decide(scope, company_id, request_id, actor_id, "submitted", fn request, now ->
+  def reject_request(%Scope{} = scope, company_id, request_id, attrs) when is_map(attrs) do
+    decide(scope, company_id, request_id, @approve, "submitted", fn request, actor_id, now ->
       Request.rejection_changeset(request, attrs, actor_id, now)
     end)
   end
 
   @doc """
   Records that an approved claim was paid, with an optional
-  `payment_reference`. Refused for claims that are not approved or are the
-  actor's own.
+  `payment_reference`, by an actor holding `people.claims.reimburse` in the
+  company now. Refused for claims that are not approved or are the actor's
+  own.
   """
-  def reimburse_request(%Scope{} = scope, company_id, request_id, actor_id, attrs)
-      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
-    decide(scope, company_id, request_id, actor_id, "approved", fn request, now ->
+  def reimburse_request(%Scope{} = scope, company_id, request_id, attrs) when is_map(attrs) do
+    decide(scope, company_id, request_id, @reimburse, "approved", fn request, actor_id, now ->
       Request.reimbursement_changeset(request, attrs, actor_id, now)
     end)
   end
@@ -653,12 +706,13 @@ defmodule Bilimbi.People.Claims do
   Hands off every approved claim in `currency` that is not yet in a batch.
 
   The batch is an immutable record of who handed off which claims and when;
-  claims of different currencies never share a batch. Refused with
+  claims of different currencies never share a batch. The actor must hold
+  `people.claims.reimburse` in the company now. Refused with
   `:nothing_to_hand_off` when none qualifies.
   """
-  def create_handoff_batch(%Scope{} = scope, company_id, currency, actor_id)
-      when is_binary(currency) and is_integer(actor_id) and actor_id > 0 do
-    with {:ok, _company} <- company(scope, company_id),
+  def create_handoff_batch(%Scope{} = scope, company_id, currency) when is_binary(currency) do
+    with {:ok, %{id: actor_id}} <- Authorization.authorize(scope, company_id, @reimburse),
+         {:ok, _company} <- company(scope, company_id),
          {:ok, [currency]} <- handoff_currency(currency) do
       transaction(fn ->
         requests =
@@ -697,8 +751,10 @@ defmodule Bilimbi.People.Claims do
     end
   end
 
+  @doc "Hand-off batches, newest first, for an actor holding `people.claims.approve`."
   def handoff_batches(%Scope{} = scope, company_id) do
-    with {:ok, _company} <- company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         {:ok, _company} <- company(scope, company_id) do
       {:ok,
        scoped(HandoffBatch, scope, company_id)
        |> order_by([b], desc: b.id)
@@ -710,10 +766,12 @@ defmodule Bilimbi.People.Claims do
 
   @doc """
   CSV of one hand-off batch: one row per claim with its current status,
-  built from the stored facts. Returns `%{filename: _, content: _}`.
+  built from the stored facts, for an actor holding `people.claims.reimburse`
+  in the company now. Returns `%{filename: _, content: _}`.
   """
   def handoff_export(%Scope{} = scope, company_id, batch_id) do
-    with {:ok, _company} <- company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @reimburse),
+         {:ok, _company} <- company(scope, company_id),
          %HandoffBatch{} = batch <- fetch(HandoffBatch, scope, company_id, batch_id) do
       requests =
         scoped(Request, scope, company_id)
@@ -762,12 +820,13 @@ defmodule Bilimbi.People.Claims do
   end
 
   @doc """
-  Marks every still-approved claim of a hand-off batch reimbursed. Refused
-  with `:own_claim` when the actor's own claim is among them.
+  Marks every still-approved claim of a hand-off batch reimbursed, by an
+  actor holding `people.claims.reimburse` in the company now. Refused with
+  `:own_claim` when the actor's own claim is among them.
   """
-  def reimburse_batch(%Scope{} = scope, company_id, batch_id, actor_id, attrs)
-      when is_integer(actor_id) and actor_id > 0 and is_map(attrs) do
-    with {:ok, _company} <- company(scope, company_id),
+  def reimburse_batch(%Scope{} = scope, company_id, batch_id, attrs) when is_map(attrs) do
+    with {:ok, %{id: actor_id}} <- Authorization.authorize(scope, company_id, @reimburse),
+         {:ok, _company} <- company(scope, company_id),
          %HandoffBatch{} = batch <- fetch(HandoffBatch, scope, company_id, batch_id) do
       transaction(fn ->
         requests =
@@ -952,13 +1011,14 @@ defmodule Bilimbi.People.Claims do
     end
   end
 
-  defp decide(scope, company_id, request_id, actor_id, from_status, build_changeset) do
-    with {:ok, _company} <- company(scope, company_id) do
+  defp decide(scope, company_id, request_id, capability, from_status, build_changeset) do
+    with {:ok, %{id: actor_id}} <- Authorization.authorize(scope, company_id, capability),
+         {:ok, _company} <- company(scope, company_id) do
       transaction(fn ->
         with %Request{status: ^from_status} = request <-
                lock_request(scope, company_id, request_id),
              :ok <- own_claim_error(scope, request, actor_id) || :ok,
-             {:ok, updated} <- request |> build_changeset.(now()) |> Repo.update(),
+             {:ok, updated} <- request |> build_changeset.(actor_id, now()) |> Repo.update(),
              reason = if(from_status == "submitted", do: updated.decision_reason),
              {:ok, _event} <- record_event(updated, from_status, actor_id, reason) do
           {:ok, Map.take(updated, @request_fields)}
@@ -1207,17 +1267,6 @@ defmodule Bilimbi.People.Claims do
 
   defp normalize_currencies(_codes), do: {:error, :invalid_currencies}
 
-  defp working_employee(scope, company_id, employee_id) when is_integer(employee_id) do
-    with {:ok, result} <- Workforce.employee(scope, company_id, employee_id),
-         {:ok, _employee} <- ReadResult.require_current(result) do
-      :ok
-    else
-      _ -> {:error, :employee_unavailable}
-    end
-  end
-
-  defp working_employee(_scope, _company_id, _employee_id), do: {:error, :employee_unavailable}
-
   defp employee_exists(scope, company_id, employee_id) do
     with {:ok, _company} <- company(scope, company_id),
          {:ok, _employee} <- Employee.get_employee(scope, company_id, employee_id) do
@@ -1225,15 +1274,6 @@ defmodule Bilimbi.People.Claims do
     else
       _ -> {:error, :not_found}
     end
-  end
-
-  defp with_employee_lock(scope, company_id, employee_id, fun) do
-    transaction(fn ->
-      case Employee.lock_affiliation(scope, company_id, employee_id) do
-        {:ok, _proof} -> fun.()
-        _ -> {:error, :not_found}
-      end
-    end)
   end
 
   defp transaction(fun) do

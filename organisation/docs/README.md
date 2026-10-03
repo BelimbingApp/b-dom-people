@@ -21,10 +21,15 @@ page's holders through `Workforce.employees_by_ids/3`, never the whole
 workforce. A new substantive assignment ends an earlier substantive holder who
 is no longer working on the day before it starts, in the same transaction, and
 records a `people.organisation.assignment_released` audit action.
-`end_assignment/4` takes an Authz actor holding `people.organisation.manage`
-for the company, only moves an end date earlier, and records a
-`people.organisation.assignment_ended` audit action; the explorer offers it as
-an End action to such actors. `positions/4` returns at most 100
+Every write (`create_position/3`, `set_parent/4`, `record_version/4`,
+`assign/4`, `end_assignment/4`) authorizes `people.organisation.manage` for
+the scope's signed-in actor and the target company at the moment it runs,
+through `Bilimbi.People.Workforce.Authorization`; a system scope, a grant
+revoked while the explorer stays open, or a company outside the actor's reach
+is refused with `:unauthorized`. `end_assignment/4` only moves an end date
+earlier and records a `people.organisation.assignment_ended` audit action
+attributed to that actor; the explorer offers it as an End action to actors
+holding the grant and refuses the event when the grant is gone. `positions/4` returns at most 100
 positions per page; `count_positions/2` supports the explorer's pagination.
 `positions/4` with `cursor:` implements the high-water keyset scan; see
 `../../workforce/docs/README.md` for the authoritative scan, reconciliation and

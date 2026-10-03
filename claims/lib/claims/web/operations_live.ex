@@ -123,7 +123,11 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
           {:noreply, socket |> load() |> clear_flash(:info) |> put_flash(:error, refusal(reason))}
       end
     else
-      {:noreply, put_flash(socket, :error, "You are not allowed to do that for this company.")}
+      # Reloading through the facade drops the queue the actor may no longer read.
+      {:noreply,
+       socket
+       |> load()
+       |> put_flash(:error, "You are not allowed to do that for this company.")}
     end
   end
 
@@ -138,34 +142,30 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   defp capability({action, _subject, _attrs}) when action in [:approve, :reject], do: @approve
   defp capability(_pending), do: @reimburse
 
+  # The facade authorizes each action for the scope's actor when it runs and
+  # records who performed it; the page passes no actor.
   defp run({:approve, request, attrs}, socket) do
-    Claims.approve_request(scope(socket), company_id(socket), request.id, actor_id(socket), attrs)
+    Claims.approve_request(scope(socket), company_id(socket), request.id, attrs)
     |> result("Claim approved.")
   end
 
   defp run({:reject, request, attrs}, socket) do
-    Claims.reject_request(scope(socket), company_id(socket), request.id, actor_id(socket), attrs)
+    Claims.reject_request(scope(socket), company_id(socket), request.id, attrs)
     |> result("Claim rejected.")
   end
 
   defp run({:reimburse, request, attrs}, socket) do
-    Claims.reimburse_request(
-      scope(socket),
-      company_id(socket),
-      request.id,
-      actor_id(socket),
-      attrs
-    )
+    Claims.reimburse_request(scope(socket), company_id(socket), request.id, attrs)
     |> result("Claim marked reimbursed.")
   end
 
   defp run({:handoff, currency, _attrs}, socket) do
-    Claims.create_handoff_batch(scope(socket), company_id(socket), currency, actor_id(socket))
+    Claims.create_handoff_batch(scope(socket), company_id(socket), currency)
     |> result("Hand-off batch created. Open it under Batches to export it.")
   end
 
   defp run({:reimburse_batch, batch, attrs}, socket) do
-    Claims.reimburse_batch(scope(socket), company_id(socket), batch.id, actor_id(socket), attrs)
+    Claims.reimburse_batch(scope(socket), company_id(socket), batch.id, attrs)
     |> result("Batch claims marked reimbursed.")
   end
 
@@ -178,6 +178,10 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   def refusal(:nothing_to_hand_off), do: "No approved claims in that currency are waiting."
   def refusal(:nothing_to_reimburse), do: "No approved claims are left in this batch."
   def refusal(:not_found), do: "That record is no longer available."
+
+  def refusal(:unauthorized),
+    do: "You no longer have permission to do that for this company's claims."
+
   def refusal(:reason_required), do: "Enter a reason before rejecting a claim."
 
   def refusal(%Ecto.Changeset{errors: errors}) do
@@ -191,14 +195,16 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   def refusal(_reason), do: "The action could not be completed."
 
   defp authorized?(socket, capability) do
-    match?(
-      {:ok, _company},
-      Company.authorize_company_target(
-        socket.assigns.current_scope.actor,
-        company_id(socket),
-        capability
+    Enum.all?([@approve, capability], fn required ->
+      match?(
+        {:ok, _company},
+        Company.authorize_company_target(
+          socket.assigns.current_scope.actor,
+          company_id(socket),
+          required
+        )
       )
-    )
+    end)
   end
 
   defp find(socket, raw_id),
@@ -252,7 +258,6 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
     do: assign(socket, rows: [], batches: [], waiting: [], can_reimburse: false, export: nil)
 
   defp scope(socket), do: socket.assigns.current_scope.scope
-  defp actor_id(socket), do: socket.assigns.current_scope.actor.id
   defp company_id(socket), do: socket.assigns.company.id
 
   defp money(nil), do: "—"

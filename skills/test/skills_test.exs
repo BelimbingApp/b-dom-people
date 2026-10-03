@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.SkillsTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
@@ -8,13 +9,18 @@ defmodule Bilimbi.People.SkillsTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Settings.Contributions, as: SettingsContributions
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.Contributions
   alias Bilimbi.People.Skills.TestFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
+
+  @manage "people.skills.catalog.manage"
+  @publish "people.skills.profiles.publish"
+  @operator_grants [@manage, @publish, "admin.company.tenant-wide.manage"]
   alias Ecto.Adapters.SQL
 
   defmodule PositionReader do
@@ -56,14 +62,15 @@ defmodule Bilimbi.People.SkillsTest do
         }
       ])
 
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "skills-test",
-      consumers: %{settings: settings}
+    AuthorizationFixtures.install_snapshot!("skills-test", %{
+      settings: settings,
+      authz: AuthorizationFixtures.authz_consumer!([Contributions])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
     on_exit(fn -> Workforce.unregister_position_reader(PositionReader) end)
-    EmployeeFixtures.create_employee_tables!()
+    UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     TestFixtures.create_skill_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "First tenant"})
@@ -72,9 +79,14 @@ defmodule Bilimbi.People.SkillsTest do
     CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, code: "second"})
     CompanyFixtures.insert_company!(%{id: 75, tenant_id: 42, code: "third"})
     :ok = Employee.ensure_system_types()
-    {:ok, scope} = Tenancy.scope(41)
+    {:ok, system} = Tenancy.scope(41)
     {:ok, other_scope} = Tenancy.scope(42)
-    %{scope: scope, other_scope: other_scope}
+    UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Catalog operator"})
+
+    # Catalog writes authorize the scope's actor, so the tests act as an
+    # operator who holds the catalog grants and tenant-wide company reach.
+    scope = AuthorizationFixtures.sign_in!(system, 73, 91, @operator_grants)
+    %{scope: scope, system: system, other_scope: other_scope}
   end
 
   defp category(scope, company_id \\ 73, code \\ "technical") do
@@ -109,6 +121,58 @@ defmodule Bilimbi.People.SkillsTest do
 
     {:ok, scale} = Skills.publish_scale(scope, 73, scale.id)
     scale
+  end
+
+  test "catalog writes authorize the scope's actor when they run", %{
+    scope: scope,
+    system: system
+  } do
+    # A system scope names nobody.
+    assert {:error, :unauthorized} =
+             Skills.create_category(system, 73, %{code: "technical", name: "Technical"})
+
+    # A signed-in user without the grant is refused.
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Viewer", email: "v@example.com"})
+    viewer = AuthorizationFixtures.sign_in(system, 92, 73)
+
+    assert {:error, :unauthorized} =
+             Skills.create_category(viewer, 73, %{code: "technical", name: "Technical"})
+
+    category = category(scope)
+    skill = skill(scope, category)
+    scale = published_scale(scope)
+
+    {:ok, profile} =
+      Skills.create_profile(scope, 73, %{code: "base", name: "Base", scale_id: scale.id})
+
+    {:ok, _} =
+      Skills.put_item(scope, 73, profile.id, %{
+        skill_id: skill.id,
+        required_level: 1,
+        criticality: "critical",
+        weight_percent: "100"
+      })
+
+    {:ok, _} = Skills.add_selector(scope, 73, profile.id, :company)
+
+    # Publishing needs its own capability; the publisher is recorded from the scope.
+    :ok = AuthorizationFixtures.revoke!(system, 73, 91, @publish)
+    assert {:error, :unauthorized} = Skills.publish_profile(scope, 73, profile.id, ~D[2026-01-01])
+    :ok = AuthorizationFixtures.grant!(system, 73, 91, @publish)
+
+    assert {:ok, %{status: "published"}} =
+             Skills.publish_profile(scope, 73, profile.id, ~D[2026-01-01])
+
+    # A grant revoked after sign-in is refused on the next write, and nothing changes.
+    :ok = AuthorizationFixtures.revoke!(system, 73, 91, @manage)
+    assert {:error, :unauthorized} = Skills.set_skill_active(scope, 73, skill.id, false)
+    assert {:error, :unauthorized} = Skills.create_scale(scope, 73, %{code: "x", name: "X"})
+    assert {:ok, [%{active: true}]} = Skills.list_skills(system, 73)
+    assert {:ok, [_]} = Skills.list_scales(system, 73)
+
+    # Retiring needs the publish grant, which the operator still holds.
+    assert {:ok, %{status: "retired"}} =
+             Skills.retire_profile(scope, 73, profile.id, ~D[2026-12-31])
   end
 
   test "a new company has an empty catalog", %{scope: scope} do

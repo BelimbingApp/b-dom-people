@@ -11,6 +11,7 @@ defmodule Bilimbi.People.Skills.WorkflowFixtures do
   alias Bilimbi.People.Organisation.TestFixtures, as: OrganisationFixtures
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.TestFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
 
   @users %{manager: 101, lead: 102, one: 103, two: 104, hr: 105, outsider: 106, other: 107}
 
@@ -107,6 +108,13 @@ defmodule Bilimbi.People.Skills.WorkflowFixtures do
   def actor(%{scope: scope}, role, company_id \\ 73),
     do: Authz.actor(:user, Map.fetch!(@users, role), scope, company_id)
 
+  @doc "A scope signed in as the role's user, as the catalog and policy facades require."
+  def scope_as(%{scope: scope}, role, company_id \\ 73),
+    do: AuthorizationFixtures.sign_in(scope, Map.fetch!(@users, role), company_id)
+
+  @doc "The HR operator's scope: catalog, publish, policy and reminder grants."
+  def hr_scope(ctx), do: scope_as(ctx, :hr)
+
   defp employee!(scope, company_id, number, name, supervisor_id) do
     {:ok, employee} =
       Employee.create_employee(scope, company_id, %{
@@ -121,7 +129,8 @@ defmodule Bilimbi.People.Skills.WorkflowFixtures do
 
   # One category, a critical skill that reassesses every six months, a second
   # skill no profile requires, a three-level scale and a company-wide profile.
-  defp catalog!(%{scope: scope} = ctx) do
+  defp catalog!(ctx) do
+    scope = hr_scope(ctx)
     {:ok, category} = Skills.create_category(scope, 73, %{code: "technical", name: "Technical"})
 
     {:ok, welding} =
@@ -169,7 +178,7 @@ defmodule Bilimbi.People.Skills.WorkflowFixtures do
       })
 
     {:ok, _} = Skills.add_selector(scope, 73, profile.id, :company)
-    {:ok, profile} = Skills.publish_profile(actor(ctx, :hr), 73, profile.id, ~D[2020-01-01])
+    {:ok, profile} = Skills.publish_profile(scope, 73, profile.id, ~D[2020-01-01])
     %{welding: welding, inspection: inspection, scale: scale, profile: profile}
   end
 end

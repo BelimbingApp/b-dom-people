@@ -3,10 +3,12 @@ defmodule BilimbiWeb.LeaveLiveTest do
   import Ecto.Query, only: [from: 2]
   import Phoenix.LiveViewTest
 
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
+  alias Bilimbi.Core.User
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Leave
   alias Bilimbi.Base.Repo
@@ -57,6 +59,118 @@ defmodule BilimbiWeb.LeaveLiveTest do
       %{scope: scope, employee: employee}
     end
 
+    test "a save on the open policies page after the grant is revoked changes nothing", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
+      assert {:ok, %{year_start_month: 1}} = Leave.rules(scope, 73)
+
+      revoke!(scope, "people.leave.policies.manage")
+
+      # The apostrophe in the message is HTML-escaped in the render.
+      assert render_submit(view, "save_year", %{"year_start_month" => "7"}) =~
+               "You no longer have permission to change this company"
+
+      assert {:ok, %{year_start_month: 1}} = Leave.rules(scope, 73)
+
+      view
+      |> form("#leave-type-form", type: %{code: "annual", name: "Annual leave", unit: "day"})
+      |> render_submit()
+
+      assert {:ok, []} = Leave.list_types(scope, 73)
+    end
+
+    test "My leave stops acting once the self-service grant is revoked", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      {type, today} = funded_type!(scope, employee)
+      {:ok, my, _} = conn |> log_in_as() |> live("/people/leave/my")
+      assert has_element?(my, "#my-leave-no-requests")
+
+      revoke!(scope, "people.leave.self.view")
+
+      my
+      |> form("#leave-request-form",
+        request: %{leave_type_id: type.id, starts_on: Date.to_iso8601(today), day_part: "am"}
+      )
+      |> render_submit()
+
+      assert render(my) =~ "You no longer have permission to use leave self-service."
+      assert has_element?(my, "#my-leave-unavailable")
+      assert {:ok, []} = Leave.pending_requests(operator(scope), 73)
+    end
+
+    test "My leave stops acting for an employee the account is no longer linked to", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      {type, today} = funded_type!(scope, employee)
+      {:ok, my, _} = conn |> log_in_as() |> live("/people/leave/my")
+
+      my
+      |> form("#leave-request-form",
+        request: %{leave_type_id: type.id, starts_on: Date.to_iso8601(today), day_part: "am"}
+      )
+      |> render_submit()
+
+      assert has_element?(my, "#my-leave-requests", "pending")
+      [pending] = elem(Leave.pending_requests(operator(scope), 73), 1)
+
+      # The account is unlinked while the page stays open: it may neither
+      # cancel the former employee's request nor submit a new one.
+      assert {:ok, _} = User.update_user(scope, 73, 91, %{employee_id: nil})
+
+      assert render_click(my, "cancel_request", %{"id" => to_string(pending.id)}) =~
+               "Your account is not linked to a working employee in this company."
+
+      assert has_element?(my, "#my-leave-unavailable")
+
+      render_submit(my, "submit_request", %{
+        "request" => %{
+          "leave_type_id" => to_string(type.id),
+          "starts_on" => Date.to_iso8601(Date.add(today, 1)),
+          "day_part" => "pm"
+        }
+      })
+
+      assert [%{id: id, status: "pending"}] = elem(Leave.pending_requests(operator(scope), 73), 1)
+      assert id == pending.id
+    end
+
+    test "the approvals page stops deciding once the approve grant is revoked", %{
+      scope: scope,
+      employee: employee
+    } do
+      {type, today} = funded_type!(scope, employee)
+
+      {:ok, pending} =
+        Leave.submit_request(operator(scope), 73, %{
+          leave_type_id: type.id,
+          starts_on: today,
+          request_key: "web-approvals"
+        })
+
+      approver_conn = log_in_as(build_conn(), session_user(%{"user_id" => 92}))
+      {:ok, queue, _} = live(approver_conn, "/people/leave/requests")
+      assert has_element?(queue, "#leave-approval-#{pending.id}")
+
+      revoke!(scope, "people.leave.requests.approve", 92)
+
+      queue
+      |> form("#leave-decision-#{pending.id}")
+      |> render_submit(%{"decision" => "approve"})
+
+      assert render(queue) =~
+               "You no longer have permission to decide leave requests for this company."
+
+      assert has_element?(queue, "#leave-approvals-forbidden")
+      assert [%{status: "pending"}] = elem(Leave.pending_requests(operator(scope), 73), 1)
+    end
+
     test "self view shows an empty state before any leave type exists", %{conn: conn} do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/my")
       assert has_element?(view, "#my-leave-no-types")
@@ -98,13 +212,15 @@ defmodule BilimbiWeb.LeaveLiveTest do
     end
 
     test "the leave year is locked once balances exist", %{conn: conn, scope: scope} do
+      operator = operator(scope)
+
       {:ok, type} =
-        Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
+        Leave.create_type(operator, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
 
       {:ok, _} =
-        Leave.add_policy(scope, 73, type.id, %{effective_from: ~D[2020-01-01], entitlement: 5})
+        Leave.add_policy(operator, 73, type.id, %{effective_from: ~D[2020-01-01], entitlement: 5})
 
-      {:ok, _} = Leave.grant_entitlements(scope, 73, 2020)
+      {:ok, _} = Leave.grant_entitlements(operator, 73, 2020)
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
       view |> form("#leave-year-form", year_start_month: "4") |> render_submit()
@@ -113,26 +229,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
 
     test "an employee requests leave, an independent approver approves, the balance updates",
          %{conn: conn, scope: scope, employee: employee} do
-      {:ok, type} =
-        Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
-
-      {:ok, today} = Leave.today(scope, 73)
-
-      {:ok, _} =
-        Leave.record_entry(scope, 73, employee.id, %{
-          leave_type_id: type.id,
-          entry_type: "opening",
-          quantity: 5,
-          occurred_on: today,
-          source: "operator",
-          entry_key: "opening"
-        })
-
-      {:ok, _} =
-        Leave.put_request_rules(scope, 73, %{
-          working_weekdays: Enum.to_list(1..7),
-          backdate_days: 30
-        })
+      {type, today} = funded_type!(scope, employee)
 
       employee_conn = log_in_as(conn)
       {:ok, my, _} = live(employee_conn, "/people/leave/my")
@@ -158,7 +255,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
                "Another pending or approved request already covers part of these dates."
 
       {:ok, own_queue, _} = live(employee_conn, "/people/leave/requests")
-      [request] = elem(Leave.pending_requests(scope, 73), 1)
+      [request] = elem(Leave.pending_requests(operator(scope), 73), 1)
 
       own_queue
       |> form("#leave-decision-#{request.id}")
@@ -192,20 +289,21 @@ defmodule BilimbiWeb.LeaveLiveTest do
       conn: conn,
       scope: scope
     } do
+      operator = operator(scope)
       {:ok, today} = Leave.today(scope, 73)
-      {:ok, _} = Leave.put_rules(scope, 73, today.month)
+      {:ok, _} = Leave.put_rules(operator, 73, today.month)
 
       {:ok, type} =
-        Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
+        Leave.create_type(operator, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
 
       {:ok, _} =
-        Leave.add_policy(scope, 73, type.id, %{
+        Leave.add_policy(operator, 73, type.id, %{
           effective_from: ~D[1990-01-01],
           entitlement: 10,
           carry_forward_cap: 3
         })
 
-      {:ok, %{granted: 2}} = Leave.grant_entitlements(scope, 73, today.year - 1)
+      {:ok, %{granted: 2}} = Leave.grant_entitlements(operator, 73, today.year - 1)
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
       assert has_element?(view, "#leave-policy-versions", "3.00")
@@ -240,7 +338,12 @@ defmodule BilimbiWeb.LeaveLiveTest do
       scope: scope
     } do
       {:ok, type} =
-        Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
+        Leave.create_type(operator(scope), 73, %{
+          code: "annual",
+          name: "Annual",
+          unit: "day",
+          paid: true
+        })
 
       now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
 
@@ -264,7 +367,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
       )
 
       assert {:ok, %{total: 201, skips: [%{from_year: 2020, reason: :pending} | _] = skips}} =
-               Leave.carry_forward_skipped(scope, 73)
+               Leave.carry_forward_skipped(operator(scope), 73)
 
       assert length(skips) == 200
 
@@ -277,5 +380,41 @@ defmodule BilimbiWeb.LeaveLiveTest do
                "has a pending request in leave year 2020"
              )
     end
+  end
+
+  # Grants are stored for the signed-in user, so facade writes performed from
+  # the tests themselves run as that user, with the setup's grants.
+  defp operator(scope), do: Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)
+
+  defp revoke!(scope, capability, user_id \\ 91) do
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(scope, 73, :user, user_id, capability, false)
+  end
+
+  defp funded_type!(scope, employee) do
+    operator = operator(scope)
+
+    {:ok, type} =
+      Leave.create_type(operator, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
+
+    {:ok, today} = Leave.today(scope, 73)
+
+    {:ok, _} =
+      Leave.record_entry(operator, 73, employee.id, %{
+        leave_type_id: type.id,
+        entry_type: "opening",
+        quantity: 5,
+        occurred_on: today,
+        source: "operator",
+        entry_key: "opening"
+      })
+
+    {:ok, _} =
+      Leave.put_request_rules(operator, 73, %{
+        working_weekdays: Enum.to_list(1..7),
+        backdate_days: 30
+      })
+
+    {type, today}
   end
 end

@@ -3,6 +3,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
@@ -64,5 +65,26 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
   test "the route requires the workforce settings capability", %{conn: conn} do
     assert {:error, {_kind, _redirect}} =
              conn |> log_in_as() |> live(~p"/people/workforce/settings")
+  end
+
+  test "a save after the grant is revoked changes nothing", %{conn: conn, scope: scope} do
+    grant_capabilities!("people.workforce.settings.manage")
+    {:ok, view, _html} = conn |> log_in_as() |> live(~p"/people/workforce/settings")
+
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(
+               scope,
+               73,
+               :user,
+               91,
+               "people.workforce.settings.manage",
+               false
+             )
+
+    assert render_submit(view, "save", %{"statuses" => ["inactive"]}) =~
+             "Working statuses could not be saved."
+
+    assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
   end
 end

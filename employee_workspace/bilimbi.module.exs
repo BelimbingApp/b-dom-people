@@ -13,7 +13,8 @@
     "base/ui",
     "core/company",
     "core/employee",
-    "people/settings"
+    "people/settings",
+    "people/workforce"
   ],
   migrations: "priv/repo/migrations",
   migration_dispositions: %{20_260_930_120_101 => :bilimbi_only},

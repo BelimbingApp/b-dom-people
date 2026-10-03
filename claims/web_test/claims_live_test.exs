@@ -2,12 +2,15 @@ defmodule BilimbiWeb.ClaimsLiveTest do
   use BilimbiWeb.ConnCase, async: false
   import Phoenix.LiveViewTest
 
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
+  alias Bilimbi.Core.User
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Claims
   alias Bilimbi.People.Claims.TestFixtures, as: ClaimFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
 
   test "claim routes require authentication", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/people/claims")
@@ -128,11 +131,12 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       )
       |> render_submit()
 
-      assert {:ok, [second, first]} = Claims.employee_requests(scope, 73, employee.id)
+      claimant = AuthorizationFixtures.sign_in(scope, 91, 73)
+      assert {:ok, [second, first]} = Claims.self_requests(claimant, 73)
       assert second.duplicate_confirmed
 
       mine |> element("#claim-#{first.id} button", "Withdraw") |> render_click()
-      assert {:ok, [_, %{status: "withdrawn"}]} = Claims.employee_requests(scope, 73, employee.id)
+      assert {:ok, [_, %{status: "withdrawn"}]} = Claims.self_requests(claimant, 73)
     end
 
     test "operations need the approve capability", %{conn: conn} do
@@ -151,13 +155,18 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
       UserFixtures.insert_user!(%{id: 92, company_id: 73, email: "approver@example.com"})
       grant_capabilities!(["people.claims.approve"], user_id: 92)
-      grant_capabilities!(["people.claims.approve", "people.claims.submit"], user_id: 91)
 
-      {:ok, ["AAA"]} = Claims.put_currencies(scope, 73, ["AAA"])
-      {:ok, category} = Claims.create_category(scope, 73, %{"code" => "c", "name" => "Travel"})
+      grant_capabilities!(
+        ["people.claims.approve", "people.claims.submit", "people.claims.manage"],
+        user_id: 91
+      )
+
+      claimant = AuthorizationFixtures.sign_in(scope, 91, 73)
+      {:ok, ["AAA"]} = Claims.put_currencies(claimant, 73, ["AAA"])
+      {:ok, category} = Claims.create_category(claimant, 73, %{"code" => "c", "name" => "Travel"})
 
       {:ok, claim_type} =
-        Claims.create_claim_type(scope, 73, %{
+        Claims.create_claim_type(claimant, 73, %{
           "category_id" => category.id,
           "code" => "fuel",
           "name" => "Fuel",
@@ -165,7 +174,7 @@ defmodule BilimbiWeb.ClaimsLiveTest do
         })
 
       {:ok, _} =
-        Claims.create_policy(scope, 73, %{
+        Claims.create_policy(claimant, 73, %{
           "claim_type_id" => claim_type.id,
           "effective_from" => "2026-01-01",
           "currency" => "AAA"
@@ -174,10 +183,8 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       submit = fn attrs ->
         {:ok, request} =
           Claims.submit_request(
-            scope,
+            claimant,
             73,
-            employee.id,
-            91,
             Map.merge(
               %{
                 claim_type_id: claim_type.id,
@@ -238,7 +245,8 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       refute has_element?(view, "#reimburse-#{second.id}")
       render_click(view, "handoff", %{"currency" => "AAA"})
       refute has_element?(view, "#claim-operations-confirm")
-      assert {:ok, []} = Claims.handoff_batches(scope, 73)
+      approver_scope = AuthorizationFixtures.sign_in(scope, 92, 73)
+      assert {:ok, []} = Claims.handoff_batches(approver_scope, 73)
 
       grant_capabilities!(["people.claims.reimburse"], user_id: 92)
       {:ok, view, _html} = live(approver, "/people/claims/operations?tab=approved")
@@ -248,7 +256,7 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       assert render(view) =~ "Hand-off batch created."
 
       {:ok, view, _html} = live(approver, "/people/claims/operations?tab=batches")
-      assert {:ok, [%{id: batch_id}]} = Claims.handoff_batches(scope, 73)
+      assert {:ok, [%{id: batch_id}]} = Claims.handoff_batches(approver_scope, 73)
       assert has_element?(view, "#claim-batch-#{batch_id}", "1 claims")
 
       view |> element("#claim-batch-#{batch_id} button", "Prepare CSV") |> render_click()
@@ -294,9 +302,10 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
       grant_capabilities!(["people.claims.submit", "people.claims.manage"])
       logged_in = log_in_as(conn)
+      operator = AuthorizationFixtures.sign_in(scope, 91, 73)
 
-      {:ok, ["AAA"]} = Claims.put_currencies(scope, 73, ["AAA"])
-      {:ok, category} = Claims.create_category(scope, 73, %{"code" => "c", "name" => "Travel"})
+      {:ok, ["AAA"]} = Claims.put_currencies(operator, 73, ["AAA"])
+      {:ok, category} = Claims.create_category(operator, 73, %{"code" => "c", "name" => "Travel"})
 
       {:ok, setup, _html} = live(logged_in, "/people/claims/setup")
       assert has_element?(setup, "#claim-assignments-empty")
@@ -317,7 +326,7 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       assert {:ok, [%{id: type_id}]} = Claims.claim_types(scope, 73)
 
       {:ok, _} =
-        Claims.create_policy(scope, 73, %{
+        Claims.create_policy(operator, 73, %{
           "claim_type_id" => type_id,
           "effective_from" => "2026-01-01",
           "currency" => "AAA"
@@ -358,5 +367,231 @@ defmodule BilimbiWeb.ClaimsLiveTest do
 
       assert {:error, {_kind, _redirect}} = conn |> log_in_as() |> live("/people/claims/setup")
     end
+
+    # A page proves its route capability at mount. The grant can be revoked,
+    # or the account unlinked from its employee, while the page stays
+    # connected; the next event must then refuse and change nothing.
+    test "an open setup page stops writing once the manage grant is revoked", %{
+      conn: conn,
+      scope: scope
+    } do
+      UserFixtures.insert_user!(%{id: 91, company_id: 73})
+      grant_capabilities!(["people.claims.manage"])
+      {:ok, setup, _html} = conn |> log_in_as() |> live("/people/claims/setup")
+
+      revoke!(scope, 91, "people.claims.manage")
+
+      html =
+        render_hook(setup, "create_category", %{
+          "category" => %{"code" => "audit", "name" => "After revocation"}
+        })
+
+      assert html =~ "You no longer have permission to change this company"
+      assert {:ok, []} = Claims.categories(scope, 73)
+      refute has_element?(setup, "#claim-category-form")
+    end
+
+    test "an open My claims page stops withdrawing once the submit grant is revoked", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+      grant_capabilities!(["people.claims.submit", "people.claims.approve"])
+      request = submitted_claim!(scope, employee)
+      {:ok, mine, _html} = conn |> log_in_as() |> live("/people/claims")
+      assert has_element?(mine, "#claim-#{request.id} button", "Withdraw")
+
+      revoke!(scope, 91, "people.claims.submit")
+
+      html = render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)})
+      assert html =~ "You no longer have permission to submit claims here."
+      assert has_element?(mine, "#my-claims-unavailable")
+      refute has_element?(mine, "#my-claims-table")
+
+      approver = AuthorizationFixtures.sign_in(scope, 91, 73)
+      assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(approver, 73, employee.id)
+    end
+
+    test "an open My claims page stops acting for an employee once the account is unlinked", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+      grant_capabilities!(["people.claims.submit", "people.claims.approve"])
+      request = submitted_claim!(scope, employee)
+      {:ok, mine, _html} = conn |> log_in_as() |> live("/people/claims")
+      assert has_element?(mine, "#claim-#{request.id}")
+
+      # The grant stays; only the employee link goes.
+      assert {:ok, _} = User.update_user(scope, 73, 91, %{employee_id: nil})
+      approver = AuthorizationFixtures.sign_in(scope, 91, 73)
+      assert {:error, :not_linked} = Claims.self_service_employee(approver, 73)
+
+      html = render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)})
+      assert html =~ "You are not a working employee of this company."
+      assert has_element?(mine, "#my-claims-unavailable")
+      refute has_element?(mine, "#claim-#{request.id}")
+      assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(approver, 73, employee.id)
+    end
+
+    test "an open My claims page cannot withdraw a former employee's claim after relinking", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+      grant_capabilities!(["people.claims.submit", "people.claims.approve"])
+      request = submitted_claim!(scope, employee)
+      {:ok, mine, _html} = conn |> log_in_as() |> live("/people/claims")
+      assert has_element?(mine, "#claim-#{request.id}")
+
+      {:ok, other} =
+        Employee.create_employee(scope, 73, %{
+          employee_number: "EMP-03",
+          full_name: "Third Employee",
+          employee_type: "full_time",
+          status: "active"
+        })
+
+      assert {:ok, _} = User.update_user(scope, 73, 91, %{employee_id: other.id})
+      approver = AuthorizationFixtures.sign_in(scope, 91, 73)
+      assert {:ok, %{id: linked_employee_id}} = Claims.self_service_employee(approver, 73)
+      assert linked_employee_id == other.id
+
+      assert render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)}) =~
+               "This claim cannot be withdrawn."
+
+      assert has_element?(mine, "#my-claims-empty")
+      refute has_element?(mine, "#claim-#{request.id}")
+      assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(approver, 73, employee.id)
+    end
+
+    for action <- ~w(reimburse handoff reimburse_batch) do
+      test "#{action} confirmation refuses a revoked route grant with reimbursement retained", %{
+        conn: conn,
+        scope: scope,
+        employee: employee
+      } do
+        UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+        UserFixtures.insert_user!(%{id: 92, company_id: 73, email: "approver@example.com"})
+        grant_capabilities!(["people.claims.submit", "people.claims.approve"], user_id: 91)
+        grant_capabilities!(["people.claims.approve", "people.claims.reimburse"], user_id: 92)
+        request = submitted_claim!(scope, employee)
+        operator = AuthorizationFixtures.sign_in(scope, 92, 73)
+        {:ok, _} = Claims.approve_request(operator, 73, request.id, %{})
+
+        {params, tab, batch} =
+          case unquote(action) do
+            "reimburse" ->
+              {%{"request_id" => to_string(request.id)}, "approved", nil}
+
+            "handoff" ->
+              {%{"currency" => "AAA"}, "approved", nil}
+
+            "reimburse_batch" ->
+              {:ok, batch} = Claims.create_handoff_batch(operator, 73, "AAA")
+              {%{"batch_id" => to_string(batch.id)}, "batches", batch}
+          end
+
+        {:ok, view, _} =
+          conn
+          |> log_in_as(%{"user_id" => 92, "company_id" => 73})
+          |> live("/people/claims/operations?tab=#{tab}")
+
+        render_hook(view, unquote(action), params)
+        assert has_element?(view, "#claim-operations-confirm")
+        revoke!(scope, 92, "people.claims.approve")
+
+        if batch do
+          assert render_hook(view, "export", %{"id" => to_string(batch.id)}) =~
+                   "cannot be exported"
+
+          refute has_element?(view, "#claim-batch-download-#{batch.id}")
+        end
+
+        assert render_click(view, "confirm") =~ "not allowed to do that"
+        refute has_element?(view, "#claim-operations-confirm")
+        reader = AuthorizationFixtures.sign_in(scope, 91, 73)
+        assert {:ok, [%{status: "approved"}]} = Claims.employee_requests(reader, 73, employee.id)
+        assert {:ok, batches} = Claims.handoff_batches(reader, 73)
+        assert length(batches) == if(batch, do: 1, else: 0)
+      end
+    end
+
+    test "an open operations page stops deciding once the approve grant is revoked", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+      UserFixtures.insert_user!(%{id: 92, company_id: 73, email: "approver@example.com"})
+      grant_capabilities!(["people.claims.submit", "people.claims.approve"], user_id: 91)
+      grant_capabilities!(["people.claims.approve"], user_id: 92)
+      request = submitted_claim!(scope, employee)
+
+      approver = log_in_as(conn, %{"user_id" => 92, "company_id" => 73})
+      {:ok, view, _html} = live(approver, "/people/claims/operations")
+      assert has_element?(view, "#claim-row-#{request.id}")
+
+      view
+      |> form("#decide-#{request.id}", %{approved_amount: "", decision_reason: "Not covered"})
+      |> render_submit(%{decision: "reject"})
+
+      assert has_element?(view, "#claim-operations-confirm")
+      revoke!(scope, 92, "people.claims.approve")
+
+      html = render_click(view, "confirm")
+      assert html =~ "not allowed to do that" or html =~ "no longer have permission"
+      refute has_element?(view, "#claim-row-#{request.id}")
+
+      reader = AuthorizationFixtures.sign_in(scope, 91, 73)
+      assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(reader, 73, employee.id)
+    end
+  end
+
+  defp revoke!(scope, user_id, capability) do
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(scope, 73, :user, user_id, capability, false)
+
+    actor = Bilimbi.Base.Tenancy.Authentication.sign_in(scope, user_id, 73)
+    refute Authz.can(actor, capability).allowed
+  end
+
+  # One submitted claim for the employee, written through the employee's own
+  # signed-in login after an operator opened a claim type.
+  defp submitted_claim!(scope, employee) do
+    UserFixtures.insert_user!(%{id: 99, company_id: 73, email: "setup@example.com"})
+    grant_capabilities!(["people.claims.manage"], user_id: 99)
+    operator = AuthorizationFixtures.sign_in(scope, 99, 73)
+    {:ok, ["AAA"]} = Claims.put_currencies(operator, 73, ["AAA"])
+    {:ok, category} = Claims.create_category(operator, 73, %{"code" => "c", "name" => "Travel"})
+
+    {:ok, claim_type} =
+      Claims.create_claim_type(operator, 73, %{
+        "category_id" => category.id,
+        "code" => "fuel",
+        "name" => "Fuel",
+        "receipt_requirement" => "never"
+      })
+
+    {:ok, _} =
+      Claims.create_policy(operator, 73, %{
+        "claim_type_id" => claim_type.id,
+        "effective_from" => "2026-01-01",
+        "currency" => "AAA"
+      })
+
+    {:ok, request} =
+      Claims.submit_request(AuthorizationFixtures.sign_in(scope, 91, 73), 73, %{
+        claim_type_id: claim_type.id,
+        incurred_on: "2026-03-10",
+        amount: "40",
+        currency: "AAA"
+      })
+
+    _ = employee
+    request
   end
 end

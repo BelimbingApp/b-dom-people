@@ -23,8 +23,10 @@ defmodule Bilimbi.People.Leave.CarryForward do
   alias Bilimbi.People.Leave
   alias Bilimbi.People.Leave.{CarryForwardSkip, LedgerEntry, LeaveType, Policy, Request, Requests}
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.ReadResult
 
+  @manage "people.leave.policies.manage"
   @source "carry_forward"
   @skip_limit 200
 
@@ -65,11 +67,10 @@ defmodule Bilimbi.People.Leave.CarryForward do
     end
   end
 
-  def run(scope, company_id, from_year, actor_user_id \\ nil)
-
-  def run(%Scope{} = scope, company_id, from_year, actor_user_id)
+  def run(%Scope{} = scope, company_id, from_year)
       when is_integer(from_year) and from_year in 1900..9997 do
-    with {:ok, year} <- ended_year(scope, company_id, from_year),
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, year} <- ended_year(scope, company_id, from_year),
          {:ok, read} <- Workforce.employees(scope, company_id),
          {:ok, employees} <- ReadResult.require_current(read) do
       Repo.transaction(fn ->
@@ -105,7 +106,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
                     type,
                     policy,
                     from_year,
-                    actor_user_id,
+                    actor.id,
                     year
                   )
 
@@ -131,7 +132,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
     end
   end
 
-  def run(%Scope{}, _, _, _), do: {:error, :invalid_year}
+  def run(%Scope{}, _, _), do: {:error, :invalid_year}
 
   @doc """
   The employees and types that carry-forward runs left open, oldest leave
@@ -143,7 +144,8 @@ defmodule Bilimbi.People.Leave.CarryForward do
   carried forward yet for `:previous_year_open`.
   """
   def skipped(%Scope{} = scope, company_id) do
-    with {:ok, _rules} <- Leave.rules(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, _rules} <- Leave.rules(scope, company_id) do
       rows =
         from(s in Tenancy.scope_query(CarryForwardSkip, scope),
           where: s.company_id == ^company_id

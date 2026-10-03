@@ -28,9 +28,10 @@ defmodule Bilimbi.People.Leave.CarryForwardWorker do
     with {:ok, actor} <- Authz.scope_actor(scope),
          {:ok, companies} <- Company.list_selectable_companies(actor, @capability),
          true <- Enum.any?(companies, &(&1.id == company_id and &1.status == "active")) do
-      case Leave.carry_forward(scope, company_id, year, actor.id) do
+      case Leave.carry_forward(scope, company_id, year) do
         {:ok, _counts} -> :ok
         {:error, :not_current} -> {:retry, :workforce_not_current}
+        {:error, :unauthorized} -> {:cancel, :not_authorized}
         {:error, :year_not_ended} -> {:cancel, :year_not_ended}
         {:error, _reason} -> {:cancel, :carry_forward_refused}
       end

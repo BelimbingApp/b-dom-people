@@ -63,6 +63,9 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
         {:noreply,
          put_flash(socket, :error, "Check the allowance rule fields and effective dates.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, refusal(:unauthorized))}
+
       _ ->
         {:noreply, put_flash(socket, :error, "Allowance rules are unavailable for this company.")}
     end
@@ -88,8 +91,14 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
   defp updated(socket, {:ok, _}),
     do: {:noreply, socket |> reload() |> put_flash(:success, "Allowance rule updated.")}
 
+  defp updated(socket, {:error, :unauthorized}),
+    do: {:noreply, put_flash(socket, :error, refusal(:unauthorized))}
+
   defp updated(socket, _),
     do: {:noreply, put_flash(socket, :error, "Allowance rule could not be updated.")}
+
+  defp refusal(:unauthorized),
+    do: "You no longer have permission to change this company's allowance rules."
 
   defp scope(socket), do: socket.assigns.current_scope.scope
   defp company_id(socket), do: socket.assigns.company.id

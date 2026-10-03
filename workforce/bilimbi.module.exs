@@ -7,12 +7,14 @@
   namespace: Bilimbi.People.Workforce,
   dependencies: [
     "base/authz",
+    "base/database",
     "base/module_registry",
     "base/settings",
     "base/tenancy",
     "base/ui",
     "core/company",
-    "core/employee"
+    "core/employee",
+    "core/user"
   ],
   migrations: nil,
   web: "priv/web_routes.exs",

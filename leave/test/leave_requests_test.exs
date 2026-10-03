@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.LeaveRequestsTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.DateTime.Contributions, as: DateTimeContributions
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
@@ -9,6 +10,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
+  alias Bilimbi.Core.User
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Leave
   alias Bilimbi.People.Leave.CarryForwardWorker
@@ -16,7 +18,12 @@ defmodule Bilimbi.People.LeaveRequestsTest do
   alias Bilimbi.People.Leave.TestFixtures
   alias Bilimbi.People.ReferenceData
   alias Bilimbi.People.ReferenceData.TestFixtures, as: ReferenceFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
+
+  @manage "people.leave.policies.manage"
+  @approve "people.leave.requests.approve"
+  @self "people.leave.self.view"
 
   # 2099-03-02 is a Monday; far-future dates keep these tests independent of
   # today, since requests have no forward limit.
@@ -39,13 +46,18 @@ defmodule Bilimbi.People.LeaveRequestsTest do
         }
       ])
 
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "leave-requests-test",
-      consumers: %{settings: settings}
+    AuthorizationFixtures.install_snapshot!("leave-requests-test", %{
+      settings: settings,
+      authz:
+        AuthorizationFixtures.authz_consumer!([
+          Contributions,
+          Bilimbi.People.ReferenceData.Contributions
+        ])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
     UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     ReferenceFixtures.create_reference_tables!()
     TestFixtures.create_leave_tables!()
@@ -54,14 +66,14 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     CompanyFixtures.insert_company!(%{id: 73, tenant_id: 41, code: "first"})
     CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, code: "second"})
     :ok = Employee.ensure_system_types()
-    {:ok, scope} = Tenancy.scope(41)
+    {:ok, system} = Tenancy.scope(41)
     {:ok, other_scope} = Tenancy.scope(42)
 
     {:ok, employee} =
-      Employee.create_employee(scope, 73, %{employee_number: "E-1", full_name: "Employee One"})
+      Employee.create_employee(system, 73, %{employee_number: "E-1", full_name: "Employee One"})
 
     {:ok, approver_employee} =
-      Employee.create_employee(scope, 73, %{employee_number: "E-2", full_name: "Employee Two"})
+      Employee.create_employee(system, 73, %{employee_number: "E-2", full_name: "Employee Two"})
 
     UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
 
@@ -72,16 +84,32 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       email: "approver@example.com"
     })
 
+    # Every facade write authorizes the scope's actor. The operator (user 91,
+    # linked to Employee One) also requests their own leave; the approver
+    # (user 92) is independent. `system` stays for the platform fixtures.
+    # The operator also maintains the company's calendar exceptions.
+    scope =
+      AuthorizationFixtures.sign_in!(system, 73, 91, [
+        @manage,
+        @approve,
+        @self,
+        "people.references.manage"
+      ])
+
+    approver = AuthorizationFixtures.sign_in!(system, 73, 92, [@approve, @self])
+
     {:ok, type} =
       Leave.create_type(scope, 73, %{code: "annual", name: "Annual", unit: "day", paid: true})
 
     %{
       scope: scope,
+      system: system,
       other_scope: other_scope,
       employee: employee,
+      approver_employee: approver_employee,
       type: type,
-      requester: %{type: :user, id: 91, company_id: 73},
-      approver: %{type: :user, id: 92, company_id: 73}
+      requester: scope,
+      approver: approver
     }
   end
 
@@ -99,11 +127,11 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     :ok
   end
 
-  defp request(scope, actor, type, starts_on, ends_on, extra \\ %{}) do
+  # `actor` is the requester's signed-in scope; the operator scope is unused.
+  defp request(_scope, actor, type, starts_on, ends_on, extra \\ %{}) do
     Leave.submit_request(
-      scope,
-      73,
       actor,
+      73,
       Map.merge(
         %{
           leave_type_id: type.id,
@@ -181,13 +209,13 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     fund(scope, employee, type, @monday, 10)
     attrs = %{leave_type_id: type.id, starts_on: @monday, ends_on: @monday, request_key: "k1"}
 
-    assert {:ok, first} = Leave.submit_request(scope, 73, requester, attrs)
-    assert {:ok, ^first} = Leave.submit_request(scope, 73, requester, attrs)
+    assert {:ok, first} = Leave.submit_request(requester, 73, attrs)
+    assert {:ok, ^first} = Leave.submit_request(requester, 73, attrs)
 
     assert {:error, :request_key_conflict} =
-             Leave.submit_request(scope, 73, requester, %{attrs | ends_on: Date.add(@monday, 1)})
+             Leave.submit_request(requester, 73, %{attrs | ends_on: Date.add(@monday, 1)})
 
-    assert {:ok, [_]} = Leave.self_requests(scope, 73, requester)
+    assert {:ok, [_]} = Leave.self_requests(requester, 73)
   end
 
   test "live requests never overlap, but the two halves of a day may be separate", ctx do
@@ -290,15 +318,15 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     {:ok, pending} = request(scope, requester, type, @monday, Date.add(@monday, 1))
 
     assert {:error, :self_approval} =
-             Leave.decide_request(scope, 73, requester, pending.id, :approve, nil)
+             Leave.decide_request(requester, 73, pending.id, :approve, nil)
 
     assert {:ok, [%{employee_name: "Employee One (E-1)"}]} = Leave.pending_requests(scope, 73)
 
     assert {:ok, %{status: "approved", decided_by_user_id: 92}} =
-             Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
+             Leave.decide_request(approver, 73, pending.id, :approve, nil)
 
     assert {:error, :not_pending} =
-             Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
+             Leave.decide_request(approver, 73, pending.id, :approve, nil)
 
     row = balance(scope, employee, 2099)
     assert Decimal.equal?(row.taken, 2)
@@ -317,15 +345,10 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     fund(scope, employee, type, @monday, 5)
     {:ok, pending} = request(scope, requester, type, @monday, @monday)
 
+    unknown = AuthorizationFixtures.sign_in!(ctx.system, 73, 999, [@approve])
+
     assert {:error, :self_approval} =
-             Leave.decide_request(
-               scope,
-               73,
-               %{type: :user, id: 999, company_id: 73},
-               pending.id,
-               :approve,
-               nil
-             )
+             Leave.decide_request(unknown, 73, pending.id, :approve, nil)
 
     assert {:ok, [%{id: id}]} = Leave.pending_requests(scope, 73)
     assert id == pending.id
@@ -355,10 +378,10 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     {:ok, pending} = request(scope, requester, type, @monday, @monday)
 
     assert {:error, :note_required} =
-             Leave.decide_request(scope, 73, approver, pending.id, :reject, "  ")
+             Leave.decide_request(approver, 73, pending.id, :reject, "  ")
 
     assert {:ok, %{status: "rejected", decision_note: "Team is short"}} =
-             Leave.decide_request(scope, 73, approver, pending.id, :reject, "Team is short")
+             Leave.decide_request(approver, 73, pending.id, :reject, "Team is short")
 
     assert {:ok, _} = request(scope, requester, type, @monday, @monday)
     assert Decimal.equal?(balance(scope, employee, 2099).balance, 5)
@@ -382,7 +405,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       })
 
     assert {:error, :insufficient_balance} =
-             Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
+             Leave.decide_request(approver, 73, pending.id, :approve, nil)
   end
 
   test "cancelling returns pending and future approved leave, not started leave", ctx do
@@ -391,15 +414,15 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
     fund(scope, employee, type, @monday, 5)
     {:ok, pending} = request(scope, requester, type, @monday, @monday)
-    assert {:ok, %{status: "cancelled"}} = Leave.cancel_request(scope, 73, requester, pending.id)
-    assert {:error, :not_cancellable} = Leave.cancel_request(scope, 73, requester, pending.id)
+    assert {:ok, %{status: "cancelled"}} = Leave.cancel_request(requester, 73, pending.id)
+    assert {:error, :not_cancellable} = Leave.cancel_request(requester, 73, pending.id)
 
     {:ok, approved} = request(scope, requester, type, @monday, Date.add(@monday, 1))
-    {:ok, _} = Leave.decide_request(scope, 73, approver, approved.id, :approve, nil)
+    {:ok, _} = Leave.decide_request(approver, 73, approved.id, :approve, nil)
     assert Decimal.equal?(balance(scope, employee, 2099).balance, 3)
 
-    assert {:error, :not_found} = Leave.cancel_request(scope, 73, approver, approved.id)
-    assert {:ok, %{status: "cancelled"}} = Leave.cancel_request(scope, 73, requester, approved.id)
+    assert {:error, :not_found} = Leave.cancel_request(approver, 73, approved.id)
+    assert {:ok, %{status: "cancelled"}} = Leave.cancel_request(requester, 73, approved.id)
 
     row = balance(scope, employee, 2099)
     assert Decimal.equal?(row.balance, 5) and Decimal.equal?(row.taken, 0)
@@ -414,8 +437,8 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       })
 
     {:ok, started} = request(scope, requester, type, today, today)
-    {:ok, _} = Leave.decide_request(scope, 73, approver, started.id, :approve, nil)
-    assert {:error, :not_cancellable} = Leave.cancel_request(scope, 73, requester, started.id)
+    {:ok, _} = Leave.decide_request(approver, 73, started.id, :approve, nil)
+    assert {:error, :not_cancellable} = Leave.cancel_request(requester, 73, started.id)
   end
 
   test "requests are scoped to the actor's company and tenant", ctx do
@@ -425,20 +448,102 @@ defmodule Bilimbi.People.LeaveRequestsTest do
     fund(scope, ctx.employee, type, @monday, 1)
     {:ok, pending} = request(scope, requester, type, @monday, @monday)
 
-    assert {:error, :unavailable} =
-             Leave.submit_request(scope, 74, requester, %{
+    # Grants are per company: a sibling company is out of reach, and a scope
+    # of another tenant (which names no user) is refused before any read.
+    assert {:error, :unauthorized} =
+             Leave.submit_request(requester, 74, %{
                leave_type_id: type.id,
                starts_on: @monday,
                request_key: "x"
              })
 
-    assert {:error, :not_found} =
-             Leave.decide_request(scope, 74, approver, pending.id, :approve, nil)
+    assert {:error, :unauthorized} =
+             Leave.decide_request(approver, 74, pending.id, :approve, nil)
 
-    assert {:error, :not_found} = Leave.pending_requests(other, 73)
+    assert {:error, :unauthorized} = Leave.pending_requests(other, 73)
 
-    assert {:error, :not_found} =
-             Leave.decide_request(other, 73, approver, pending.id, :approve, nil)
+    assert {:error, :unauthorized} =
+             Leave.decide_request(other, 73, pending.id, :approve, nil)
+
+    assert {:error, :unauthorized} = Leave.pending_requests(scope, 74)
+    assert {:ok, [%{id: id}]} = Leave.pending_requests(scope, 73)
+    assert id == pending.id
+  end
+
+  test "writes refuse a system scope and a grant revoked after sign-in", ctx do
+    %{scope: scope, system: system, employee: employee, type: type} = ctx
+    fund(scope, employee, type, @monday, 5)
+    {:ok, pending} = request(scope, ctx.requester, type, @monday, @monday)
+
+    attrs = %{code: "sick", name: "Sick", unit: "day", paid: true}
+    assert {:error, :unauthorized} = Leave.create_type(system, 73, attrs)
+    assert {:error, :unauthorized} = Leave.put_rules(system, 73, 4)
+    assert {:error, :unauthorized} = Leave.pending_requests(system, 73)
+
+    assert {:error, :unauthorized} =
+             Leave.submit_request(system, 73, %{
+               leave_type_id: type.id,
+               starts_on: Date.add(@monday, 1),
+               request_key: "system"
+             })
+
+    assert {:error, :unauthorized} = Leave.self_summary(system, 73)
+
+    :ok = AuthorizationFixtures.revoke!(system, 73, 91, @manage)
+    assert {:error, :unauthorized} = Leave.create_type(scope, 73, attrs)
+    assert {:error, :unauthorized} = Leave.put_rules(scope, 73, 4)
+    assert {:error, :unauthorized} = Leave.grant_entitlements(scope, 73, 2099)
+    assert {:error, :unauthorized} = Leave.enqueue_carry_forward(scope, 73, 2098)
+    assert {:ok, [_]} = Leave.list_types(scope, 73)
+    assert {:ok, %{year_start_month: 1}} = Leave.rules(scope, 73)
+
+    :ok = AuthorizationFixtures.revoke!(system, 73, 92, @approve)
+
+    assert {:error, :unauthorized} =
+             Leave.decide_request(ctx.approver, 73, pending.id, :approve, nil)
+
+    assert {:ok, [%{id: id, status: "pending"}]} = Leave.pending_requests(scope, 73)
+    assert id == pending.id
+
+    :ok = AuthorizationFixtures.revoke!(system, 73, 91, @self)
+    assert {:error, :unauthorized} = Leave.cancel_request(ctx.requester, 73, pending.id)
+    assert {:error, :unauthorized} = Leave.self_requests(ctx.requester, 73)
+    assert {:ok, [%{status: "pending"}]} = Leave.pending_requests(scope, 73)
+  end
+
+  test "self-service follows the account's current employee link", ctx do
+    %{scope: scope, system: system, employee: employee, type: type, requester: requester} = ctx
+    fund(scope, employee, type, @monday, 5)
+    {:ok, pending} = request(scope, requester, type, @monday, @monday)
+    assert {:ok, [_]} = Leave.self_requests(requester, 73)
+
+    # The link is removed while the requester's scope stays in use.
+    assert {:ok, _user} = User.update_user(system, 73, 91, %{employee_id: nil})
+    assert {:error, :not_linked} = Leave.self_requests(requester, 73)
+    assert {:error, :not_linked} = Leave.self_summary(requester, 73)
+    assert {:error, :not_linked} = Leave.cancel_request(requester, 73, pending.id)
+
+    assert {:error, :not_linked} =
+             request(scope, requester, type, Date.add(@monday, 1), Date.add(@monday, 1))
+
+    assert {:ok, [%{id: id, status: "pending"}]} = Leave.pending_requests(scope, 73)
+    assert id == pending.id
+
+    # Relinked to another employee, the account acts on that employee only.
+    {:ok, other_employee} =
+      Employee.create_employee(system, 73, %{employee_number: "E-3", full_name: "Employee Three"})
+
+    assert {:ok, _user} = User.update_user(system, 73, 91, %{employee_id: other_employee.id})
+    assert {:ok, []} = Leave.self_requests(requester, 73)
+    assert {:error, :not_found} = Leave.cancel_request(requester, 73, pending.id)
+    assert {:ok, [%{status: "pending"}]} = Leave.pending_requests(scope, 73)
+
+    fund(scope, other_employee, type, Date.add(@monday, 1), 5)
+
+    assert {:ok, %{employee_id: employee_id}} =
+             request(scope, requester, type, Date.add(@monday, 1), Date.add(@monday, 1))
+
+    assert employee_id == other_employee.id
   end
 
   describe "carry-forward" do
@@ -474,9 +579,9 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       assert {:error, :year_not_ended} = Leave.carry_forward(scope, 73, year + 1)
 
       assert {:ok, %{carried: 2, existing: 0, pending: 0}} =
-               Leave.carry_forward(scope, 73, year, 92)
+               Leave.carry_forward(scope, 73, year)
 
-      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year)
       assert {:ok, 2} = Leave.carried_forward_count(scope, 73, year)
 
       closed = balance(scope, employee, year)
@@ -515,18 +620,18 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       fund(scope, employee, type, Date.add(first_day, -1), 6)
 
       assert {:ok, %{carried: 1, previous_year_open: 1}} =
-               Leave.carry_forward(scope, 73, year, 92)
+               Leave.carry_forward(scope, 73, year)
 
       assert {:ok, [%{employee_id: employee_id, reason: :previous_year_open}]} =
                skipped(scope, year)
 
       assert employee_id == employee.id
 
-      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1)
       assert {:ok, []} = skipped(scope, year - 1)
       assert Decimal.equal?(balance(scope, employee, year).carried_forward, 4)
 
-      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year)
       assert {:ok, []} = skipped(scope, year)
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
@@ -546,10 +651,10 @@ defmodule Bilimbi.People.LeaveRequestsTest do
       fund(scope, employee, type, Date.add(first_day, -1), 6)
 
       assert {:ok, %{carried: 1, previous_year_open: 1}} =
-               Leave.carry_forward(scope, 73, year, 92)
+               Leave.carry_forward(scope, 73, year)
 
       assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
-               Leave.carry_forward(scope, 73, year - 1, 92)
+               Leave.carry_forward(scope, 73, year - 1)
 
       older = year - 2
 
@@ -564,21 +669,21 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
       assert from_year == year - 1
 
-      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 2, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 2)
       assert {:ok, %{skips: [], total: 0}} = Leave.carry_forward_skipped(scope, 73)
       assert Decimal.equal?(balance(scope, employee, year - 1).carried_forward, 4)
 
       assert {:ok, %{carried: 0, existing: 1, previous_year_open: 1}} =
-               Leave.carry_forward(scope, 73, year, 92)
+               Leave.carry_forward(scope, 73, year)
 
       assert {:ok, %{skips: [%{from_year: ^year, blocking_year: blocking_year}]}} =
                Leave.carry_forward_skipped(scope, 73)
 
       assert blocking_year == year - 1
 
-      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year - 1)
       assert {:ok, %{skips: [], total: 0}} = Leave.carry_forward_skipped(scope, 73)
-      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year)
       assert {:ok, %{skips: []}} = Leave.carry_forward_skipped(scope, 73)
       assert Decimal.equal?(balance(scope, employee, year + 1).carried_forward, 4)
     end
@@ -593,7 +698,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
           carry_forward_cap: "4"
         })
 
-      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year)
 
       {:ok, rules} = Leave.rules(scope, 73)
       {first_day, _} = Leave.year_range(rules, year)
@@ -609,7 +714,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
                })
 
       assert {:ok, %{granted: 0, closed: 2}} = Leave.grant_entitlements(scope, 73, year - 1)
-      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year - 1, 92)
+      assert {:ok, %{carried: 0, existing: 2}} = Leave.carry_forward(scope, 73, year - 1)
       assert {:ok, []} = skipped(scope, year - 1)
       assert Decimal.equal?(balance(scope, employee, year - 1).balance, 0)
     end
@@ -624,7 +729,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
           carry_forward_cap: "4"
         })
 
-      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year, 92)
+      assert {:ok, %{carried: 2}} = Leave.carry_forward(scope, 73, year)
 
       assert {:ok, %{granted: 0, existing: 0, closed: 2}} =
                Leave.grant_entitlements(scope, 73, year)
@@ -669,7 +774,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
       assert type_id == type.id
 
-      {:ok, _} = Leave.decide_request(scope, 73, approver, pending.id, :approve, nil)
+      {:ok, _} = Leave.decide_request(approver, 73, pending.id, :approve, nil)
       assert {:ok, %{carried: 1, existing: 1}} = Leave.carry_forward(scope, 73, year)
       assert {:ok, []} = skipped(scope, year)
       assert Decimal.equal?(balance_for(scope, employee, type, year + 1).carried_forward, 2)
@@ -695,7 +800,7 @@ defmodule Bilimbi.People.LeaveRequestsTest do
 
       assert {:cancel, :not_authorized} =
                CarryForwardWorker.handle_job(%{"company_id" => 73, "from_year" => ctx.year}, %{
-                 scope: ctx.scope
+                 scope: ctx.system
                })
     end
   end

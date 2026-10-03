@@ -6,7 +6,10 @@ defmodule Bilimbi.People.Leave.Requests do
   # requester nor the employee decides. Approval writes a `taken` ledger entry;
   # cancelling an approved request before it starts writes a `cancelled` one.
   # Every write for one employee runs under Core Employee's affiliation lock,
-  # so balance and overlap checks cannot race each other.
+  # so balance and overlap checks cannot race each other. Self-service calls
+  # resolve the signed-in actor's linked employee on every call and prove it
+  # again under that lock; approval calls authorize the approve capability
+  # when they run.
   import Ecto.Query
 
   import Bilimbi.People.Leave.Input,
@@ -24,8 +27,12 @@ defmodule Bilimbi.People.Leave.Requests do
   alias Bilimbi.People.Leave.RequestEvent
   alias Bilimbi.People.ReferenceData
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.ReadResult
 
+  @manage "people.leave.policies.manage"
+  @approve "people.leave.requests.approve"
+  @self "people.leave.self.view"
   @weekdays_key "people.leave.working_weekdays"
   @backdate_key "people.leave.request_backdate_days"
   @request_source "request"
@@ -73,7 +80,8 @@ defmodule Bilimbi.People.Leave.Requests do
     weekdays = field(attrs, :working_weekdays)
     backdate = field(attrs, :backdate_days)
 
-    with {:ok, company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage),
+         {:ok, company} <- current_company(scope, company_id),
          true <- valid_weekdays?(weekdays) || {:error, :invalid_rules},
          true <- (is_integer(backdate) and backdate in 0..366) || {:error, :invalid_rules} do
       settings = settings_scope(scope, company)
@@ -102,10 +110,11 @@ defmodule Bilimbi.People.Leave.Requests do
   counted. A replay with the same `request_key` returns the request; a
   different request under that key is refused.
   """
-  def submit(%Scope{} = scope, company_id, actor, attrs) when is_map(attrs) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor),
-         {:ok, input} <- normalize_request(attrs) do
-      locked(scope, company_id, employee_id, fn ->
+  def submit(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
+    with {:ok, input} <- normalize_request(attrs) do
+      Authorization.with_self_employee_lock(scope, company_id, @self, fn self ->
+        %{actor: actor, employee_id: employee_id} = self
+
         case find_by_key(scope, company_id, employee_id, input.request_key) do
           nil -> insert_request(scope, company_id, employee_id, actor.id, input)
           existing -> replay(existing, input)
@@ -114,10 +123,11 @@ defmodule Bilimbi.People.Leave.Requests do
     end
   end
 
-  def submit(%Scope{}, _, _, _), do: {:error, :invalid_request}
+  def submit(%Scope{}, _, _), do: {:error, :invalid_request}
 
-  def self_requests(%Scope{} = scope, company_id, actor) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor) do
+  def self_requests(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self) do
       {:ok,
        Repo.all(
          from(r in Tenancy.scope_query(Request, scope),
@@ -134,19 +144,19 @@ defmodule Bilimbi.People.Leave.Requests do
   Cancels the actor's own request: a pending one at any time, an approved one
   only before it starts, which returns its quantity to the ledger.
   """
-  def cancel(%Scope{} = scope, company_id, actor, request_id) do
-    with {:ok, employee_id} <- self_employee(scope, company_id, actor) do
-      locked(scope, company_id, employee_id, fn ->
-        with %Request{employee_id: ^employee_id} = request <-
-               lock_request(scope, company_id, request_id) || {:error, :not_found},
-             {:ok, today} <- Leave.today(scope, company_id) do
-          cancel_request(scope, request, actor.id, today)
-        else
-          %Request{} -> {:error, :not_found}
-          error -> error
-        end
-      end)
-    end
+  def cancel(%Scope{} = scope, company_id, request_id) do
+    Authorization.with_self_employee_lock(scope, company_id, @self, fn self ->
+      %{actor: actor, employee_id: employee_id} = self
+
+      with %Request{employee_id: ^employee_id} = request <-
+             lock_request(scope, company_id, request_id) || {:error, :not_found},
+           {:ok, today} <- Leave.today(scope, company_id) do
+        cancel_request(scope, request, actor.id, today)
+      else
+        %Request{} -> {:error, :not_found}
+        error -> error
+      end
+    end)
   end
 
   defp cancel_request(scope, %Request{status: "pending"} = request, actor_id, _today) do
@@ -179,9 +189,10 @@ defmodule Bilimbi.People.Leave.Requests do
 
   ## Approval
 
-  @doc "Pending requests of a company, earliest start first, with employee names."
+  @doc "Pending requests of a company, earliest start first, with employee names, for an approver."
   def pending(%Scope{} = scope, company_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve),
+         {:ok, _company} <- current_company(scope, company_id) do
       requests =
         Repo.all(
           from(r in Tenancy.scope_query(Request, scope),
@@ -207,10 +218,11 @@ defmodule Bilimbi.People.Leave.Requests do
   employee cannot decide it, and a rejection needs a note. Approval rechecks
   the balance and writes the `taken` entry.
   """
-  def decide(%Scope{} = scope, company_id, actor, request_id, decision, note)
+  def decide(%Scope{} = scope, company_id, request_id, decision, note)
       when decision in [:approve, :reject] do
     with {:ok, note} <- optional_text(note, 500),
          true <- (decision == :approve or note != nil) || {:error, :note_required},
+         {:ok, actor} <- Authorization.authorize(scope, company_id, @approve),
          {:ok, _company} <- current_company(scope, company_id),
          %Request{} = unlocked <- get_request(scope, company_id, request_id) do
       locked(scope, company_id, unlocked.employee_id, fn ->
@@ -228,7 +240,7 @@ defmodule Bilimbi.People.Leave.Requests do
     end
   end
 
-  def decide(%Scope{}, _, _, _, _, _), do: {:error, :invalid_decision}
+  def decide(%Scope{}, _, _, _, _), do: {:error, :invalid_decision}
 
   defp apply_decision(scope, _company_id, actor_id, request, :reject, note),
     do: transition(scope, request, "rejected", actor_id, note)
@@ -637,17 +649,6 @@ defmodule Bilimbi.People.Leave.Requests do
   defp current_employee(scope, company_id, employee_id) do
     with {:ok, read} <- Workforce.employee(scope, company_id, employee_id),
          do: ReadResult.require_current(read)
-  end
-
-  defp self_employee(scope, company_id, actor) do
-    with %{type: :user, company_id: ^company_id, id: user_id} <- actor,
-         {:ok, user} <- User.get_user(scope, company_id, user_id),
-         employee_id when is_integer(employee_id) <- user.employee_id,
-         {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
-      {:ok, employee_id}
-    else
-      _ -> {:error, :unavailable}
-    end
   end
 
   defp settings_scope(scope, company),

@@ -4,16 +4,18 @@ defmodule Bilimbi.People.Skills do
   requirement profiles.
 
   Every operation takes a validated tenant scope and an explicit platform
-  company ID whose workforce company must be current. Publishing and retiring
-  a requirement profile take an Authz actor holding the publish capability for
-  that company. Assessments, reassessment requests, development actions and
-  reminders take a login actor, whose capabilities, reporting line and
-  independence from the employee decide what they may do. Callers never query
-  the schemas directly.
+  company ID whose workforce company must be current. Every write authorizes
+  its own capability for the scope's signed-in actor when it runs, through
+  `Bilimbi.People.Workforce.Authorization`: catalog, scale and profile-draft
+  writes need `people.skills.catalog.manage`, publishing and retiring a
+  requirement profile need `people.skills.profiles.publish`, and a system
+  scope is refused. Assessments, reassessment requests, development actions
+  and reminders take a login actor, whose capabilities, reporting line and
+  independence from the employee decide what they may do, checked on each
+  call. Callers never query the schemas directly.
   """
   import Ecto.Query
 
-  alias Bilimbi.Base.Authz.Actor
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
@@ -39,9 +41,12 @@ defmodule Bilimbi.People.Skills do
   }
 
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.ReadResult
 
   @publish_capability "people.skills.profiles.publish"
+  @manage_capability "people.skills.catalog.manage"
+  @reminders_capability "people.skills.reminders.send"
   @position_page_size 100
   @max_position_pages 20
 
@@ -63,7 +68,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def create_category(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       %Category{tenant_id: Scope.tenant_id(scope), company_id: company_id, active: true}
       |> Category.create_changeset(stringify(attrs))
       |> Repo.insert()
@@ -72,7 +78,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def update_category(%Scope{} = scope, company_id, category_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id),
          %Category{} = category <- get(Category, scope, company_id, category_id) do
       category
       |> Category.changeset(Map.take(stringify(attrs), ~w(name description)))
@@ -87,7 +94,8 @@ defmodule Bilimbi.People.Skills do
   @doc "Deactivation is refused while the category has active skills."
   def set_category_active(%Scope{} = scope, company_id, category_id, active)
       when is_boolean(active) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         category = lock(Category, scope, company_id, category_id) || Repo.rollback(:not_found)
 
@@ -121,7 +129,8 @@ defmodule Bilimbi.People.Skills do
   def create_skill(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         require_active_category(scope, company_id, attrs["category_id"])
 
@@ -137,7 +146,8 @@ defmodule Bilimbi.People.Skills do
   def update_skill(%Scope{} = scope, company_id, skill_id, attrs) when is_map(attrs) do
     attrs = Map.drop(stringify(attrs), ~w(code active))
 
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         skill = lock(Skill, scope, company_id, skill_id) || Repo.rollback(:not_found)
         category_id = Map.get(attrs, "category_id", skill.category_id)
@@ -153,7 +163,8 @@ defmodule Bilimbi.People.Skills do
 
   @doc "Reactivation needs an active category; history is never deleted."
   def set_skill_active(%Scope{} = scope, company_id, skill_id, active) when is_boolean(active) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         skill = lock(Skill, scope, company_id, skill_id) || Repo.rollback(:not_found)
         if active, do: require_active_category(scope, company_id, skill.category_id)
@@ -188,7 +199,8 @@ defmodule Bilimbi.People.Skills do
   def create_scale(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
 
@@ -210,7 +222,8 @@ defmodule Bilimbi.People.Skills do
 
   @doc "Drafts the next version of a scale code, copying the chosen version's levels."
   def new_scale_version(%Scope{} = scope, company_id, scale_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
         source = get(Scale, scope, company_id, scale_id) || Repo.rollback(:not_found)
@@ -246,7 +259,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def rename_scale(%Scope{} = scope, company_id, scale_id, name) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         scale = lock_draft(Scale, scope, company_id, scale_id)
 
@@ -262,7 +276,8 @@ defmodule Bilimbi.People.Skills do
   def put_scale_level(%Scope{} = scope, company_id, scale_id, attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with {:ok, _company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id),
          {:ok, level} <- parse_integer(attrs["level"]) do
       transact(fn ->
         scale = lock_draft(Scale, scope, company_id, scale_id)
@@ -288,7 +303,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def delete_scale_level(%Scope{} = scope, company_id, scale_id, level) when is_integer(level) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         scale = lock_draft(Scale, scope, company_id, scale_id)
 
@@ -309,8 +325,9 @@ defmodule Bilimbi.People.Skills do
   levels and distinct names. The previously published version of the code
   is retired in the same transaction, so one version is current.
   """
-  def publish_scale(%Scope{} = scope, company_id, scale_id, actor_user_id \\ nil) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+  def publish_scale(%Scope{} = scope, company_id, scale_id) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
         scale = lock_draft(Scale, scope, company_id, scale_id)
@@ -328,7 +345,7 @@ defmodule Bilimbi.People.Skills do
         |> Ecto.Changeset.change(
           status: "published",
           published_at: now,
-          actor_user_id: actor_user_id
+          actor_user_id: actor.id
         )
         |> Repo.update()
         |> unwrap_view(&scale_view(&1, levels))
@@ -337,7 +354,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def retire_scale(%Scope{} = scope, company_id, scale_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         scale = lock(Scale, scope, company_id, scale_id) || Repo.rollback(:not_found)
         if scale.status != "published", do: Repo.rollback(:not_published)
@@ -352,7 +370,8 @@ defmodule Bilimbi.People.Skills do
 
   @doc "Discards a draft scale that no requirement profile uses."
   def discard_scale(%Scope{} = scope, company_id, scale_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         scale = lock_draft(Scale, scope, company_id, scale_id)
 
@@ -401,7 +420,8 @@ defmodule Bilimbi.People.Skills do
   def create_profile(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
         require_published_scale(scope, company_id, attrs["scale_id"])
@@ -429,7 +449,8 @@ defmodule Bilimbi.People.Skills do
   def update_profile(%Scope{} = scope, company_id, profile_id, attrs) when is_map(attrs) do
     attrs = Map.take(stringify(attrs), ~w(name scale_id))
 
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
 
@@ -456,7 +477,8 @@ defmodule Bilimbi.People.Skills do
   and `missing_levels` lists the required levels that version lacks.
   """
   def new_profile_version(%Scope{} = scope, company_id, profile_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         lock_company(scope, company_id)
         source = get(Profile, scope, company_id, profile_id) || Repo.rollback(:not_found)
@@ -491,7 +513,8 @@ defmodule Bilimbi.People.Skills do
   def put_item(%Scope{} = scope, company_id, profile_id, attrs) when is_map(attrs) do
     attrs = stringify(attrs)
 
-    with {:ok, _company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id),
          {:ok, skill_id} <- parse_integer(attrs["skill_id"]),
          {:ok, level} <- parse_integer(attrs["required_level"]) do
       transact(fn ->
@@ -521,7 +544,8 @@ defmodule Bilimbi.People.Skills do
 
   @doc "Removes a requirement from a draft and closes the gap in the sequence."
   def remove_item(%Scope{} = scope, company_id, profile_id, item_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
         {removed, kept} = Enum.split_with(items(scope, profile.id), &(&1.id == item_id))
@@ -536,7 +560,8 @@ defmodule Bilimbi.People.Skills do
   @doc "Moves a draft requirement one place up or down."
   def move_item(%Scope{} = scope, company_id, profile_id, item_id, direction)
       when direction in [:up, :down] do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
         current = items(scope, profile.id)
@@ -562,7 +587,8 @@ defmodule Bilimbi.People.Skills do
   """
   def add_selector(%Scope{} = scope, company_id, profile_id, target)
       when target == :company or (is_tuple(target) and elem(target, 0) == :position) do
-    with {:ok, _company} <- current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id),
          :ok <- validate_target(scope, company_id, target) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
@@ -597,7 +623,8 @@ defmodule Bilimbi.People.Skills do
   def add_selector(%Scope{}, _company_id, _profile_id, _target), do: {:error, :invalid_selector}
 
   def remove_selector(%Scope{} = scope, company_id, profile_id, selector_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
 
@@ -612,7 +639,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   def discard_profile(%Scope{} = scope, company_id, profile_id) do
-    with {:ok, _company} <- current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @manage_capability),
+         {:ok, _company} <- current_company(scope, company_id) do
       transact(fn ->
         profile = lock_draft(Profile, scope, company_id, profile_id)
 
@@ -633,17 +661,16 @@ defmodule Bilimbi.People.Skills do
   end
 
   @doc """
-  Publishes a draft from `effective_from`. The draft needs at least one
+  Publishes a draft from `effective_from`; the scope's actor needs the publish
+  capability for the company now. The draft needs at least one
   requirement and one selector, weights totalling 100, active skills, levels
   on a published scale and positions still exposed by Organisation. It must
   start after the latest published version of its code, which it retires the
   day before, and it may not target anyone that another code's published or
   retired version targets from that date on.
   """
-  def publish_profile(%Actor{} = actor, company_id, profile_id, effective_from) do
-    scope = actor.scope
-
-    with {:ok, _company} <- authorize(actor, company_id),
+  def publish_profile(%Scope{} = scope, company_id, profile_id, effective_from) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @publish_capability),
          {:ok, _company} <- current_company(scope, company_id),
          {:ok, effective_from} <- parse_date(effective_from) do
       transact(fn ->
@@ -677,7 +704,7 @@ defmodule Bilimbi.People.Skills do
           status: "published",
           effective_from: effective_from,
           published_at: now,
-          actor_user_id: actor_user_id(actor)
+          actor_user_id: actor.id
         )
         |> Repo.update()
         |> unwrap_view(&profile_view/1)
@@ -686,10 +713,8 @@ defmodule Bilimbi.People.Skills do
   end
 
   @doc "Retires a published profile after its last effective day."
-  def retire_profile(%Actor{} = actor, company_id, profile_id, effective_to) do
-    scope = actor.scope
-
-    with {:ok, _company} <- authorize(actor, company_id),
+  def retire_profile(%Scope{} = scope, company_id, profile_id, effective_to) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @publish_capability),
          {:ok, _company} <- current_company(scope, company_id),
          {:ok, effective_to} <- parse_date(effective_to) do
       transact(fn ->
@@ -704,7 +729,7 @@ defmodule Bilimbi.People.Skills do
           status: "retired",
           retired_at: now(),
           effective_to: effective_to,
-          actor_user_id: actor_user_id(actor)
+          actor_user_id: actor.id
         )
         |> Repo.update()
         |> unwrap_view(&profile_view/1)
@@ -931,12 +956,12 @@ defmodule Bilimbi.People.Skills do
   defdelegate retry_reminders(actor, company_id, as_of \\ nil), to: Reminders, as: :retry
   defdelegate reminder_inbox(actor, company_id, limit \\ 50), to: Reminders, as: :inbox
 
-  @doc "Queues `issue_reminders/3` to run as the signed-in operator."
+  @doc "Queues `issue_reminders/3` to run as the signed-in operator, who must hold the send capability now."
   def enqueue_reminders(%Scope{} = scope, company_id)
       when is_integer(company_id) and company_id > 0 do
-    case Queue.enqueue_for(scope, ReminderWorker, %{"company_id" => company_id}) do
-      {:ok, _job} -> :ok
-      {:error, reason} -> {:error, reason}
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @reminders_capability),
+         {:ok, _job} <- Queue.enqueue_for(scope, ReminderWorker, %{"company_id" => company_id}) do
+      :ok
     end
   end
 
@@ -948,12 +973,6 @@ defmodule Bilimbi.People.Skills do
     with {:ok, read} <- Workforce.company(scope, company_id),
          do: ReadResult.require_current(read)
   end
-
-  defp authorize(actor, company_id),
-    do: Company.authorize_company_target(actor, company_id, @publish_capability)
-
-  defp actor_user_id(%Actor{type: :user, id: id}), do: id
-  defp actor_user_id(_actor), do: nil
 
   defp lock_company(scope, company_id) do
     case Company.lock_live_company(scope, company_id) do

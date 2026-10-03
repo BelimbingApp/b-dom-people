@@ -1,15 +1,35 @@
 defmodule Bilimbi.People.EmployeeWorkspaceTest do
-  use Bilimbi.Base.Database.DataCase, async: true
+  use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
+  alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
+  alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.EmployeeWorkspace
+  alias Bilimbi.People.EmployeeWorkspace.Contributions
   alias Bilimbi.People.EmployeeWorkspace.TestFixtures, as: WorkspaceFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
+
+  @view "people.employees.view"
+  @manage "people.employees.manage"
+  @review "people.employees.review"
+  @all [@view, @manage, @review]
 
   setup do
-    EmployeeFixtures.create_employee_tables!()
+    owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
+
+    AuthorizationFixtures.install_snapshot!("people-employee-workspace-test", %{
+      authz: AuthorizationFixtures.authz_consumer!([Contributions])
+    })
+
+    on_exit(&ContributionRegistry.clear_for_test!/0)
+
+    UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     :ok = Employee.ensure_system_types()
     WorkspaceFixtures.create_workspace_tables!()
     CompanyFixtures.insert_tenant!()
@@ -29,24 +49,46 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
         status: "active"
       })
 
-    %{first: first, second: second, employee: employee}
+    # The operator holds every workbench capability in company 73; the
+    # reviewer holds view and review only; the outsider belongs to tenant 42.
+    UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Operator"})
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Reviewer", email: "r@example.com"})
+    UserFixtures.insert_user!(%{id: 95, company_id: 75, name: "Outsider", email: "o@example.com"})
+    operator = AuthorizationFixtures.sign_in!(first, 73, 91, @all)
+    reviewer = AuthorizationFixtures.sign_in!(first, 73, 92, [@view, @review])
+    outsider = AuthorizationFixtures.sign_in!(second, 75, 95, @all)
+
+    %{
+      first: first,
+      second: second,
+      employee: employee,
+      operator: operator,
+      reviewer: reviewer,
+      outsider: outsider
+    }
   end
 
   test "keeps Core Employee master separate and refuses other company axes", %{
     first: first,
-    second: second,
+    operator: operator,
+    outsider: outsider,
     employee: employee
   } do
-    assert {:ok, [%{id: id}]} = EmployeeWorkspace.employees(first, 73)
+    assert {:ok, [%{id: id}]} = EmployeeWorkspace.employees(operator, 73)
     assert id == employee.id
-    assert {:error, :not_found} = EmployeeWorkspace.work_profile(first, 74, employee.id)
-    assert {:error, :not_found} = EmployeeWorkspace.work_profile(second, 73, employee.id)
+    # A sibling company is outside the operator's reach; another tenant's
+    # actor cannot see the company at all; a system scope names nobody.
+    assert {:error, :unauthorized} = EmployeeWorkspace.work_profile(operator, 74, employee.id)
+    assert {:error, :not_found} = EmployeeWorkspace.work_profile(outsider, 73, employee.id)
+    assert {:error, :unauthorized} = EmployeeWorkspace.work_profile(first, 73, employee.id)
 
-    assert {:error, :not_found} =
-             EmployeeWorkspace.put_work_profile(first, 74, employee.id, %{work_location: "Other"})
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.put_work_profile(operator, 74, employee.id, %{
+               work_location: "Other"
+             })
 
     assert {:ok, profile} =
-             EmployeeWorkspace.put_work_profile(first, 73, employee.id, %{
+             EmployeeWorkspace.put_work_profile(operator, 73, employee.id, %{
                work_location: "Office",
                work_arrangement: "Flexible"
              })
@@ -54,27 +96,74 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     assert profile.work_location == "Office"
 
     assert {:ok, %{work_location: "Office"}} =
-             EmployeeWorkspace.work_profile(first, 73, employee.id)
+             EmployeeWorkspace.work_profile(operator, 73, employee.id)
 
     assert {:ok, core} = Employee.get_employee(first, 73, employee.id)
     assert core.full_name == "First Employee"
-    assert {:ok, []} = EmployeeWorkspace.employees(first, 74)
+    assert {:error, :unauthorized} = EmployeeWorkspace.employees(operator, 74)
+  end
+
+  test "every operation needs its own capability now, not the one proven earlier", %{
+    first: first,
+    operator: operator,
+    reviewer: reviewer,
+    employee: employee
+  } do
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.put_work_profile(reviewer, 73, employee.id, %{work_location: "X"})
+
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.put_access(reviewer, 73, employee.id, %{portal_enabled: true})
+
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.request_change(reviewer, 73, employee.id, %{
+               field: "full_name",
+               proposed_value: "Other",
+               reason: "Correction"
+             })
+
+    assert {:ok, request} =
+             EmployeeWorkspace.request_change(operator, 73, employee.id, %{
+               field: "full_name",
+               proposed_value: "Updated Name",
+               reason: "Correction"
+             })
+
+    assert request.requested_by_actor_id == 91
+
+    # The operator's manage grant is revoked while their session continues:
+    # the next write is refused and nothing changed.
+    :ok = AuthorizationFixtures.revoke!(first, 73, 91, @manage)
+
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.put_work_profile(operator, 73, employee.id, %{
+               work_location: "After revocation"
+             })
+
+    assert {:ok, nil} = EmployeeWorkspace.work_profile(operator, 73, employee.id)
+
+    :ok = AuthorizationFixtures.revoke!(first, 73, 91, @view)
+    assert {:error, :unauthorized} = EmployeeWorkspace.employees(operator, 73)
+    assert {:error, :unauthorized} = EmployeeWorkspace.change_requests(operator, 73, employee.id)
+    assert {:ok, [%{id: _}]} = EmployeeWorkspace.change_requests(reviewer, 73, employee.id)
   end
 
   test "access is only an eligibility fact and change review is one-time", %{
-    first: scope,
+    first: first,
+    operator: operator,
+    reviewer: reviewer,
     employee: employee
   } do
-    assert {:ok, nil} = EmployeeWorkspace.access(scope, 73, employee.id)
+    assert {:ok, nil} = EmployeeWorkspace.access(operator, 73, employee.id)
 
     assert {:ok, %{portal_enabled: true}} =
-             EmployeeWorkspace.put_access(scope, 73, employee.id, %{
+             EmployeeWorkspace.put_access(operator, 73, employee.id, %{
                portal_enabled: true,
                reason: "Operator decision"
              })
 
     assert {:ok, request} =
-             EmployeeWorkspace.request_change(scope, 73, employee.id, 91, %{
+             EmployeeWorkspace.request_change(operator, 73, employee.id, %{
                field: "full_name",
                proposed_value: "Updated Name",
                reason: "Correction"
@@ -82,46 +171,61 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
 
     assert request.status == "pending"
 
+    # Without the review grant the operator cannot decide; the reviewer is
+    # the actor recorded.
+    :ok = AuthorizationFixtures.revoke!(first, 73, 91, @review)
+
+    assert {:error, :unauthorized} =
+             EmployeeWorkspace.review_change(operator, 73, employee.id, request.id, "approved")
+
     assert {:ok, reviewed} =
-             EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 92, "approved")
+             EmployeeWorkspace.review_change(reviewer, 73, employee.id, request.id, "approved")
 
     assert reviewed.status == "approved"
     assert reviewed.reviewed_by_actor_id == 92
 
     assert {:error, :already_reviewed} =
-             EmployeeWorkspace.review_change(scope, 73, employee.id, request.id, 93, "rejected")
+             EmployeeWorkspace.review_change(reviewer, 73, employee.id, request.id, "rejected")
 
-    assert {:ok, core} = Employee.get_employee(scope, 73, employee.id)
+    assert {:ok, core} = Employee.get_employee(first, 73, employee.id)
     assert core.full_name == "First Employee"
   end
 
-  test "saved views are private to actor and company", %{first: scope} do
+  test "saved views are private to the signed-in actor and company", %{
+    first: first,
+    operator: operator,
+    reviewer: reviewer
+  } do
     assert {:ok, view} =
-             EmployeeWorkspace.save_view(scope, 73, 91, %{
+             EmployeeWorkspace.save_view(operator, 73, %{
                name: "Current",
                search: "first",
                status: "active"
              })
 
-    assert {:ok, [%{name: "Current"}]} = EmployeeWorkspace.saved_views(scope, 73, 91)
-    assert {:ok, []} = EmployeeWorkspace.saved_views(scope, 73, 92)
-    assert {:ok, []} = EmployeeWorkspace.saved_views(scope, 74, 91)
-    assert {:error, :not_found} = EmployeeWorkspace.delete_view(scope, 73, 92, view.id)
-    assert {:ok, :deleted} = EmployeeWorkspace.delete_view(scope, 73, 91, view.id)
-    assert {:ok, []} = EmployeeWorkspace.saved_views(scope, 73, 91)
+    assert {:ok, [%{name: "Current"}]} = EmployeeWorkspace.saved_views(operator, 73)
+    assert {:ok, []} = EmployeeWorkspace.saved_views(reviewer, 73)
+    assert {:error, :unauthorized} = EmployeeWorkspace.saved_views(operator, 74)
+    assert {:error, :unauthorized} = EmployeeWorkspace.saved_views(first, 73)
+    assert {:error, :not_found} = EmployeeWorkspace.delete_view(reviewer, 73, view.id)
+    assert {:ok, :deleted} = EmployeeWorkspace.delete_view(operator, 73, view.id)
+    assert {:ok, []} = EmployeeWorkspace.saved_views(operator, 73)
   end
 
   test "follows Core company liveness: non-active companies stay usable, deleted stay unavailable",
-       %{first: scope} do
+       %{first: first} do
     CompanyFixtures.insert_company!(%{id: 76, code: "pending_company", status: "pending"})
 
     {:ok, employee} =
-      Employee.create_employee(scope, 76, %{
+      Employee.create_employee(first, 76, %{
         employee_number: "EMP-76",
         full_name: "Pending Employee",
         employee_type: "full_time",
         status: "active"
       })
+
+    UserFixtures.insert_user!(%{id: 96, company_id: 76, name: "Pending", email: "p@example.com"})
+    scope = AuthorizationFixtures.sign_in!(first, 76, 96, @all)
 
     assert {:ok, [%{id: id}]} = EmployeeWorkspace.employees(scope, 76)
     assert id == employee.id
@@ -132,8 +236,8 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     assert {:ok, %{work_location: "Hub"}} = EmployeeWorkspace.work_profile(scope, 76, employee.id)
     assert {:ok, nil} = EmployeeWorkspace.access(scope, 76, employee.id)
     assert {:ok, []} = EmployeeWorkspace.change_requests(scope, 76, employee.id)
-    assert {:ok, _} = EmployeeWorkspace.save_view(scope, 76, 91, %{name: "Pending"})
-    assert {:ok, [%{name: "Pending"}]} = EmployeeWorkspace.saved_views(scope, 76, 91)
+    assert {:ok, _} = EmployeeWorkspace.save_view(scope, 76, %{name: "Pending"})
+    assert {:ok, [%{name: "Pending"}]} = EmployeeWorkspace.saved_views(scope, 76)
 
     CompanyFixtures.insert_company!(%{
       id: 77,
@@ -142,6 +246,6 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     })
 
     assert {:error, :not_found} = EmployeeWorkspace.employees(scope, 77)
-    assert {:error, :not_found} = EmployeeWorkspace.saved_views(scope, 77, 91)
+    assert {:error, :not_found} = EmployeeWorkspace.saved_views(scope, 77)
   end
 end

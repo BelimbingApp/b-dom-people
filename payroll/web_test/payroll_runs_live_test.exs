@@ -32,6 +32,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
         full_name: "Employee A"
       })
 
+    grant_capabilities!("people.workforce.settings.manage")
     {:ok, _} = Workforce.put_working_statuses(scope, 73, ["active"])
 
     grant_capabilities!([
