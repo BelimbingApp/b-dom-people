@@ -115,6 +115,11 @@ that would need a new Base Settings definition or background worker.
 
 ## Fresh schema and validation
 
+Performance evidence is stored in `people_performance_evidence`, released review
+versions in `people_performance_appraisals`, and pinned review evidence in
+`people_performance_review_evidence`. The original Bilimbi-only migration creates
+these empty relations directly; no deployed schema is renamed.
+
 The migration `20261001070701_create_performance.exs` is fresh Bilimbi-only
 schema with a globally unique version, eight empty relations and no dummy rows.
 It creates no legacy migration inventory or adoption path. Performance-owned
@@ -150,3 +155,13 @@ Desktop and mobile browser verification now covers the authenticated manager,
 HR and employee routes, governed measurement creation, empty states, and denied
 navigation/direct routes. See the repository's
 [menu rollout verification](../../settings/docs/menu-rollout.md).
+
+### Fresh relation naming validation
+
+Validated the fresh relation names on Bilimbi
+`6c126eeb0a3482f695526d540ae15bb206abff05`. A task-owned PostgreSQL 18
+database completed all mounted migrations, and the Performance and Training
+contracts both returned `:ok`. All 164 People package tests and 204 People
+real-host tests passed. Host tests used a separate empty database because their
+fixtures create the owned structures. The composition graph, repository mandates
+and unique migration-version checks passed. No target deployment was reset.

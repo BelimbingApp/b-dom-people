@@ -29,7 +29,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
       )
     )
 
-    create table(:people_training_requests) do
+    create table(:people_training_needs) do
       common()
       add(:employee_id, :bigint, null: false)
       add(:course_id, :bigint)
@@ -45,33 +45,33 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
       timestamps()
     end
 
-    scope_index(:people_training_requests)
+    scope_index(:people_training_needs)
 
     create(
-      constraint(:people_training_requests, :people_training_requests_status,
+      constraint(:people_training_needs, :people_training_needs_status,
         check:
           "status IN ('draft', 'pending_hod', 'pending_hr', 'pending_approval', 'approved', 'rejected', 'cancelled')"
       )
     )
 
-    create(index(:people_training_requests, [:tenant_id, :company_id, :employee_id]))
-    fk(:people_training_requests, :course_id, :people_training_courses)
-    fk(:people_training_requests, :budget_policy_id, :people_training_budget_policies)
+    create(index(:people_training_needs, [:tenant_id, :company_id, :employee_id]))
+    fk(:people_training_needs, :course_id, :people_training_courses)
+    fk(:people_training_needs, :budget_policy_id, :people_training_budget_policies)
 
     create(
-      constraint(:people_training_requests, :people_training_requests_cost,
+      constraint(:people_training_needs, :people_training_needs_cost,
         check: "estimated_cost >= 0 AND (approved_cost IS NULL OR approved_cost >= 0)"
       )
     )
 
     create(
-      constraint(:people_training_requests, :people_training_requests_approval,
+      constraint(:people_training_needs, :people_training_needs_approval,
         check:
           "(status = 'approved' AND budget_policy_id IS NOT NULL AND approved_cost IS NOT NULL) OR (status <> 'approved' AND budget_policy_id IS NULL AND approved_cost IS NULL)"
       )
     )
 
-    create table(:people_training_plans) do
+    create table(:people_training_team_plans) do
       common()
       add(:plan_key, :text, null: false)
       add(:version, :integer, null: false)
@@ -85,29 +85,29 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
       timestamps()
     end
 
-    scope_index(:people_training_plans)
+    scope_index(:people_training_team_plans)
 
     create(
-      constraint(:people_training_plans, :people_training_plans_status,
+      constraint(:people_training_team_plans, :people_training_team_plans_status,
         check:
           "status IN ('draft', 'submitted', 'approved', 'rejected', 'cancelled', 'superseded')"
       )
     )
 
-    create(unique_index(:people_training_plans, [:company_id, :plan_key, :version]))
-    fk(:people_training_plans, :prior_plan_id, :people_training_plans)
+    create(unique_index(:people_training_team_plans, [:company_id, :plan_key, :version]))
+    fk(:people_training_team_plans, :prior_plan_id, :people_training_team_plans)
 
     create(
-      constraint(:people_training_plans, :people_training_plans_dates,
+      constraint(:people_training_team_plans, :people_training_team_plans_dates,
         check: "period_end >= period_start"
       )
     )
 
     create(
-      constraint(:people_training_plans, :people_training_plans_version, check: "version > 0")
+      constraint(:people_training_team_plans, :people_training_team_plans_version, check: "version > 0")
     )
 
-    create table(:people_training_plan_items) do
+    create table(:people_training_team_plan_items) do
       common()
       add(:plan_id, :bigint, null: false)
       add(:request_id, :bigint)
@@ -125,12 +125,12 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
       timestamps()
     end
 
-    fk(:people_training_plan_items, :plan_id, :people_training_plans)
-    fk(:people_training_plan_items, :request_id, :people_training_requests)
+    fk(:people_training_team_plan_items, :plan_id, :people_training_team_plans)
+    fk(:people_training_team_plan_items, :request_id, :people_training_needs)
 
     for {table, parent, target} <- [
-          {:people_training_request_decisions, :request_id, :people_training_requests},
-          {:people_training_plan_decisions, :plan_id, :people_training_plans}
+          {:people_training_need_decisions, :request_id, :people_training_needs},
+          {:people_training_plan_decisions, :plan_id, :people_training_team_plans}
         ] do
       create table(table) do
         common()
@@ -155,11 +155,11 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
         END IF;
         IF NEW.supersedes_id IS NOT NULL AND (
           NOT EXISTS (SELECT 1 FROM people_training_budget_policies p WHERE p.id = NEW.supersedes_id AND p.tenant_id = NEW.tenant_id AND p.company_id = NEW.company_id AND p.currency = NEW.currency) OR
-          EXISTS (SELECT 1 FROM people_training_requests r JOIN people_training_budget_policies p ON p.id = NEW.supersedes_id WHERE r.tenant_id = NEW.tenant_id AND r.company_id = NEW.company_id AND r.currency = NEW.currency AND r.status = 'approved' AND r.proposed_on BETWEEN p.effective_from AND p.effective_to AND r.proposed_on NOT BETWEEN NEW.effective_from AND NEW.effective_to)
+          EXISTS (SELECT 1 FROM people_training_needs r JOIN people_training_budget_policies p ON p.id = NEW.supersedes_id WHERE r.tenant_id = NEW.tenant_id AND r.company_id = NEW.company_id AND r.currency = NEW.currency AND r.status = 'approved' AND r.proposed_on BETWEEN p.effective_from AND p.effective_to AND r.proposed_on NOT BETWEEN NEW.effective_from AND NEW.effective_to)
         ) THEN
           RAISE EXCEPTION 'Invalid budget correction' USING ERRCODE = '23514';
         END IF;
-        IF (SELECT COALESCE(sum(approved_cost), 0) FROM people_training_requests r WHERE r.tenant_id = NEW.tenant_id AND r.company_id = NEW.company_id AND r.currency = NEW.currency AND r.status = 'approved' AND r.proposed_on BETWEEN NEW.effective_from AND NEW.effective_to) > NEW.amount THEN
+        IF (SELECT COALESCE(sum(approved_cost), 0) FROM people_training_needs r WHERE r.tenant_id = NEW.tenant_id AND r.company_id = NEW.company_id AND r.currency = NEW.currency AND r.status = 'approved' AND r.proposed_on BETWEEN NEW.effective_from AND NEW.effective_to) > NEW.amount THEN
           RAISE EXCEPTION 'Budget below commitments' USING ERRCODE = '23514';
         END IF;
         RETURN NEW;
@@ -181,7 +181,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
         PERFORM pg_advisory_xact_lock(hashtextextended('people.training:' || NEW.tenant_id || ':' || NEW.company_id, 0));
         IF NEW.status = 'approved' THEN
           SELECT * INTO p FROM people_training_budget_policies WHERE id = NEW.budget_policy_id AND tenant_id = NEW.tenant_id AND company_id = NEW.company_id AND NOT EXISTS (SELECT 1 FROM people_training_budget_policies s WHERE s.supersedes_id = NEW.budget_policy_id);
-          SELECT COALESCE(sum(approved_cost), 0) INTO spent FROM people_training_requests WHERE id <> NEW.id AND tenant_id = NEW.tenant_id AND company_id = NEW.company_id AND currency = NEW.currency AND status = 'approved' AND proposed_on BETWEEN p.effective_from AND p.effective_to;
+          SELECT COALESCE(sum(approved_cost), 0) INTO spent FROM people_training_needs WHERE id <> NEW.id AND tenant_id = NEW.tenant_id AND company_id = NEW.company_id AND currency = NEW.currency AND status = 'approved' AND proposed_on BETWEEN p.effective_from AND p.effective_to;
           IF p.id IS NULL OR p.currency <> NEW.currency OR NEW.proposed_on NOT BETWEEN p.effective_from AND p.effective_to OR NEW.approved_cost IS DISTINCT FROM NEW.estimated_cost OR spent + NEW.approved_cost > p.amount THEN
             RAISE EXCEPTION 'Approval violates effective budget' USING ERRCODE = '23514';
           END IF;
@@ -193,8 +193,8 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
     )
 
     execute(
-      "CREATE TRIGGER people_training_commitment_guard BEFORE INSERT OR UPDATE ON people_training_requests FOR EACH ROW EXECUTE FUNCTION people_training_commitment_guard()",
-      "DROP TRIGGER people_training_commitment_guard ON people_training_requests"
+      "CREATE TRIGGER people_training_commitment_guard BEFORE INSERT OR UPDATE ON people_training_needs FOR EACH ROW EXECUTE FUNCTION people_training_commitment_guard()",
+      "DROP TRIGGER people_training_commitment_guard ON people_training_needs"
     )
 
     # Governance facts and decision history cannot be rewritten through SQL.
@@ -210,8 +210,8 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
 
     for table <- [
           :people_training_budget_policies,
-          :people_training_plan_items,
-          :people_training_request_decisions,
+          :people_training_team_plan_items,
+          :people_training_need_decisions,
           :people_training_plan_decisions
         ] do
       execute(
@@ -227,10 +227,10 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
         IF TG_OP = 'DELETE' OR (to_jsonb(NEW) - ARRAY['status','updated_at','budget_policy_id','approved_cost']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status','updated_at','budget_policy_id','approved_cost']) THEN
           RAISE EXCEPTION 'Learning content cannot be rewritten' USING ERRCODE = '23514';
         END IF;
-        IF OLD.status IN ('approved','rejected','cancelled','superseded') AND NOT (TG_TABLE_NAME = 'people_training_plans' AND OLD.status = 'approved' AND NEW.status = 'superseded') THEN
+        IF OLD.status IN ('approved','rejected','cancelled','superseded') AND NOT (TG_TABLE_NAME = 'people_training_team_plans' AND OLD.status = 'approved' AND NEW.status = 'superseded') THEN
           RAISE EXCEPTION 'Learning decision is terminal' USING ERRCODE = '23514';
         END IF;
-        IF TG_TABLE_NAME = 'people_training_requests' AND NOT (
+        IF TG_TABLE_NAME = 'people_training_needs' AND NOT (
           (OLD.status = 'draft' AND NEW.status IN ('pending_hod', 'cancelled')) OR
           (OLD.status = 'pending_hod' AND NEW.status IN ('pending_hr', 'rejected', 'cancelled')) OR
           (OLD.status = 'pending_hr' AND NEW.status IN ('pending_approval', 'rejected', 'cancelled')) OR
@@ -238,7 +238,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
         ) THEN
           RAISE EXCEPTION 'Invalid request transition' USING ERRCODE = '23514';
         END IF;
-        IF TG_TABLE_NAME = 'people_training_plans' AND NOT (
+        IF TG_TABLE_NAME = 'people_training_team_plans' AND NOT (
           (OLD.status = 'draft' AND NEW.status IN ('submitted', 'cancelled')) OR
           (OLD.status = 'submitted' AND NEW.status IN ('approved', 'rejected')) OR
           (OLD.status = 'approved' AND NEW.status = 'superseded')
@@ -251,7 +251,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateLearningGovernance do
       "DROP FUNCTION people_training_governance_guard()"
     )
 
-    for table <- [:people_training_requests, :people_training_plans] do
+    for table <- [:people_training_needs, :people_training_team_plans] do
       execute(
         "CREATE TRIGGER #{table}_guard BEFORE UPDATE OR DELETE ON #{table} FOR EACH ROW EXECUTE FUNCTION people_training_governance_guard()",
         "DROP TRIGGER #{table}_guard ON #{table}"

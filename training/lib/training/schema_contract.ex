@@ -42,7 +42,7 @@ defmodule Bilimbi.People.Training.SchemaContract do
         %{"people_training_events_capacity" => check("capacity > 0")}
       ),
       table(
-        "sessions",
+        "session_runs",
         %{
           "event_id" => column(:bigint, false),
           "name" => column({:varchar, 160}, false),
@@ -52,18 +52,18 @@ defmodule Bilimbi.People.Training.SchemaContract do
           "ends_at" => column({:timestamp, 0}, false)
         },
         %{
-          "people_training_sessions_id_tenant_id_company_id_index" =>
+          "people_training_session_runs_id_tenant_id_company_id_index" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_training_sessions_tenant_id_company_id_starts_at_index" =>
+          "people_training_session_runs_scope_starts_index" =>
             index(["tenant_id", "company_id", "starts_at"], false)
         },
         %{
-          "people_training_sessions_event_scope" =>
+          "people_training_session_runs_event_scope" =>
             foreign_key("event_id", "people_training_events")
         },
         %{
-          "people_training_sessions_capacity" => check("capacity > 0"),
-          "people_training_sessions_times" => check("ends_at > starts_at")
+          "people_training_session_runs_capacity" => check("capacity > 0"),
+          "people_training_session_runs_times" => check("ends_at > starts_at")
         }
       )
     ] ++ Bilimbi.People.Training.GovernanceContract.tables()

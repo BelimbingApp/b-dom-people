@@ -594,10 +594,10 @@ defmodule Bilimbi.People.Training.Web.LearningLiveTest do
     {:ok, _} = Training.decide_learning_request(s[94], 73, r.id, "approve", "Approval")
 
     for {sql, args} <- [
-          {"UPDATE people_training_requests SET need = 'Rewrite' WHERE id = $1", [r.id]},
+          {"UPDATE people_training_needs SET need = 'Rewrite' WHERE id = $1", [r.id]},
           {"UPDATE people_training_budget_policies SET amount = 999 WHERE id = $1", [policy.id]},
-          {"DELETE FROM people_training_request_decisions WHERE request_id = $1", [r.id]},
-          {"UPDATE people_training_requests SET status = 'draft' WHERE id = $1", [r.id]}
+          {"DELETE FROM people_training_need_decisions WHERE request_id = $1", [r.id]},
+          {"UPDATE people_training_needs SET status = 'draft' WHERE id = $1", [r.id]}
         ] do
       assert {:error, %Postgrex.Error{postgres: %{code: :check_violation}}} =
                SQL.query(Repo, sql, args, mode: :savepoint)

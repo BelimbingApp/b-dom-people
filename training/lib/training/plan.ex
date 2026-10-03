@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.Plan do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_training_plans" do
+  schema "people_training_team_plans" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:actor_user_id, :integer)
@@ -37,6 +37,6 @@ defmodule Bilimbi.People.Training.Plan do
     |> validate_length(:status, min: 1, max: 4000)
     |> update_change(:reason, &String.trim/1)
     |> validate_length(:reason, min: 1, max: 4000)
-    |> check_constraint(:period_end, name: :people_training_plans_dates)
+    |> check_constraint(:period_end, name: :people_training_team_plans_dates)
   end
 end

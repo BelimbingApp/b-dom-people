@@ -37,7 +37,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateCatalog do
     execute "ALTER TABLE people_training_events ADD CONSTRAINT people_training_events_course_scope FOREIGN KEY (course_id, tenant_id, company_id) REFERENCES people_training_courses (id, tenant_id, company_id)",
             "ALTER TABLE people_training_events DROP CONSTRAINT people_training_events_course_scope"
 
-    create table(:people_training_sessions) do
+    create table(:people_training_session_runs) do
       add :tenant_id, :bigint, null: false
       add :company_id, :bigint, null: false
       add :event_id, :bigint, null: false
@@ -51,18 +51,20 @@ defmodule Bilimbi.People.Training.Migrations.CreateCatalog do
       timestamps()
     end
 
-    create index(:people_training_sessions, [:tenant_id, :company_id, :starts_at])
+    create index(:people_training_session_runs, [:tenant_id, :company_id, :starts_at],
+             name: :people_training_session_runs_scope_starts_index
+           )
 
-    create constraint(:people_training_sessions, :people_training_sessions_capacity,
+    create constraint(:people_training_session_runs, :people_training_session_runs_capacity,
              check: "capacity > 0"
            )
 
-    create constraint(:people_training_sessions, :people_training_sessions_times,
+    create constraint(:people_training_session_runs, :people_training_session_runs_times,
              check: "ends_at > starts_at"
            )
 
-    execute "ALTER TABLE people_training_sessions ADD CONSTRAINT people_training_sessions_event_scope FOREIGN KEY (event_id, tenant_id, company_id) REFERENCES people_training_events (id, tenant_id, company_id)",
-            "ALTER TABLE people_training_sessions DROP CONSTRAINT people_training_sessions_event_scope"
+    execute "ALTER TABLE people_training_session_runs ADD CONSTRAINT people_training_session_runs_event_scope FOREIGN KEY (event_id, tenant_id, company_id) REFERENCES people_training_events (id, tenant_id, company_id)",
+            "ALTER TABLE people_training_session_runs DROP CONSTRAINT people_training_session_runs_event_scope"
 
     execute """
             CREATE FUNCTION people_training_session_guard() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -82,13 +84,13 @@ defmodule Bilimbi.People.Training.Migrations.CreateCatalog do
             """,
             "DROP FUNCTION people_training_session_guard()"
 
-    execute "CREATE TRIGGER people_training_session_guard BEFORE INSERT OR UPDATE ON people_training_sessions FOR EACH ROW EXECUTE FUNCTION people_training_session_guard()",
-            "DROP TRIGGER people_training_session_guard ON people_training_sessions"
+    execute "CREATE TRIGGER people_training_session_guard BEFORE INSERT OR UPDATE ON people_training_session_runs FOR EACH ROW EXECUTE FUNCTION people_training_session_guard()",
+            "DROP TRIGGER people_training_session_guard ON people_training_session_runs"
 
     execute """
             CREATE FUNCTION people_training_event_guard() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
-              IF EXISTS (SELECT 1 FROM people_training_sessions WHERE event_id = NEW.id AND capacity > NEW.capacity) THEN
+              IF EXISTS (SELECT 1 FROM people_training_session_runs WHERE event_id = NEW.id AND capacity > NEW.capacity) THEN
                 RAISE EXCEPTION 'Event capacity is below a session capacity' USING ERRCODE = '23514';
               END IF;
               RETURN NEW;

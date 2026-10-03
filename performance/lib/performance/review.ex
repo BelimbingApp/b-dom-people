@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Performance.Review do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_performance_reviews" do
+  schema "people_performance_appraisals" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:actor_user_id, :integer)

@@ -11,6 +11,11 @@ My and Team passports share Training records rather than adding separate passpor
 
 ## Public API and scope
 
+The original Bilimbi-only migrations create learning needs, need decisions, team
+plans and their items, session runs, attendance facts and review reminders under
+the `people_training_` prefix. These are fresh, empty Bilimbi relations; no
+deployed schema is renamed. The owned schema contracts define their exact names.
+
 `Bilimbi.People.Training` receives a validated `Bilimbi.Base.Tenancy.Scope` and
 an explicit **platform company ID** on every persistent operation. The scope's
 sealed actor supplies the author and impersonator; callers cannot supply them.
@@ -471,3 +476,13 @@ explicit Training route/capability absence and unmounted migration validation
 also passed. The repository migration-version and composition graph/mandate
 checks passed. No additional Training migration or compatibility table is
 introduced by this slice.
+
+### Fresh relation naming validation
+
+Validated the fresh relation names on Bilimbi
+`6c126eeb0a3482f695526d540ae15bb206abff05`. A task-owned PostgreSQL 18
+database completed all mounted migrations, and the Performance and Training
+contracts both returned `:ok`. All 164 People package tests and 204 People
+real-host tests passed. Host tests used a separate empty database because their
+fixtures create the owned structures. The composition graph, repository mandates
+and unique migration-version checks passed. No target deployment was reset.
