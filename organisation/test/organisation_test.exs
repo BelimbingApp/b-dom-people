@@ -399,6 +399,192 @@ defmodule Bilimbi.People.OrganisationTest do
     assert {:error, :not_found} = Workforce.positions(scope, 75)
   end
 
+  test "cursor iteration survives inserts and deletes between pages", %{scope: scope} do
+    positions =
+      for number <- 1..5 do
+        {:ok, position} = Organisation.create_position(scope, 73, %{code: "PAGE-#{number}"})
+        position
+      end
+
+    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "PAGE-OTHER"})
+    day = ~D[2026-10-01]
+    high_water_id = foreign.id
+
+    assert {:ok, %ReadResult{freshness: :current, value: first}} =
+             Workforce.positions(scope, 73, day, cursor: nil, page_size: 2)
+
+    assert Enum.map(first.positions, & &1.reference.stable_id) ==
+             Enum.map(Enum.take(positions, 2), &Integer.to_string(&1.id))
+
+    refute Integer.to_string(foreign.id) in Enum.map(first.positions, & &1.reference.stable_id)
+    assert first.high_water_id == high_water_id
+    assert is_binary(first.next_cursor)
+
+    supervisor = start_supervised!(Task.Supervisor)
+
+    inserted =
+      supervisor
+      |> Task.Supervisor.async(fn ->
+        Repo.delete!(hd(positions))
+        Repo.delete!(Enum.at(positions, 3))
+        {:ok, inserted} = Organisation.create_position(scope, 73, %{code: "PAGE-NEW"})
+        inserted
+      end)
+      |> Task.await()
+
+    assert {:ok, %ReadResult{value: second}} =
+             Workforce.positions(scope, 73, day, cursor: first.next_cursor, page_size: 1)
+
+    assert {:ok, %ReadResult{value: third}} =
+             Workforce.positions(scope, 73, day, cursor: second.next_cursor, page_size: 1)
+
+    assert second.high_water_id == high_water_id
+    assert third.high_water_id == high_water_id
+    assert third.next_cursor == nil
+
+    seen =
+      Enum.map(first.positions ++ second.positions ++ third.positions, & &1.reference.stable_id)
+
+    assert seen ==
+             Enum.map(
+               Enum.take(positions, 3) ++ [List.last(positions)],
+               &Integer.to_string(&1.id)
+             )
+
+    refute Integer.to_string(inserted.id) in seen
+
+    # Absence reconciliation must preserve new identities above the returned watermark.
+    absent = Enum.reject(positions ++ [inserted], &(Integer.to_string(&1.id) in seen))
+
+    assert Enum.map(Enum.filter(absent, &(&1.id <= high_water_id)), & &1.id) ==
+             [Enum.at(positions, 3).id]
+
+    assert {:ok, %ReadResult{value: fresh}} =
+             Workforce.positions(scope, 73, day, cursor: nil, page_size: 100)
+
+    assert fresh.high_water_id == inserted.id
+    assert fresh.next_cursor == nil
+    assert Integer.to_string(inserted.id) in Enum.map(fresh.positions, & &1.reference.stable_id)
+  end
+
+  test "cursor pages bind the company, tenant and date and reject invalid options", %{
+    scope: scope,
+    other_scope: other_scope
+  } do
+    for number <- 1..2 do
+      {:ok, _} = Organisation.create_position(scope, 73, %{code: "CURSOR-#{number}"})
+    end
+
+    day = ~D[2026-10-01]
+
+    assert {:ok, %ReadResult{value: page}} =
+             Workforce.positions(scope, 73, day, cursor: nil, page_size: 1)
+
+    assert {:error, :invalid_cursor} =
+             Workforce.positions(scope, 74, day, cursor: page.next_cursor)
+
+    assert {:error, :invalid_cursor} =
+             Workforce.positions(scope, 73, Date.add(day, 1), cursor: page.next_cursor)
+
+    assert {:error, :not_found} =
+             Workforce.positions(other_scope, 73, day, cursor: page.next_cursor)
+
+    assert {:error, :not_found} =
+             Workforce.positions(scope, 75, day, cursor: nil)
+
+    for cursor <- [
+          "not-a-cursor",
+          "",
+          1,
+          String.duplicate("x", 257),
+          Base.url_encode64("1:41:73:2026-10-01:5:4", padding: false)
+        ] do
+      assert {:error, :invalid_cursor} = Workforce.positions(scope, 73, day, cursor: cursor)
+    end
+
+    for options <- [
+          [cursor: nil, page: 1],
+          [cursor: nil, page_size: 0],
+          [cursor: nil, page_size: 101],
+          [cursor: nil, page_size: "2"],
+          [nil],
+          %{}
+        ] do
+      assert {:error, :invalid_options} = Workforce.positions(scope, 73, day, options)
+    end
+  end
+
+  test "cursor pages enforce the default and maximum size", %{scope: scope} do
+    for number <- 1..105 do
+      {:ok, _} = Organisation.create_position(scope, 73, %{code: "BOUND-#{number}"})
+    end
+
+    day = ~D[2026-10-01]
+
+    assert {:ok, %ReadResult{value: default}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert length(default.positions) == 50
+    assert is_binary(default.next_cursor)
+
+    assert {:ok, %ReadResult{value: maximum}} =
+             Workforce.positions(scope, 73, day, cursor: nil, page_size: 100)
+
+    assert length(maximum.positions) == 100
+
+    assert {:ok, %ReadResult{value: tail}} =
+             Workforce.positions(scope, 73, day, cursor: maximum.next_cursor, page_size: 100)
+
+    assert length(tail.positions) == 5
+    assert tail.next_cursor == nil
+    assert tail.high_water_id == maximum.high_water_id
+  end
+
+  test "empty and deleted final cursor pages retain their high-water mark", %{scope: scope} do
+    day = ~D[2026-10-01]
+
+    assert {:ok, %ReadResult{value: %{positions: [], next_cursor: nil, high_water_id: empty}}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert is_integer(empty) and empty >= 0
+
+    {:ok, _first} = Organisation.create_position(scope, 73, %{code: "TAIL-1"})
+    {:ok, last} = Organisation.create_position(scope, 73, %{code: "TAIL-2"})
+
+    assert {:ok, %ReadResult{value: page}} =
+             Workforce.positions(scope, 73, day, cursor: nil, page_size: 1)
+
+    Repo.delete!(last)
+
+    assert {:ok, %ReadResult{value: %{positions: [], next_cursor: nil, high_water_id: high}}} =
+             Workforce.positions(scope, 73, day, cursor: page.next_cursor)
+
+    assert high == last.id
+  end
+
+  test "deleting the highest position keeps it absent at or below the mark", %{scope: scope} do
+    day = ~D[2026-10-01]
+    {:ok, first} = Organisation.create_position(scope, 73, %{code: "TOP-1"})
+    {:ok, top} = Organisation.create_position(scope, 73, %{code: "TOP-2"})
+
+    assert {:ok, %ReadResult{value: before}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert before.high_water_id == top.id
+
+    Repo.delete!(top)
+
+    assert {:ok, %ReadResult{value: after_delete}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert after_delete.next_cursor == nil
+    assert after_delete.high_water_id == top.id
+
+    assert Enum.map(after_delete.positions, & &1.reference.stable_id) == [
+             Integer.to_string(first.id)
+           ]
+  end
+
   test "many acting placements stay bounded without hiding a substantive holder", %{scope: scope} do
     {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-LARGE"})
 

@@ -26,6 +26,9 @@ for the company, only moves an end date earlier, and records a
 `people.organisation.assignment_ended` audit action; the explorer offers it as
 an End action to such actors. `positions/4` returns at most 100
 positions per page; `count_positions/2` supports the explorer's pagination.
+`positions/4` with `cursor:` implements the high-water keyset scan; see
+`../../workforce/docs/README.md` for the authoritative scan, reconciliation and
+concurrent-mutation contract. The explorer retains offset pages.
 The Organisation application registers its read implementation with the
 `Bilimbi.People.Workforce.positions/4` seam when mounted. Without Organisation,
 that read returns `{:error, :unavailable}`. No Connector table is read.

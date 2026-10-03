@@ -12,6 +12,7 @@ defmodule Bilimbi.People.Organisation.Migrations.CreatePeoplePositions do
     create(unique_index(:people_positions, [:company_id, :code]))
     create(unique_index(:people_positions, [:id, :company_id]))
     create(index(:people_positions, [:company_id, :parent_id]))
+    create(index(:people_positions, [:company_id, :id]))
 
     create(
       constraint(:people_positions, :people_positions_not_own_parent,
