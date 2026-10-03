@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
   use Ecto.Migration
 
   def up do
-    create table(:people_claim_categories, primary_key: false) do
+    create table(:people_claim_catalog_groups, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -13,19 +13,21 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     end
 
     create(
-      unique_index(:people_claim_categories, [:company_id, :code],
-        name: :people_claim_categories_company_code_unique
+      unique_index(:people_claim_catalog_groups, [:company_id, :code],
+        name: :people_claim_catalog_groups_company_code_unique
       )
     )
 
-    create(index(:people_claim_categories, [:tenant_id, :company_id]))
+    create(index(:people_claim_catalog_groups, [:tenant_id, :company_id]))
 
-    create table(:people_claim_types, primary_key: false) do
+    create table(:people_claim_catalog_types, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
 
-      add(:category_id, references(:people_claim_categories, on_delete: :restrict), null: false)
+      add(:category_id, references(:people_claim_catalog_groups, on_delete: :restrict),
+        null: false
+      )
 
       add(:code, :string, size: 60, null: false)
       add(:name, :string, size: 120, null: false)
@@ -35,24 +37,34 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     end
 
     create(
-      unique_index(:people_claim_types, [:company_id, :code],
-        name: :people_claim_types_company_code_unique
+      unique_index(:people_claim_catalog_types, [:company_id, :code],
+        name: :people_claim_catalog_types_company_code_unique
       )
     )
 
-    create(index(:people_claim_types, [:tenant_id, :company_id, :category_id]))
+    create(
+      index(:people_claim_catalog_types, [:tenant_id, :company_id, :category_id],
+        name: :people_claim_catalog_types_scope_idx
+      )
+    )
 
     create(
-      constraint(:people_claim_types, :people_claim_types_receipt_requirement_check,
+      constraint(
+        :people_claim_catalog_types,
+        :people_claim_catalog_types_receipt_requirement_check,
         check: "receipt_requirement IN ('always', 'above_threshold', 'never')"
       )
     )
 
-    create table(:people_claim_policies, primary_key: false) do
+    create table(:people_claim_policy_versions, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
-      add(:claim_type_id, references(:people_claim_types, on_delete: :restrict), null: false)
+
+      add(:claim_type_id, references(:people_claim_catalog_types, on_delete: :restrict),
+        null: false
+      )
+
       add(:effective_from, :date, null: false)
       add(:effective_to, :date)
       add(:currency, :string, size: 3, null: false)
@@ -64,25 +76,27 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     end
 
     create(
-      index(:people_claim_policies, [:tenant_id, :company_id, :claim_type_id, :effective_from],
-        name: :people_claim_policies_scope_idx
+      index(
+        :people_claim_policy_versions,
+        [:tenant_id, :company_id, :claim_type_id, :effective_from],
+        name: :people_claim_policy_versions_scope_idx
       )
     )
 
     create(
-      constraint(:people_claim_policies, :people_claim_policies_period_check,
+      constraint(:people_claim_policy_versions, :people_claim_policy_versions_period_check,
         check: "effective_to IS NULL OR effective_to >= effective_from"
       )
     )
 
     create(
-      constraint(:people_claim_policies, :people_claim_policies_currency_check,
+      constraint(:people_claim_policy_versions, :people_claim_policy_versions_currency_check,
         check: "currency ~ '^[A-Z]{3}$'"
       )
     )
 
     create(
-      constraint(:people_claim_policies, :people_claim_policies_amounts_check,
+      constraint(:people_claim_policy_versions, :people_claim_policy_versions_amounts_check,
         check:
           "(per_claim_limit IS NULL OR per_claim_limit > 0) AND " <>
             "(monthly_limit IS NULL OR monthly_limit > 0) AND " <>
@@ -91,14 +105,19 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
       )
     )
 
-    create table(:people_claim_requests, primary_key: false) do
+    create table(:people_claim_submissions, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
       add(:employee_id, :bigint, null: false)
-      add(:claim_type_id, references(:people_claim_types, on_delete: :restrict), null: false)
 
-      add(:claim_policy_id, references(:people_claim_policies, on_delete: :restrict), null: false)
+      add(:claim_type_id, references(:people_claim_catalog_types, on_delete: :restrict),
+        null: false
+      )
+
+      add(:claim_policy_id, references(:people_claim_policy_versions, on_delete: :restrict),
+        null: false
+      )
 
       add(:incurred_on, :date, null: false)
       add(:amount, :decimal, precision: 14, scale: 2, null: false)
@@ -115,38 +134,40 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
     end
 
     create(
-      index(:people_claim_requests, [:tenant_id, :company_id, :employee_id, :status],
-        name: :people_claim_requests_scope_idx
+      index(:people_claim_submissions, [:tenant_id, :company_id, :employee_id, :status],
+        name: :people_claim_submissions_scope_idx
       )
     )
 
     create(
-      index(:people_claim_requests, [:company_id, :employee_id, :claim_type_id, :incurred_on],
-        name: :people_claim_requests_usage_idx
+      index(:people_claim_submissions, [:company_id, :employee_id, :claim_type_id, :incurred_on],
+        name: :people_claim_submissions_usage_idx
       )
     )
 
     create(
       unique_index(
-        :people_claim_requests,
+        :people_claim_submissions,
         [:company_id, :employee_id, :receipt_number],
-        name: :people_claim_requests_receipt_unique,
+        name: :people_claim_submissions_receipt_unique,
         where: "receipt_number IS NOT NULL AND status <> 'withdrawn'"
       )
     )
 
     create(
-      constraint(:people_claim_requests, :people_claim_requests_status_check,
+      constraint(:people_claim_submissions, :people_claim_submissions_status_check,
         check: "status IN ('submitted', 'withdrawn')"
       )
     )
 
     create(
-      constraint(:people_claim_requests, :people_claim_requests_amount_check, check: "amount > 0")
+      constraint(:people_claim_submissions, :people_claim_submissions_amount_check,
+        check: "amount > 0"
+      )
     )
 
     create(
-      constraint(:people_claim_requests, :people_claim_requests_currency_check,
+      constraint(:people_claim_submissions, :people_claim_submissions_currency_check,
         check: "currency ~ '^[A-Z]{3}$'"
       )
     )
@@ -156,7 +177,7 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
 
-      add(:request_id, references(:people_claim_requests, on_delete: :restrict), null: false)
+      add(:request_id, references(:people_claim_submissions, on_delete: :restrict), null: false)
 
       add(:from_status, :string, size: 20)
       add(:to_status, :string, size: 20, null: false)
@@ -173,9 +194,9 @@ defmodule Bilimbi.People.Claims.Migrations.CreatePeopleClaims do
 
   def down do
     drop(table(:people_claim_request_events))
-    drop(table(:people_claim_requests))
-    drop(table(:people_claim_policies))
-    drop(table(:people_claim_types))
-    drop(table(:people_claim_categories))
+    drop(table(:people_claim_submissions))
+    drop(table(:people_claim_policy_versions))
+    drop(table(:people_claim_catalog_types))
+    drop(table(:people_claim_catalog_groups))
   end
 end

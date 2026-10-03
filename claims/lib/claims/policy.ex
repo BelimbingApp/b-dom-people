@@ -7,7 +7,7 @@ defmodule Bilimbi.People.Claims.Policy do
 
   @amounts [:per_claim_limit, :monthly_limit, :yearly_limit, :receipt_threshold]
 
-  schema "people_claim_policies" do
+  schema "people_claim_policy_versions" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:claim_type_id, :integer)

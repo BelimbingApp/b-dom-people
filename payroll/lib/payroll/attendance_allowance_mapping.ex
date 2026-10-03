@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Payroll.AttendanceAllowanceMapping do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_payroll_attendance_rule_pay_items" do
+  schema "people_payroll_allowance_item_mappings" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:created_by_actor_id, :integer)

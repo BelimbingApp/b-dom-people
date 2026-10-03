@@ -5,7 +5,7 @@ defmodule Bilimbi.People.Claims.Request do
 
   alias Bilimbi.People.Claims.Money
 
-  schema "people_claim_requests" do
+  schema "people_claim_submissions" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)
@@ -59,7 +59,7 @@ defmodule Bilimbi.People.Claims.Request do
     |> validate_length(:receipt_number, max: 100)
     |> Money.validate_amount(:amount, min: :positive)
     |> unique_constraint([:company_id, :employee_id, :receipt_number],
-      name: :people_claim_requests_receipt_unique
+      name: :people_claim_submissions_receipt_unique
     )
   end
 

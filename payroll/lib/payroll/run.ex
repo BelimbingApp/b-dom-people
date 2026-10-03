@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Payroll.Run do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_payroll_runs" do
+  schema "people_payroll_setup_snapshots" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:created_by_actor_id, :integer)

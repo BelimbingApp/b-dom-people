@@ -64,9 +64,9 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
         }
       },
       %{
-        name: "people_payroll_periods",
+        name: "people_payroll_pay_windows",
         columns:
-          common("people_payroll_periods")
+          common("people_payroll_pay_windows")
           |> Map.merge(%{
             "code" => column({:varchar, 60}, false),
             "starts_on" => column(:date, false),
@@ -74,14 +74,15 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
             "pay_on" => column(:date, false)
           }),
         indexes: %{
-          "people_payroll_periods_pkey" => index(["id"], true),
-          "people_payroll_periods_tenant_id_company_id_index" =>
+          "people_payroll_pay_windows_pkey" => index(["id"], true),
+          "people_payroll_pay_windows_tenant_id_company_id_index" =>
             index(["tenant_id", "company_id"], false),
-          "people_payroll_periods_company_id_code_index" => index(["company_id", "code"], true)
+          "people_payroll_pay_windows_company_id_code_index" =>
+            index(["company_id", "code"], true)
         },
         foreign_keys: %{},
         checks: %{
-          "people_payroll_periods_dates" => %{
+          "people_payroll_pay_windows_dates" => %{
             expression: "ends_on >= starts_on AND pay_on >= ends_on",
             validated: true
           }
@@ -123,9 +124,9 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
         }
       },
       %{
-        name: "people_payroll_runs",
+        name: "people_payroll_setup_snapshots",
         columns:
-          common("people_payroll_runs")
+          common("people_payroll_setup_snapshots")
           |> Map.merge(%{
             "period_id" => column(:bigint, false),
             "country" => column({:varchar, 100}, false),
@@ -135,33 +136,34 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
             "locked_by_actor_id" => column(:bigint, true)
           }),
         indexes: %{
-          "people_payroll_runs_pkey" => index(["id"], true),
-          "people_payroll_runs_tenant_id_company_id_index" =>
+          "people_payroll_setup_snapshots_pkey" => index(["id"], true),
+          "people_payroll_setup_snapshots_tenant_id_company_id_index" =>
             index(["tenant_id", "company_id"], false),
-          "people_payroll_runs_period_id_currency_index" => index(["period_id", "currency"], true)
+          "people_payroll_setup_snapshots_period_id_currency_index" =>
+            index(["period_id", "currency"], true)
         },
         foreign_keys: %{
-          "people_payroll_runs_period_id_fkey" => %{
+          "people_payroll_setup_snapshots_period_id_fkey" => %{
             columns: ["period_id"],
-            references: {"people_payroll_periods", ["id"]},
+            references: {"people_payroll_pay_windows", ["id"]},
             on_delete: :restrict
           }
         },
         checks: %{
-          "people_payroll_runs_lock" => %{
+          "people_payroll_setup_snapshots_lock" => %{
             expression: "(locked_at IS NULL) = (locked_by_actor_id IS NULL)",
             validated: true
           },
-          "people_payroll_runs_currency" => %{
+          "people_payroll_setup_snapshots_currency" => %{
             expression: "(currency)::text ~ '^[A-Z]{3}$'::text",
             validated: true
           }
         }
       },
       %{
-        name: "people_payroll_attendance_rule_pay_items",
+        name: "people_payroll_allowance_item_mappings",
         columns:
-          common("people_payroll_attendance_rule_pay_items")
+          common("people_payroll_allowance_item_mappings")
           |> Map.merge(%{
             "attendance_rule_code" => column({:varchar, 40}, false),
             "item_id" => column(:bigint, false),
@@ -169,19 +171,19 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
             "effective_to" => column(:date, true)
           }),
         indexes: %{
-          "people_payroll_attendance_rule_pay_items_pkey" => index(["id"], true),
-          "people_payroll_attendance_rule_pay_items_company_index" =>
+          "people_payroll_allowance_item_mappings_pkey" => index(["id"], true),
+          "people_payroll_allowance_item_mappings_company_index" =>
             index(["tenant_id", "company_id"], false)
         },
         foreign_keys: %{
-          "people_payroll_attendance_rule_pay_items_item_id_fkey" => %{
+          "people_payroll_allowance_item_mappings_item_id_fkey" => %{
             columns: ["item_id"],
             references: {"people_payroll_items", ["id"]},
             on_delete: :restrict
           }
         },
         checks: %{
-          "people_payroll_attendance_rule_pay_items_dates" => %{
+          "people_payroll_allowance_item_mappings_dates" => %{
             expression: "effective_to IS NULL OR effective_to >= effective_from",
             validated: true
           }
@@ -227,7 +229,7 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
         }
       ),
       output_table(
-        "result_lines",
+        "calculation_entries",
         %{
           "contribution_id" => column(:bigint, false),
           "employee_id" => column(:bigint, false),
@@ -235,16 +237,17 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
           "amount" => column({:numeric, 40, 12}, false)
         },
         %{
-          "people_payroll_result_lines_contribution_id_index" => index(["contribution_id"], true)
+          "people_payroll_calculation_entries_contribution_id_index" =>
+            index(["contribution_id"], true)
         },
         %{
-          "people_payroll_result_lines_amount" => %{
+          "people_payroll_calculation_entries_amount" => %{
             expression: "amount >= (0)::numeric",
             validated: true
           }
         },
         %{
-          "people_payroll_result_lines_contribution_id_fkey" => %{
+          "people_payroll_calculation_entries_contribution_id_fkey" => %{
             columns: ["contribution_id"],
             references: {"people_payroll_contributions", ["id"]},
             on_delete: :restrict
@@ -309,7 +312,7 @@ defmodule Bilimbi.People.Payroll.SchemaContract do
       foreign_keys:
         Map.put(fks, "#{name}_run_id_fkey", %{
           columns: ["run_id"],
-          references: {"people_payroll_runs", ["id"]},
+          references: {"people_payroll_setup_snapshots", ["id"]},
           on_delete: :restrict
         })
     }
