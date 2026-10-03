@@ -13,9 +13,9 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
   def tables do
     [
       %{
-        name: "people_attendance_days",
+        name: "people_attendance_daily_summaries",
         columns:
-          common("people_attendance_days")
+          common("people_attendance_daily_summaries")
           |> Map.merge(%{
             "employee_id" => column(:bigint, false),
             "on_date" => column(:date, false),
@@ -25,18 +25,18 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
             "worked_minutes" => column(:integer, false, {:integer, 0})
           }),
         indexes: %{
-          "people_attendance_days_pkey" => index(["id"], true),
-          "people_attendance_days_company_employee_date_unique" =>
+          "people_attendance_daily_summaries_pkey" => index(["id"], true),
+          "people_attendance_daily_summaries_company_employee_date_unique" =>
             index(["company_id", "employee_id", "on_date"], true),
-          "people_attendance_days_tenant_id_company_id_on_date_index" =>
+          "people_attendance_daily_summaries_scope_date_index" =>
             index(["tenant_id", "company_id", "on_date"])
         },
         foreign_keys: %{}
       },
       %{
-        name: "people_attendance_clock_events",
+        name: "people_attendance_clock_facts",
         columns:
-          common("people_attendance_clock_events")
+          common("people_attendance_clock_facts")
           |> Map.merge(%{
             "employee_id" => column(:bigint, false),
             "day_id" => column(:bigint, false),
@@ -51,28 +51,27 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
             "clocking_location_id" => column(:bigint, true)
           }),
         indexes: %{
-          "people_attendance_clock_events_pkey" => index(["id"], true),
+          "people_attendance_clock_facts_pkey" => index(["id"], true),
           "people_attendance_events_source_key_unique" =>
             index(["company_id", "source", "event_key"], true),
-          # PostgreSQL truncates the generated name to 63 bytes.
-          "people_attendance_clock_events_tenant_id_company_id_employee_id" =>
+          "people_attendance_clock_facts_employee_time_index" =>
             index(["tenant_id", "company_id", "employee_id", "occurred_at"])
         },
         foreign_keys: %{
-          "people_attendance_clock_events_day_id_fkey" =>
-            foreign_key("day_id", "people_attendance_days"),
-          "people_attendance_clock_events_clocking_location_id_fkey" =>
+          "people_attendance_clock_facts_day_id_fkey" =>
+            foreign_key("day_id", "people_attendance_daily_summaries"),
+          "people_attendance_clock_facts_clocking_location_id_fkey" =>
             foreign_key("clocking_location_id", "people_attendance_clocking_locations")
         },
         checks: %{
-          "people_attendance_clock_events_point_check" =>
+          "people_attendance_clock_facts_point_check" =>
             check("(latitude IS NULL) = (longitude IS NULL)")
         }
       },
       %{
-        name: "people_attendance_shift_templates",
+        name: "people_attendance_shift_definitions",
         columns:
-          common("people_attendance_shift_templates")
+          common("people_attendance_shift_definitions")
           |> Map.merge(%{
             "code" => column({:varchar, 40}, false),
             "name" => column({:varchar, 120}, false),
@@ -82,16 +81,16 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
             "status" => column({:varchar, 16}, false)
           }),
         indexes: %{
-          "people_attendance_shift_templates_pkey" => index(["id"], true),
-          "people_attendance_shift_templates_company_code_unique" =>
+          "people_attendance_shift_definitions_pkey" => index(["id"], true),
+          "people_attendance_shift_definitions_company_code_unique" =>
             index(["company_id", "code"], true),
-          "people_attendance_shift_templates_status_index" =>
+          "people_attendance_shift_definitions_status_index" =>
             index(["tenant_id", "company_id", "status"])
         },
         foreign_keys: %{},
         checks: %{
-          "people_attendance_shift_templates_status_check" => check(@active_retired),
-          "people_attendance_shift_templates_span_check" =>
+          "people_attendance_shift_definitions_status_check" => check(@active_retired),
+          "people_attendance_shift_definitions_span_check" =>
             check(
               "start_minute >= 0 AND start_minute <= 1439 AND end_minute >= 0 AND " <>
                 "end_minute <= 1439 AND start_minute <> end_minute AND break_minutes >= 0"
@@ -123,9 +122,9 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
         },
         foreign_keys: %{
           "people_attendance_roster_entries_shift_template_id_fkey" =>
-            foreign_key("shift_template_id", "people_attendance_shift_templates"),
+            foreign_key("shift_template_id", "people_attendance_shift_definitions"),
           "people_attendance_roster_entries_published_template_fkey" =>
-            foreign_key("published_shift_template_id", "people_attendance_shift_templates")
+            foreign_key("published_shift_template_id", "people_attendance_shift_definitions")
         },
         checks: %{
           "people_attendance_roster_entries_kind_check" =>
@@ -175,9 +174,9 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
         }
       },
       %{
-        name: "people_attendance_adjustment_requests",
+        name: "people_attendance_corrections",
         columns:
-          common("people_attendance_adjustment_requests")
+          common("people_attendance_corrections")
           |> Map.merge(%{
             "employee_id" => column(:bigint, false),
             "request_key" => column({:varchar, 160}, false),
@@ -194,20 +193,20 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
             "applied_clock_event_id" => column(:bigint, true)
           }),
         indexes: %{
-          "people_attendance_adjustment_requests_pkey" => index(["id"], true),
-          "people_attendance_adjustment_requests_company_key_unique" =>
+          "people_attendance_corrections_pkey" => index(["id"], true),
+          "people_attendance_corrections_company_key_unique" =>
             index(["company_id", "request_key"], true),
-          "people_attendance_adjustment_requests_status_index" =>
+          "people_attendance_corrections_status_index" =>
             index(["tenant_id", "company_id", "status"]),
-          "people_attendance_adjustment_requests_employee_date_index" =>
+          "people_attendance_corrections_employee_date_index" =>
             index(["company_id", "employee_id", "on_date"])
         },
         foreign_keys: %{
-          "people_attendance_adjustment_requests_applied_event_fkey" =>
-            foreign_key("applied_clock_event_id", "people_attendance_clock_events")
+          "people_attendance_corrections_applied_event_fkey" =>
+            foreign_key("applied_clock_event_id", "people_attendance_clock_facts")
         },
         checks: %{
-          "people_attendance_adjustment_requests_state_check" =>
+          "people_attendance_corrections_state_check" =>
             check(
               "(event_type)::text = ANY ((ARRAY['in'::character varying, " <>
                 "'out'::character varying])::text[]) AND (status)::text = ANY " <>
@@ -220,9 +219,9 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
         }
       },
       %{
-        name: "people_attendance_allowance_rules",
+        name: "people_attendance_allowance_policies",
         columns:
-          common("people_attendance_allowance_rules")
+          common("people_attendance_allowance_policies")
           |> Map.merge(%{
             "code" => column({:varchar, 40}, false),
             "name" => column({:varchar, 120}, false),
@@ -234,17 +233,17 @@ defmodule Bilimbi.People.Attendance.SchemaContract do
             "status" => column({:varchar, 16}, false, {:string, "active"})
           }),
         indexes: %{
-          "people_attendance_allowance_rules_pkey" => index(["id"], true),
-          "people_attendance_allowance_rules_company_code_from_unique" =>
+          "people_attendance_allowance_policies_pkey" => index(["id"], true),
+          "people_attendance_allowance_policies_company_code_from_unique" =>
             index(["company_id", "code", "effective_from"], true),
-          "people_attendance_allowance_rules_company_effective_index" =>
+          "people_attendance_allowance_policies_company_effective_index" =>
             index(["tenant_id", "company_id", "status", "effective_from"])
         },
         foreign_keys: %{},
         checks: %{
-          "people_attendance_allowance_rules_status_check" => check(@active_retired),
-          "people_attendance_allowance_rules_value_check" => check("value > 0::numeric"),
-          "people_attendance_allowance_rules_period_check" =>
+          "people_attendance_allowance_policies_status_check" => check(@active_retired),
+          "people_attendance_allowance_policies_value_check" => check("value > 0::numeric"),
+          "people_attendance_allowance_policies_period_check" =>
             check("effective_until IS NULL OR effective_until >= effective_from")
         }
       }

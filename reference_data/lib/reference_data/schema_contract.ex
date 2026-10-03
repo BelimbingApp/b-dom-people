@@ -8,9 +8,9 @@ defmodule Bilimbi.People.ReferenceData.SchemaContract do
   def tables do
     [
       %{
-        name: "people_reference_entries",
+        name: "people_reference_data_entries",
         columns:
-          common_columns("people_reference_entries")
+          common_columns("people_reference_data_entries")
           |> Map.merge(%{
             "kind" => column({:varchar, 80}, false),
             "code" => column({:varchar, 100}, false),
@@ -18,51 +18,51 @@ defmodule Bilimbi.People.ReferenceData.SchemaContract do
             "active" => column(:boolean, false, {:boolean, true})
           }),
         indexes: %{
-          "people_reference_entries_pkey" => index(["id"], true),
-          "people_reference_entries_company_kind_code_unique" =>
+          "people_reference_data_entries_pkey" => index(["id"], true),
+          "people_reference_data_entries_company_kind_code_unique" =>
             index(["company_id", "kind", "code"], true),
-          "people_reference_entries_tenant_id_company_id_index" =>
+          "people_reference_data_entries_tenant_id_company_id_index" =>
             index(["tenant_id", "company_id"])
         },
         foreign_keys: %{}
       },
       %{
-        name: "people_reference_aliases",
+        name: "people_reference_data_aliases",
         columns:
-          common_columns("people_reference_aliases")
+          common_columns("people_reference_data_aliases")
           |> Map.merge(%{
             "entry_id" => column(:bigint, false),
             "kind" => column({:varchar, 80}, false),
             "label" => column({:varchar, 200}, false)
           }),
         indexes: %{
-          "people_reference_aliases_pkey" => index(["id"], true),
-          "people_reference_aliases_company_kind_label_unique" =>
+          "people_reference_data_aliases_pkey" => index(["id"], true),
+          "people_reference_data_aliases_company_kind_label_unique" =>
             index(["company_id", "kind", "label"], true),
-          "people_reference_aliases_tenant_id_company_id_entry_id_index" =>
+          "people_reference_data_aliases_scope_entry_index" =>
             index(["tenant_id", "company_id", "entry_id"])
         },
         foreign_keys: %{
-          "people_reference_aliases_entry_id_fkey" => %{
+          "people_reference_data_aliases_entry_id_fkey" => %{
             columns: ["entry_id"],
-            references: {"people_reference_entries", ["id"]},
+            references: {"people_reference_data_entries", ["id"]},
             on_delete: :restrict
           }
         }
       },
       %{
-        name: "people_calendar_exceptions",
+        name: "people_reference_data_calendar_overrides",
         columns:
-          common_columns("people_calendar_exceptions")
+          common_columns("people_reference_data_calendar_overrides")
           |> Map.merge(%{
             "on_date" => column(:date, false),
             "label" => column({:varchar, 200}, false)
           }),
         indexes: %{
-          "people_calendar_exceptions_pkey" => index(["id"], true),
-          "people_calendar_exceptions_company_date_label_unique" =>
+          "people_reference_data_calendar_overrides_pkey" => index(["id"], true),
+          "people_reference_data_calendar_overrides_date_label_unique" =>
             index(["company_id", "on_date", "label"], true),
-          "people_calendar_exceptions_tenant_id_company_id_on_date_index" =>
+          "people_reference_data_calendar_overrides_scope_date_index" =>
             index(["tenant_id", "company_id", "on_date"])
         },
         foreign_keys: %{}

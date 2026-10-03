@@ -7,7 +7,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_employee_work_profiles (
+      CREATE TEMPORARY TABLE people_employee_workspace_profiles (
         id bigserial PRIMARY KEY, tenant_id bigint NOT NULL, company_id bigint NOT NULL,
         employee_id bigint NOT NULL, work_location varchar(200),
         work_arrangement varchar(120), notes text,

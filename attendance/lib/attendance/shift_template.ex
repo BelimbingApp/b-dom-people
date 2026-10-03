@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Attendance.ShiftTemplate do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_attendance_shift_templates" do
+  schema "people_attendance_shift_definitions" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:code, :string)
@@ -43,7 +43,7 @@ defmodule Bilimbi.People.Attendance.ShiftTemplate do
     |> put_minute(:ends_at, :end_minute)
     |> validate_span()
     |> unique_constraint([:company_id, :code],
-      name: :people_attendance_shift_templates_company_code_unique
+      name: :people_attendance_shift_definitions_company_code_unique
     )
   end
 

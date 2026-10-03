@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateAllowanceRules do
   use Ecto.Migration
 
   def change do
-    create table(:people_attendance_allowance_rules, primary_key: false) do
+    create table(:people_attendance_allowance_policies, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -18,31 +18,31 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateAllowanceRules do
     end
 
     create(
-      unique_index(:people_attendance_allowance_rules, [:company_id, :code, :effective_from],
-        name: :people_attendance_allowance_rules_company_code_from_unique
+      unique_index(:people_attendance_allowance_policies, [:company_id, :code, :effective_from],
+        name: :people_attendance_allowance_policies_company_code_from_unique
       )
     )
 
     create(
-      index(:people_attendance_allowance_rules, [:tenant_id, :company_id, :status, :effective_from],
-        name: :people_attendance_allowance_rules_company_effective_index
+      index(:people_attendance_allowance_policies, [:tenant_id, :company_id, :status, :effective_from],
+        name: :people_attendance_allowance_policies_company_effective_index
       )
     )
 
     create(
-      constraint(:people_attendance_allowance_rules, :people_attendance_allowance_rules_status_check,
+      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_status_check,
         check: "status IN ('active', 'retired')"
       )
     )
 
     create(
-      constraint(:people_attendance_allowance_rules, :people_attendance_allowance_rules_value_check,
+      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_value_check,
         check: "value > 0"
       )
     )
 
     create(
-      constraint(:people_attendance_allowance_rules, :people_attendance_allowance_rules_period_check,
+      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_period_check,
         check: "effective_until IS NULL OR effective_until >= effective_from"
       )
     )

@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
   use Ecto.Migration
 
   def up do
-    create table(:people_attendance_shift_templates, primary_key: false) do
+    create table(:people_attendance_shift_definitions, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -16,25 +16,25 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
     end
 
     create(
-      unique_index(:people_attendance_shift_templates, [:company_id, :code],
-        name: :people_attendance_shift_templates_company_code_unique
+      unique_index(:people_attendance_shift_definitions, [:company_id, :code],
+        name: :people_attendance_shift_definitions_company_code_unique
       )
     )
 
     create(
-      index(:people_attendance_shift_templates, [:tenant_id, :company_id, :status],
-        name: :people_attendance_shift_templates_status_index
+      index(:people_attendance_shift_definitions, [:tenant_id, :company_id, :status],
+        name: :people_attendance_shift_definitions_status_index
       )
     )
 
     create(
-      constraint(:people_attendance_shift_templates, :people_attendance_shift_templates_status_check,
+      constraint(:people_attendance_shift_definitions, :people_attendance_shift_definitions_status_check,
         check: "status IN ('active', 'retired')"
       )
     )
 
     create(
-      constraint(:people_attendance_shift_templates, :people_attendance_shift_templates_span_check,
+      constraint(:people_attendance_shift_definitions, :people_attendance_shift_definitions_span_check,
         check:
           "start_minute BETWEEN 0 AND 1439 AND end_minute BETWEEN 0 AND 1439 AND " <>
             "start_minute <> end_minute AND break_minutes >= 0"
@@ -51,14 +51,14 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
 
       add(
         :shift_template_id,
-        references(:people_attendance_shift_templates, type: :bigint, on_delete: :restrict)
+        references(:people_attendance_shift_definitions, type: :bigint, on_delete: :restrict)
       )
 
       add(:published_kind, :string, size: 16)
 
       add(
         :published_shift_template_id,
-        references(:people_attendance_shift_templates,
+        references(:people_attendance_shift_definitions,
           type: :bigint,
           on_delete: :restrict,
           name: :people_attendance_roster_entries_published_template_fkey
@@ -144,7 +144,7 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
       )
     )
 
-    alter table(:people_attendance_clock_events) do
+    alter table(:people_attendance_clock_facts) do
       add(:latitude, :decimal, precision: 9, scale: 6)
       add(:longitude, :decimal, precision: 9, scale: 6)
 
@@ -155,12 +155,12 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
     end
 
     create(
-      constraint(:people_attendance_clock_events, :people_attendance_clock_events_point_check,
+      constraint(:people_attendance_clock_facts, :people_attendance_clock_facts_point_check,
         check: "(latitude IS NULL) = (longitude IS NULL)"
       )
     )
 
-    create table(:people_attendance_adjustment_requests, primary_key: false) do
+    create table(:people_attendance_corrections, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -179,10 +179,10 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
 
       add(
         :applied_clock_event_id,
-        references(:people_attendance_clock_events,
+        references(:people_attendance_clock_facts,
           type: :bigint,
           on_delete: :restrict,
-          name: :people_attendance_adjustment_requests_applied_event_fkey
+          name: :people_attendance_corrections_applied_event_fkey
         )
       )
 
@@ -190,27 +190,27 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
     end
 
     create(
-      unique_index(:people_attendance_adjustment_requests, [:company_id, :request_key],
-        name: :people_attendance_adjustment_requests_company_key_unique
+      unique_index(:people_attendance_corrections, [:company_id, :request_key],
+        name: :people_attendance_corrections_company_key_unique
       )
     )
 
     create(
-      index(:people_attendance_adjustment_requests, [:tenant_id, :company_id, :status],
-        name: :people_attendance_adjustment_requests_status_index
+      index(:people_attendance_corrections, [:tenant_id, :company_id, :status],
+        name: :people_attendance_corrections_status_index
       )
     )
 
     create(
-      index(:people_attendance_adjustment_requests, [:company_id, :employee_id, :on_date],
-        name: :people_attendance_adjustment_requests_employee_date_index
+      index(:people_attendance_corrections, [:company_id, :employee_id, :on_date],
+        name: :people_attendance_corrections_employee_date_index
       )
     )
 
     create(
       constraint(
-        :people_attendance_adjustment_requests,
-        :people_attendance_adjustment_requests_state_check,
+        :people_attendance_corrections,
+        :people_attendance_corrections_state_check,
         check:
           "event_type IN ('in', 'out') AND " <>
             "status IN ('pending', 'approved', 'rejected', 'cancelled') AND " <>
@@ -222,10 +222,10 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
   end
 
   def down do
-    drop(table(:people_attendance_adjustment_requests))
-    drop(constraint(:people_attendance_clock_events, :people_attendance_clock_events_point_check))
+    drop(table(:people_attendance_corrections))
+    drop(constraint(:people_attendance_clock_facts, :people_attendance_clock_facts_point_check))
 
-    alter table(:people_attendance_clock_events) do
+    alter table(:people_attendance_clock_facts) do
       remove(:clocking_location_id)
       remove(:longitude)
       remove(:latitude)
@@ -233,6 +233,6 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
 
     drop(table(:people_attendance_clocking_locations))
     drop(table(:people_attendance_roster_entries))
-    drop(table(:people_attendance_shift_templates))
+    drop(table(:people_attendance_shift_definitions))
   end
 end

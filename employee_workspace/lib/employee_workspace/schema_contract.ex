@@ -6,7 +6,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.SchemaContract do
   def tables do
     [
       table(
-        "people_employee_work_profiles",
+        "people_employee_workspace_profiles",
         %{
           "employee_id" => column(:bigint, false),
           "work_location" => column({:varchar, 200}, true),

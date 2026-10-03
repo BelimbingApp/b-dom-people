@@ -2,7 +2,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Migrations.CreateEmployeeWorkspace do
   use Ecto.Migration
 
   def up do
-    create table(:people_employee_work_profiles, primary_key: false) do
+    create table(:people_employee_workspace_profiles, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -13,8 +13,8 @@ defmodule Bilimbi.People.EmployeeWorkspace.Migrations.CreateEmployeeWorkspace do
       timestamps(type: :naive_datetime)
     end
 
-    create(unique_index(:people_employee_work_profiles, [:company_id, :employee_id]))
-    create(index(:people_employee_work_profiles, [:tenant_id, :company_id]))
+    create(unique_index(:people_employee_workspace_profiles, [:company_id, :employee_id]))
+    create(index(:people_employee_workspace_profiles, [:tenant_id, :company_id]))
 
     create table(:people_employee_accesses, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
@@ -75,6 +75,6 @@ defmodule Bilimbi.People.EmployeeWorkspace.Migrations.CreateEmployeeWorkspace do
     drop(table(:people_employee_saved_views))
     drop(table(:people_employee_change_requests))
     drop(table(:people_employee_accesses))
-    drop(table(:people_employee_work_profiles))
+    drop(table(:people_employee_workspace_profiles))
   end
 end

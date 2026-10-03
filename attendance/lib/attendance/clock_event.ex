@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Attendance.ClockEvent do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_attendance_clock_events" do
+  schema "people_attendance_clock_facts" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)

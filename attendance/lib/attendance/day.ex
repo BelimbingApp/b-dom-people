@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Attendance.Day do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_attendance_days" do
+  schema "people_attendance_daily_summaries" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)
@@ -22,7 +22,7 @@ defmodule Bilimbi.People.Attendance.Day do
     |> validate_inclusion(:status, ~w(in_progress exception_pending ready_for_review))
     |> validate_number(:worked_minutes, greater_than_or_equal_to: 0)
     |> unique_constraint([:company_id, :employee_id, :on_date],
-      name: :people_attendance_days_company_employee_date_unique
+      name: :people_attendance_daily_summaries_company_employee_date_unique
     )
   end
 end

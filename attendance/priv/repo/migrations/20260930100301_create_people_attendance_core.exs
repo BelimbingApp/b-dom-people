@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateCore do
   use Ecto.Migration
 
   def up do
-    create table(:people_attendance_days, primary_key: false) do
+    create table(:people_attendance_daily_summaries, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
@@ -16,20 +16,22 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateCore do
     end
 
     create(
-      unique_index(:people_attendance_days, [:company_id, :employee_id, :on_date],
-        name: :people_attendance_days_company_employee_date_unique
+      unique_index(:people_attendance_daily_summaries, [:company_id, :employee_id, :on_date],
+        name: :people_attendance_daily_summaries_company_employee_date_unique
       )
     )
 
-    create(index(:people_attendance_days, [:tenant_id, :company_id, :on_date]))
+    create(index(:people_attendance_daily_summaries, [:tenant_id, :company_id, :on_date],
+        name: :people_attendance_daily_summaries_scope_date_index
+      ))
 
-    create table(:people_attendance_clock_events, primary_key: false) do
+    create table(:people_attendance_clock_facts, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
       add(:employee_id, :bigint, null: false)
 
-      add(:day_id, references(:people_attendance_days, type: :bigint, on_delete: :restrict),
+      add(:day_id, references(:people_attendance_daily_summaries, type: :bigint, on_delete: :restrict),
         null: false
       )
 
@@ -43,18 +45,20 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateCore do
     end
 
     create(
-      unique_index(:people_attendance_clock_events, [:company_id, :source, :event_key],
+      unique_index(:people_attendance_clock_facts, [:company_id, :source, :event_key],
         name: :people_attendance_events_source_key_unique
       )
     )
 
     create(
-      index(:people_attendance_clock_events, [:tenant_id, :company_id, :employee_id, :occurred_at])
+      index(:people_attendance_clock_facts, [:tenant_id, :company_id, :employee_id, :occurred_at],
+        name: :people_attendance_clock_facts_employee_time_index
+      )
     )
   end
 
   def down do
-    drop(table(:people_attendance_clock_events))
-    drop(table(:people_attendance_days))
+    drop(table(:people_attendance_clock_facts))
+    drop(table(:people_attendance_daily_summaries))
   end
 end
