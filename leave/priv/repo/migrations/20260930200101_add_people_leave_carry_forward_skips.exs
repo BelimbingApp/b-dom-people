@@ -14,7 +14,9 @@ defmodule Bilimbi.People.Leave.Migrations.AddCarryForwardSkips do
 
       add(
         :leave_type_id,
-        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:reason, :string, size: 24, null: false)
       add(:blocking_year, :integer, null: false)

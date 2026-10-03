@@ -24,7 +24,9 @@ defmodule Bilimbi.People.Leave.Migrations.AddRequests do
 
       add(
         :leave_type_id,
-        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:leave_year, :integer, null: false)
       add(:starts_on, :date, null: false)
@@ -92,7 +94,9 @@ defmodule Bilimbi.People.Leave.Migrations.AddRequests do
 
       add(
         :request_id,
-        references(:people_leave_applications, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_applications, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:on_date, :date, null: false)
       add(:am, :boolean, null: false)
@@ -134,7 +138,9 @@ defmodule Bilimbi.People.Leave.Migrations.AddRequests do
 
       add(
         :request_id,
-        references(:people_leave_applications, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_applications, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:from_status, :string, size: 16)
       add(:to_status, :string, size: 16, null: false)

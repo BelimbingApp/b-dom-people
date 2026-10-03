@@ -29,7 +29,9 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
 
       add(
         :leave_type_id,
-        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:version, :integer, null: false)
       add(:effective_from, :date, null: false)
@@ -73,7 +75,9 @@ defmodule Bilimbi.People.Leave.Migrations.CreateCore do
 
       add(
         :leave_type_id,
-        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict), null: false)
+        references(:people_leave_catalog_types, type: :bigint, on_delete: :restrict),
+        null: false
+      )
 
       add(:leave_year, :integer, null: false)
       add(:entry_type, :string, size: 24, null: false)
