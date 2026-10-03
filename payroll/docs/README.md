@@ -89,6 +89,11 @@ currency, the run leaves that mapping out and reports the rule code under
 
 ## Schema and validation
 
+Pay windows, frozen setup runs, attendance allowance mappings and calculated
+entries use `people_payroll_pay_windows`, `people_payroll_setup_snapshots`,
+`people_payroll_allowance_item_mappings` and `people_payroll_calculation_entries`.
+These are fresh Bilimbi relations; no legacy relation is adopted.
+
 Migrations `20260930230501` and `20260930230502` are `:bilimbi_only`. The unregistered
 `Bilimbi.People.Payroll.SchemaContract` is checked after fresh migration with
 `Bilimbi.Base.Database.SchemaVerifier.verify/2`. Registration remains nil because

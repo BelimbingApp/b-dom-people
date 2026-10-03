@@ -5,7 +5,7 @@ defmodule Bilimbi.People.Leave.Request do
   @statuses ~w(pending approved rejected cancelled)
   @day_parts ~w(full am pm hours)
 
-  schema "people_leave_requests" do
+  schema "people_leave_applications" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:employee_id, :integer)

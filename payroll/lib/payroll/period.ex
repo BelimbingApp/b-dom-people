@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Payroll.Period do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_payroll_periods" do
+  schema "people_payroll_pay_windows" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:created_by_actor_id, :integer)
@@ -22,7 +22,7 @@ defmodule Bilimbi.People.Payroll.Period do
 
     changeset
     |> validate_length(:code, max: 60)
-    |> unique_constraint(:code, name: :people_payroll_periods_company_id_code_index)
+    |> unique_constraint(:code, name: :people_payroll_pay_windows_company_id_code_index)
     |> validate_change(:ends_on, fn :ends_on, value ->
       if get_field(changeset, :starts_on) &&
            Date.compare(value, get_field(changeset, :starts_on)) == :lt,

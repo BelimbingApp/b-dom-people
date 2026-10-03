@@ -6,7 +6,7 @@ defmodule Bilimbi.People.Claims.ClaimType do
   @receipt_requirements ~w(always above_threshold never)
   @eligibilities ~w(all_employees assigned_only)
 
-  schema "people_claim_types" do
+  schema "people_claim_catalog_types" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:category_id, :integer)
@@ -31,6 +31,8 @@ defmodule Bilimbi.People.Claims.ClaimType do
     |> validate_length(:name, max: 120)
     |> validate_inclusion(:receipt_requirement, @receipt_requirements)
     |> validate_inclusion(:eligibility, @eligibilities)
-    |> unique_constraint([:company_id, :code], name: :people_claim_types_company_code_unique)
+    |> unique_constraint([:company_id, :code],
+      name: :people_claim_catalog_types_company_code_unique
+    )
   end
 end

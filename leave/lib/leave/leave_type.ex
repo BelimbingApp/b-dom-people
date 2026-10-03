@@ -5,7 +5,7 @@ defmodule Bilimbi.People.Leave.LeaveType do
 
   @units ~w(day hour)
 
-  schema "people_leave_types" do
+  schema "people_leave_catalog_types" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:code, :string)
@@ -39,6 +39,8 @@ defmodule Bilimbi.People.Leave.LeaveType do
     |> validate_length(:name, min: 1, max: 120)
     |> validate_inclusion(:unit, @units)
     |> validate_inclusion(:status, ~w(active archived))
-    |> unique_constraint([:company_id, :code], name: :people_leave_types_company_code_unique)
+    |> unique_constraint([:company_id, :code],
+      name: :people_leave_catalog_types_company_code_unique
+    )
   end
 end

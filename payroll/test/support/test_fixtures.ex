@@ -27,13 +27,13 @@ defmodule Bilimbi.People.Payroll.TestFixtures do
 
     SQL.query!(
       Repo,
-      "CREATE UNIQUE INDEX payroll_period_code_fixture ON people_payroll_periods(company_id, code)",
+      "CREATE UNIQUE INDEX payroll_period_code_fixture ON people_payroll_pay_windows(company_id, code)",
       []
     )
 
     SQL.query!(
       Repo,
-      "CREATE UNIQUE INDEX payroll_run_fixture ON people_payroll_runs(period_id, currency)",
+      "CREATE UNIQUE INDEX payroll_run_fixture ON people_payroll_setup_snapshots(period_id, currency)",
       []
     )
   end

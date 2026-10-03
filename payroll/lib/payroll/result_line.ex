@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Payroll.ResultLine do
   @moduledoc false
   use Ecto.Schema
 
-  schema "people_payroll_result_lines" do
+  schema "people_payroll_calculation_entries" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:created_by_actor_id, :integer)

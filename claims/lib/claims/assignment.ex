@@ -5,7 +5,7 @@ defmodule Bilimbi.People.Claims.Assignment do
 
   # A named, effective-dated group that makes assigned-only claim types
   # available to its employees.
-  schema "people_claim_assignments" do
+  schema "people_claim_employee_enrolments" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:code, :string)
@@ -25,7 +25,7 @@ defmodule Bilimbi.People.Claims.Assignment do
     |> validate_length(:name, max: 120)
     |> validate_period()
     |> unique_constraint([:company_id, :code],
-      name: :people_claim_assignments_company_code_unique
+      name: :people_claim_employee_enrolments_company_code_unique
     )
   end
 

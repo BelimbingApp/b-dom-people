@@ -6,7 +6,7 @@ Code.require_file(
 )
 
 Code.require_file(
-  "../priv/repo/migrations/20260930230502_create_people_payroll_attendance_rule_pay_items.exs",
+  "../priv/repo/migrations/20260930230502_create_people_payroll_allowance_item_mappings.exs",
   __DIR__
 )
 
@@ -79,7 +79,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
       })
 
     period =
-      insert!(repo, "people_payroll_periods", %{
+      insert!(repo, "people_payroll_pay_windows", %{
         code: "period-a",
         starts_on: ~D[2026-01-01],
         ends_on: ~D[2026-01-31],
@@ -95,7 +95,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
       })
 
     attendance_mapping =
-      insert!(repo, "people_payroll_attendance_rule_pay_items", %{
+      insert!(repo, "people_payroll_allowance_item_mappings", %{
         attendance_rule_code: "rule-a",
         item_id: item,
         effective_from: ~D[2026-01-01]
@@ -106,9 +106,9 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
     for {table, id} <- [
           {"people_payroll_classifications", classification},
           {"people_payroll_items", item},
-          {"people_payroll_periods", period},
+          {"people_payroll_pay_windows", period},
           {"people_payroll_mappings", mapping},
-          {"people_payroll_attendance_rule_pay_items", attendance_mapping}
+          {"people_payroll_allowance_item_mappings", attendance_mapping}
         ],
         sql <- [
           "UPDATE #{table} SET updated_at = updated_at WHERE id = $1",
@@ -135,7 +135,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
              })
 
     assert {:error, %Postgrex.Error{postgres: %{code: :foreign_key_violation}}} =
-             insert(repo, "people_payroll_attendance_rule_pay_items", %{
+             insert(repo, "people_payroll_allowance_item_mappings", %{
                attendance_rule_code: "rule-b",
                item_id: -1,
                effective_from: ~D[2026-01-01]
@@ -148,7 +148,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
              try_run(repo, period, "AAA")
 
     assert {:error, %Postgrex.Error{postgres: %{code: :unique_violation}}} =
-             insert(repo, "people_payroll_periods", %{
+             insert(repo, "people_payroll_pay_windows", %{
                code: "period-a",
                starts_on: ~D[2026-03-01],
                ends_on: ~D[2026-03-31],
@@ -158,24 +158,29 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
     assert_refused(
       repo,
       :check_violation,
-      "UPDATE people_payroll_runs SET snapshot = '{}' WHERE id = $1",
+      "UPDATE people_payroll_setup_snapshots SET snapshot = '{}' WHERE id = $1",
       [run]
     )
 
-    assert_refused(repo, :check_violation, "DELETE FROM people_payroll_runs WHERE id = $1", [run])
+    assert_refused(
+      repo,
+      :check_violation,
+      "DELETE FROM people_payroll_setup_snapshots WHERE id = $1",
+      [run]
+    )
 
     assert {:ok, %{num_rows: 1}} =
              SQL.query(
                repo,
-               "UPDATE people_payroll_runs SET locked_at = now(), locked_by_actor_id = 91 WHERE id = $1",
+               "UPDATE people_payroll_setup_snapshots SET locked_at = now(), locked_by_actor_id = 91 WHERE id = $1",
                [run]
              )
 
     for sql <- [
-          "UPDATE people_payroll_runs SET locked_at = NULL, locked_by_actor_id = NULL WHERE id = $1",
-          "UPDATE people_payroll_runs SET locked_at = now(), locked_by_actor_id = 92 WHERE id = $1",
-          "UPDATE people_payroll_runs SET snapshot = '{}' WHERE id = $1",
-          "DELETE FROM people_payroll_runs WHERE id = $1"
+          "UPDATE people_payroll_setup_snapshots SET locked_at = NULL, locked_by_actor_id = NULL WHERE id = $1",
+          "UPDATE people_payroll_setup_snapshots SET locked_at = now(), locked_by_actor_id = 92 WHERE id = $1",
+          "UPDATE people_payroll_setup_snapshots SET snapshot = '{}' WHERE id = $1",
+          "DELETE FROM people_payroll_setup_snapshots WHERE id = $1"
         ],
         do: assert_refused(repo, :check_violation, sql, [run])
   end
@@ -199,7 +204,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
       })
 
     period =
-      insert!(repo, "people_payroll_periods", %{
+      insert!(repo, "people_payroll_pay_windows", %{
         code: "period-a",
         starts_on: ~D[2026-01-01],
         ends_on: ~D[2026-01-31],
@@ -230,12 +235,12 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
 
     SQL.query!(
       repo,
-      "UPDATE people_payroll_runs SET locked_at = now(), locked_by_actor_id = 93 WHERE id = $1",
+      "UPDATE people_payroll_setup_snapshots SET locked_at = now(), locked_by_actor_id = 93 WHERE id = $1",
       [run]
     )
 
     line =
-      insert!(repo, "people_payroll_result_lines", %{
+      insert!(repo, "people_payroll_calculation_entries", %{
         run_id: run,
         contribution_id: contribution,
         employee_id: 101,
@@ -290,7 +295,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
 
     for {table, id} <- [
           {"people_payroll_contributions", contribution},
-          {"people_payroll_result_lines", line},
+          {"people_payroll_calculation_entries", line},
           {"people_payroll_calculations", calculation},
           {"people_payroll_decisions", decision},
           {"people_payroll_documents", document}
@@ -317,7 +322,7 @@ defmodule Bilimbi.People.Payroll.MigrationTest do
 
   defp try_run(repo, period, currency),
     do:
-      insert(repo, "people_payroll_runs", %{
+      insert(repo, "people_payroll_setup_snapshots", %{
         period_id: period,
         country: "Jurisdiction A",
         currency: currency,

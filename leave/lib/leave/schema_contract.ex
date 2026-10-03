@@ -8,9 +8,9 @@ defmodule Bilimbi.People.Leave.SchemaContract do
   def tables do
     [
       %{
-        name: "people_leave_types",
+        name: "people_leave_catalog_types",
         columns:
-          common("people_leave_types")
+          common("people_leave_catalog_types")
           |> Map.merge(%{
             "code" => column({:varchar, 40}, false),
             "name" => column({:varchar, 120}, false),
@@ -21,9 +21,10 @@ defmodule Bilimbi.People.Leave.SchemaContract do
             "updated_at" => column({:timestamp, 0}, false)
           }),
         indexes: %{
-          "people_leave_types_pkey" => index(["id"], true),
-          "people_leave_types_company_code_unique" => index(["company_id", "code"], true),
-          "people_leave_types_tenant_id_company_id_index" => index(["tenant_id", "company_id"])
+          "people_leave_catalog_types_pkey" => index(["id"], true),
+          "people_leave_catalog_types_company_code_unique" => index(["company_id", "code"], true),
+          "people_leave_catalog_types_tenant_id_company_id_index" =>
+            index(["tenant_id", "company_id"])
         },
         foreign_keys: %{}
       },
@@ -59,7 +60,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         foreign_keys: %{
           "people_leave_policies_leave_type_id_fkey" => %{
             columns: ["leave_type_id"],
-            references: {"people_leave_types", ["id"]},
+            references: {"people_leave_catalog_types", ["id"]},
             on_delete: :restrict
           }
         }
@@ -94,7 +95,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         foreign_keys: %{
           "people_leave_ledger_entries_leave_type_id_fkey" => %{
             columns: ["leave_type_id"],
-            references: {"people_leave_types", ["id"]},
+            references: {"people_leave_catalog_types", ["id"]},
             on_delete: :restrict
           },
           "people_leave_ledger_entries_policy_id_fkey" => %{
@@ -105,9 +106,9 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         }
       },
       %{
-        name: "people_leave_requests",
+        name: "people_leave_applications",
         columns:
-          common("people_leave_requests")
+          common("people_leave_applications")
           |> Map.merge(%{
             "employee_id" => column(:bigint, false),
             "leave_type_id" => column(:bigint, false),
@@ -129,38 +130,38 @@ defmodule Bilimbi.People.Leave.SchemaContract do
             "updated_at" => column({:timestamp, 0}, false)
           }),
         indexes: %{
-          "people_leave_requests_pkey" => index(["id"], true),
-          "people_leave_requests_employee_key_unique" =>
+          "people_leave_applications_pkey" => index(["id"], true),
+          "people_leave_applications_employee_key_unique" =>
             index(["company_id", "employee_id", "request_key"], true),
-          "people_leave_requests_tenant_id_company_id_status_index" =>
+          "people_leave_applications_tenant_id_company_id_status_index" =>
             index(["tenant_id", "company_id", "status"]),
-          "people_leave_requests_employee_year_index" =>
+          "people_leave_applications_employee_year_index" =>
             index(["tenant_id", "company_id", "employee_id", "leave_year"])
         },
         foreign_keys: %{
-          "people_leave_requests_leave_type_id_fkey" => %{
+          "people_leave_applications_leave_type_id_fkey" => %{
             columns: ["leave_type_id"],
-            references: {"people_leave_types", ["id"]},
+            references: {"people_leave_catalog_types", ["id"]},
             on_delete: :restrict
           }
         },
         checks: %{
-          "people_leave_requests_date_range" => check("ends_on >= starts_on"),
-          "people_leave_requests_quantity_positive" => check("quantity > 0::numeric"),
-          "people_leave_requests_status" =>
+          "people_leave_applications_date_range" => check("ends_on >= starts_on"),
+          "people_leave_applications_quantity_positive" => check("quantity > 0::numeric"),
+          "people_leave_applications_status" =>
             check(
               "(status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'cancelled'::character varying])::text[])"
             ),
-          "people_leave_requests_day_part" =>
+          "people_leave_applications_day_part" =>
             check(
               "(day_part)::text = ANY ((ARRAY['full'::character varying, 'am'::character varying, 'pm'::character varying, 'hours'::character varying])::text[])"
             )
         }
       },
       %{
-        name: "people_leave_request_days",
+        name: "people_leave_application_dates",
         columns: %{
-          "id" => column(:bigint, false, {:sequence, "people_leave_request_days_id_seq"}),
+          "id" => column(:bigint, false, {:sequence, "people_leave_application_dates_id_seq"}),
           "tenant_id" => column(:bigint, false),
           "company_id" => column(:bigint, false),
           "employee_id" => column(:bigint, false),
@@ -172,22 +173,22 @@ defmodule Bilimbi.People.Leave.SchemaContract do
           "active" => column(:boolean, false)
         },
         indexes: %{
-          "people_leave_request_days_pkey" => index(["id"], true),
-          "people_leave_request_days_request_date_unique" =>
+          "people_leave_application_dates_pkey" => index(["id"], true),
+          "people_leave_application_dates_request_date_unique" =>
             index(["request_id", "on_date"], true),
-          "people_leave_request_days_am_unique" =>
+          "people_leave_application_dates_am_unique" =>
             partial_index(["company_id", "employee_id", "on_date"], "(active AND am)"),
-          "people_leave_request_days_pm_unique" =>
+          "people_leave_application_dates_pm_unique" =>
             partial_index(["company_id", "employee_id", "on_date"], "(active AND pm)")
         },
         foreign_keys: %{
-          "people_leave_request_days_request_id_fkey" => %{
+          "people_leave_application_dates_request_id_fkey" => %{
             columns: ["request_id"],
-            references: {"people_leave_requests", ["id"]},
+            references: {"people_leave_applications", ["id"]},
             on_delete: :restrict
           }
         },
-        checks: %{"people_leave_request_days_slot" => check("am OR pm")}
+        checks: %{"people_leave_application_dates_slot" => check("am OR pm")}
       },
       %{
         name: "people_leave_request_events",
@@ -209,7 +210,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         foreign_keys: %{
           "people_leave_request_events_request_id_fkey" => %{
             columns: ["request_id"],
-            references: {"people_leave_requests", ["id"]},
+            references: {"people_leave_applications", ["id"]},
             on_delete: :restrict
           }
         }
@@ -234,7 +235,7 @@ defmodule Bilimbi.People.Leave.SchemaContract do
         foreign_keys: %{
           "people_leave_carry_forward_skips_leave_type_id_fkey" => %{
             columns: ["leave_type_id"],
-            references: {"people_leave_types", ["id"]},
+            references: {"people_leave_catalog_types", ["id"]},
             on_delete: :restrict
           }
         },
