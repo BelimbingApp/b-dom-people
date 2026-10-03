@@ -44,8 +44,7 @@ defmodule Bilimbi.People.Training.EvaluationContract do
         %{
           "people_training_evaluation_reviews_policy_id_scope" =>
             fk("policy_id", "evaluation_policies"),
-          "people_training_evaluation_reviews_fact_id_scope" =>
-            fk("fact_id", "participation_facts")
+          "people_training_evaluation_reviews_fact_id_scope" => fk("fact_id", "attendance_facts")
         },
         %{
           "people_training_evaluation_review_kind" => %{
@@ -71,7 +70,7 @@ defmodule Bilimbi.People.Training.EvaluationContract do
         }
       ),
       table(
-        "evaluation_reminders",
+        "review_reminders",
         %{
           "review_id" => column(:bigint),
           "recipient_employee_id" => column(:bigint),
@@ -79,7 +78,7 @@ defmodule Bilimbi.People.Training.EvaluationContract do
         },
         %{"people_training_evaluation_reminder_once" => index(~w(review_id))},
         %{
-          "people_training_evaluation_reminders_review_id_scope" =>
+          "people_training_review_reminders_review_id_scope" =>
             fk("review_id", "evaluation_reviews")
         }
       ),

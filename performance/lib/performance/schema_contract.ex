@@ -171,9 +171,9 @@ defmodule Bilimbi.People.Performance.SchemaContract do
         }
       },
       %{
-        name: "people_performance_observations",
+        name: "people_performance_evidence",
         columns: %{
-          "id" => column(:bigint, false, {:sequence, "people_performance_observations_id_seq"}),
+          "id" => column(:bigint, false, {:sequence, "people_performance_evidence_id_seq"}),
           "tenant_id" => column(:bigint, false),
           "company_id" => column(:bigint, false),
           "actor_user_id" => column(:bigint, false),
@@ -189,38 +189,37 @@ defmodule Bilimbi.People.Performance.SchemaContract do
           "updated_at" => column({:timestamp, 0}, false)
         },
         indexes: %{
-          "people_performance_observations_pkey" => index(["id"], true),
-          "people_performance_observations_scope_unique" =>
+          "people_performance_evidence_pkey" => index(["id"], true),
+          "people_performance_evidence_scope_unique" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_performance_observations_scope_idx" =>
-            index(["tenant_id", "company_id"], false),
-          "people_performance_observations_supersedes_unique" => index(["supersedes_id"], true)
+          "people_performance_evidence_scope_idx" => index(["tenant_id", "company_id"], false),
+          "people_performance_evidence_supersedes_unique" => index(["supersedes_id"], true)
         },
         foreign_keys: %{
-          "people_performance_observations_supersedes_id_scope_fk" => %{
+          "people_performance_evidence_supersedes_id_scope_fk" => %{
             columns: ["supersedes_id", "tenant_id", "company_id"],
-            references: {"people_performance_observations", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_evidence", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           }
         },
         checks: %{
-          "people_performance_observations_content" => %{
+          "people_performance_evidence_content" => %{
             expression:
               "(((length(btrim(evidence)) > 0) AND (length(btrim(source_reference)) > 0) AND (length(btrim(source_version)) > 0))"
           },
-          "people_performance_observations_correction" => %{
+          "people_performance_evidence_correction" => %{
             expression:
               "((((supersedes_id IS NULL) AND (change_reason IS NULL)) OR ((supersedes_id IS NOT NULL) AND (COALESCE(length(btrim(change_reason)), 0) > 0)))"
           },
-          "people_performance_observations_dates" => %{
+          "people_performance_evidence_dates" => %{
             expression: "((window_end >= window_start)"
           }
         }
       },
       %{
-        name: "people_performance_reviews",
+        name: "people_performance_appraisals",
         columns: %{
-          "id" => column(:bigint, false, {:sequence, "people_performance_reviews_id_seq"}),
+          "id" => column(:bigint, false, {:sequence, "people_performance_appraisals_id_seq"}),
           "tenant_id" => column(:bigint, false),
           "company_id" => column(:bigint, false),
           "actor_user_id" => column(:bigint, false),
@@ -241,46 +240,46 @@ defmodule Bilimbi.People.Performance.SchemaContract do
           "updated_at" => column({:timestamp, 0}, false)
         },
         indexes: %{
-          "people_performance_reviews_pkey" => index(["id"], true),
-          "people_performance_reviews_scope_unique" =>
+          "people_performance_appraisals_pkey" => index(["id"], true),
+          "people_performance_appraisals_scope_unique" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_performance_reviews_scope_idx" => index(["tenant_id", "company_id"], false),
-          "people_performance_reviews_supersedes_unique" => index(["supersedes_id"], true)
+          "people_performance_appraisals_scope_idx" => index(["tenant_id", "company_id"], false),
+          "people_performance_appraisals_supersedes_unique" => index(["supersedes_id"], true)
         },
         foreign_keys: %{
-          "people_performance_reviews_supersedes_id_scope_fk" => %{
+          "people_performance_appraisals_supersedes_id_scope_fk" => %{
             columns: ["supersedes_id", "tenant_id", "company_id"],
-            references: {"people_performance_reviews", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_appraisals", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           },
-          "people_performance_reviews_description_id_scope_fk" => %{
+          "people_performance_appraisals_description_id_scope_fk" => %{
             columns: ["description_id", "tenant_id", "company_id"],
             references: {"people_performance_descriptions", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           }
         },
         checks: %{
-          "people_performance_reviews_content" => %{
+          "people_performance_appraisals_content" => %{
             expression: "(((length(btrim(outcome)) > 0) AND (length(btrim(rationale)) > 0))"
           },
-          "people_performance_reviews_correction" => %{
+          "people_performance_appraisals_correction" => %{
             expression:
               "((((supersedes_id IS NULL) AND (version = 1) AND (change_reason IS NULL)) OR ((supersedes_id IS NOT NULL) AND (version > 1) AND (COALESCE(length(btrim(change_reason)), 0) > 0)))"
           },
-          "people_performance_reviews_dates" => %{
+          "people_performance_appraisals_dates" => %{
             expression: "(((period_end >= period_start) AND ((cutoff_at)::date >= period_end))"
           },
-          "people_performance_reviews_workflow" => %{
+          "people_performance_appraisals_workflow" => %{
             expression:
               "((((status = 'draft'::text) AND (released_at IS NULL) AND (released_by_user_id IS NULL)) OR ((status = 'released'::text) AND (released_at IS NOT NULL) AND (released_by_user_id IS NOT NULL) AND (released_by_user_id <> actor_user_id)))"
           }
         }
       },
       %{
-        name: "people_performance_review_observations",
+        name: "people_performance_review_evidence",
         columns: %{
           "id" =>
-            column(:bigint, false, {:sequence, "people_performance_review_observations_id_seq"}),
+            column(:bigint, false, {:sequence, "people_performance_review_evidence_id_seq"}),
           "tenant_id" => column(:bigint, false),
           "company_id" => column(:bigint, false),
           "actor_user_id" => column(:bigint, false),
@@ -290,23 +289,23 @@ defmodule Bilimbi.People.Performance.SchemaContract do
           "updated_at" => column({:timestamp, 0}, false)
         },
         indexes: %{
-          "people_performance_review_observations_pkey" => index(["id"], true),
-          "people_performance_review_observations_scope_unique" =>
+          "people_performance_review_evidence_pkey" => index(["id"], true),
+          "people_performance_review_evidence_scope_unique" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_performance_review_observations_scope_idx" =>
+          "people_performance_review_evidence_scope_idx" =>
             index(["tenant_id", "company_id"], false),
-          "people_performance_review_observations_identity_unique" =>
+          "people_performance_review_evidence_identity_unique" =>
             index(["review_id", "observation_id"], true)
         },
         foreign_keys: %{
-          "people_performance_review_observations_review_id_scope_fk" => %{
+          "people_performance_review_evidence_review_id_scope_fk" => %{
             columns: ["review_id", "tenant_id", "company_id"],
-            references: {"people_performance_reviews", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_appraisals", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           },
-          "people_performance_review_observations_observation_id_scope_fk" => %{
+          "people_performance_review_evidence_observation_id_scope_fk" => %{
             columns: ["observation_id", "tenant_id", "company_id"],
-            references: {"people_performance_observations", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_evidence", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           }
         },
@@ -336,7 +335,7 @@ defmodule Bilimbi.People.Performance.SchemaContract do
         foreign_keys: %{
           "people_performance_review_targets_review_id_scope_fk" => %{
             columns: ["review_id", "tenant_id", "company_id"],
-            references: {"people_performance_reviews", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_appraisals", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           },
           "people_performance_review_targets_target_id_scope_fk" => %{
@@ -371,7 +370,7 @@ defmodule Bilimbi.People.Performance.SchemaContract do
         foreign_keys: %{
           "people_performance_responses_review_id_scope_fk" => %{
             columns: ["review_id", "tenant_id", "company_id"],
-            references: {"people_performance_reviews", ["id", "tenant_id", "company_id"]},
+            references: {"people_performance_appraisals", ["id", "tenant_id", "company_id"]},
             on_delete: :restrict
           }
         },

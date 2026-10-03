@@ -65,7 +65,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
     )
 
     fk(:evaluation_reviews, :policy_id, :evaluation_policies)
-    fk(:evaluation_reviews, :fact_id, :participation_facts)
+    fk(:evaluation_reviews, :fact_id, :attendance_facts)
 
     create table(:people_training_evaluation_answers) do
       common()
@@ -89,7 +89,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
       )
     )
 
-    create table(:people_training_evaluation_reminders) do
+    create table(:people_training_review_reminders) do
       common()
       add(:review_id, :bigint, null: false)
       add(:recipient_employee_id, :bigint, null: false)
@@ -98,12 +98,12 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
     end
 
     create(
-      unique_index(:people_training_evaluation_reminders, [:review_id],
+      unique_index(:people_training_review_reminders, [:review_id],
         name: :people_training_evaluation_reminder_once
       )
     )
 
-    fk(:evaluation_reminders, :review_id, :evaluation_reviews)
+    fk(:review_reminders, :review_id, :evaluation_reviews)
 
     create table(:people_training_effectiveness_summaries) do
       common()
@@ -159,17 +159,17 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
     execute(
       """
       CREATE FUNCTION people_training_evaluation_review_guard() RETURNS trigger LANGUAGE plpgsql AS $$
-      DECLARE fact people_training_participation_facts; policy people_training_evaluation_policies;
-        session people_training_sessions; completed date; offset_days integer;
+      DECLARE fact people_training_attendance_facts; policy people_training_evaluation_policies;
+        session people_training_session_runs; completed date; offset_days integer;
       BEGIN
-        SELECT * INTO fact FROM people_training_participation_facts WHERE id = NEW.fact_id;
-        SELECT * INTO session FROM people_training_sessions WHERE id = fact.session_id FOR UPDATE;
+        SELECT * INTO fact FROM people_training_attendance_facts WHERE id = NEW.fact_id;
+        SELECT * INTO session FROM people_training_session_runs WHERE id = fact.session_id FOR UPDATE;
         SELECT * INTO policy FROM people_training_evaluation_policies WHERE id = NEW.policy_id;
         completed := (session.ends_at AT TIME ZONE 'UTC' AT TIME ZONE session.time_zone)::date;
         offset_days := CASE WHEN NEW.kind = 'evaluation' THEN policy.evaluation_days ELSE NEW.checkpoint_days END;
         IF fact.status IS DISTINCT FROM 'confirmed' OR completed NOT BETWEEN policy.effective_from AND policy.effective_to
           OR NEW.due_on <> completed + offset_days OR (NEW.kind = 'effectiveness' AND NOT (policy.checkpoints->'days') @> to_jsonb(ARRAY[NEW.checkpoint_days]))
-          OR EXISTS (SELECT 1 FROM people_training_evaluation_reviews r JOIN people_training_participation_facts f ON f.id = r.fact_id
+          OR EXISTS (SELECT 1 FROM people_training_evaluation_reviews r JOIN people_training_attendance_facts f ON f.id = r.fact_id
             WHERE f.session_id = fact.session_id AND f.employee_id = fact.employee_id AND r.kind = NEW.kind AND r.checkpoint_days = NEW.checkpoint_days) THEN
           RAISE EXCEPTION 'Invalid or duplicate review obligation' USING ERRCODE = '23514';
         END IF;
@@ -270,7 +270,7 @@ defmodule Bilimbi.People.Training.Migrations.CreateEvaluation do
     )
 
     for suffix <-
-          ~w(evaluation_policies evaluation_reviews evaluation_answers evaluation_reminders effectiveness_summaries) do
+          ~w(evaluation_policies evaluation_reviews evaluation_answers review_reminders effectiveness_summaries) do
       execute(
         "CREATE TRIGGER people_training_#{suffix}_immutable BEFORE UPDATE OR DELETE ON people_training_#{suffix} FOR EACH ROW EXECUTE FUNCTION people_training_evaluation_immutable()",
         "DROP TRIGGER people_training_#{suffix}_immutable ON people_training_#{suffix}"
