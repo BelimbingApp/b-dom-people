@@ -7,6 +7,7 @@ defmodule Bilimbi.People.Skills.Access do
   alias Bilimbi.Base.Authz.Actor
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
+  alias Bilimbi.Base.Tenancy.Authentication
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.User
@@ -53,7 +54,8 @@ defmodule Bilimbi.People.Skills.Access do
 
   @doc "Authorizes a login actor for one company and returns the live workforce company."
   def authorize(%Actor{type: :user} = actor, company_id, capability) do
-    with {:ok, _company} <- Company.authorize_company_target(actor.scope, company_id, capability),
+    with {:ok, _company} <-
+           Company.authorize_company_target(sealed_scope(actor), company_id, capability),
          do: current_company(actor.scope, company_id)
   end
 
@@ -68,9 +70,25 @@ defmodule Bilimbi.People.Skills.Access do
   end
 
   def allowed?(%Actor{type: :user} = actor, company_id, capability),
-    do: match?({:ok, _}, Company.authorize_company_target(actor.scope, company_id, capability))
+    do:
+      match?(
+        {:ok, _},
+        Company.authorize_company_target(sealed_scope(actor), company_id, capability)
+      )
 
   def allowed?(_actor, _company_id, _capability), do: false
+
+  # The company scope clause reads the user the authentication edge sealed
+  # onto the scope. Callers that name a user on a system scope have not
+  # sealed that user; seal a copy at the actor's own company so the check
+  # is still theirs. A scope already sealed as that user is left as it is.
+  defp sealed_scope(%Actor{id: id, company_id: company_id, scope: scope}) do
+    case Authz.scope_actor(scope) do
+      {:ok, %Actor{id: ^id}} -> scope
+      {:error, :no_authenticated_actor} -> Authentication.sign_in(scope, id, company_id)
+      {:ok, %Actor{}} -> scope
+    end
+  end
 
   @doc "The employee linked to a user actor signed in to this company, whatever their status."
   def linked_employee_id(scope, company_id, %Actor{type: :user, company_id: company_id, id: id}) do
