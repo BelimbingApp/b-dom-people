@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Organisation do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Organisation.{Position, PositionAssignment, PositionVersion}
+  alias Bilimbi.People.Organisation.PositionPaging
   alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Position, as: WorkforcePosition
   alias Bilimbi.People.Workforce.ReadResult
@@ -109,12 +110,17 @@ defmodule Bilimbi.People.Organisation do
     end
   end
 
-  @doc "Returns one bounded page of positions as of a day, including vacancies."
+  @doc """
+  Returns one bounded page of positions as of a day, including vacancies.
+
+  Without `cursor:` returns the existing offset page list. `cursor: nil` starts
+  a keyset scan returning `%{positions: list, next_cursor: cursor, high_water_id: id}`.
+  Resume using `cursor:` with the same company, scope and date.
+  """
   def positions(%Scope{} = scope, company_id, as_of \\ Date.utc_today(), options \\ []) do
     with {:ok, _company} <- Workforce.company(scope, company_id),
          :ok <- validate_date(as_of),
-         {:ok, page, size} <- page_options(options),
-         rows = page_rows(company_id, page, size),
+         {:ok, rows, paging} <- position_page(scope, company_id, as_of, options),
          ids = Enum.map(rows, & &1.id),
          {placements, truncated_at_id} = effective_assignments(ids, as_of),
          substantive = substantive_assignments(ids, as_of),
@@ -132,28 +138,52 @@ defmodule Bilimbi.People.Organisation do
             into: MapSet.new(),
             do: assignment.position_id
 
-      {:ok,
-       Enum.map(rows, fn position ->
-         version = Map.get(versions, position.id)
-         holders = Map.get(assignments, position.id, [])
+      positions =
+        Enum.map(rows, fn position ->
+          version = Map.get(versions, position.id)
+          holders = Map.get(assignments, position.id, [])
 
-         %WorkforcePosition{
-           reference: reference(:position, position.id),
-           company_reference: reference(:company, company_id),
-           platform_company_id: company_id,
-           workforce_company_id: company_id,
-           code: position.code,
-           parent_reference: position.parent_id && reference(:position, position.parent_id),
-           title: version && version.title,
-           version: version && version.version,
-           assignments: holders,
-           assignments_incomplete?:
-             not is_nil(truncated_at_id) and position.id >= truncated_at_id,
-           vacant?: not MapSet.member?(occupied, position.id)
-         }
-       end)}
+          %WorkforcePosition{
+            reference: reference(:position, position.id),
+            company_reference: reference(:company, company_id),
+            platform_company_id: company_id,
+            workforce_company_id: company_id,
+            code: position.code,
+            parent_reference: position.parent_id && reference(:position, position.parent_id),
+            title: version && version.title,
+            version: version && version.version,
+            assignments: holders,
+            assignments_incomplete?:
+              not is_nil(truncated_at_id) and position.id >= truncated_at_id,
+            vacant?: not MapSet.member?(occupied, position.id)
+          }
+        end)
+
+      {:ok, if(paging, do: Map.put(paging, :positions, positions), else: positions)}
     end
   end
+
+  defp position_page(scope, company_id, as_of, options) when is_list(options) do
+    if Keyword.keyword?(options) do
+      if Keyword.has_key?(options, :cursor) do
+        with false <- Keyword.has_key?(options, :page),
+             {:ok, _page, size} <- page_options(options) do
+          PositionPaging.read(scope, company_id, as_of, size, options[:cursor])
+        else
+          _ -> {:error, :invalid_options}
+        end
+      else
+        with {:ok, page, size} <- page_options(options) do
+          {:ok, page_rows(company_id, page, size), nil}
+        end
+      end
+    else
+      {:error, :invalid_options}
+    end
+  end
+
+  defp position_page(_scope, _company_id, _as_of, _options),
+    do: {:error, :invalid_options}
 
   @doc "Counts positions for a validated company so an explorer can page them."
   def count_positions(%Scope{} = scope, company_id) do
@@ -374,8 +404,6 @@ defmodule Bilimbi.People.Organisation do
        do: {:ok, page, size},
        else: {:error, :invalid_options}
   end
-
-  defp page_options(_), do: {:error, :invalid_options}
 
   defp reference(type, id),
     do: %Reference{source_id: Workforce.source_id(), type: type, stable_id: Integer.to_string(id)}

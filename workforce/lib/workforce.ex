@@ -47,7 +47,15 @@ defmodule Bilimbi.People.Workforce do
     :ok
   end
 
-  @doc "Reads a bounded page of native positions when Organisation is mounted."
+  @doc """
+  Reads a bounded page of native positions when Organisation is mounted.
+
+  Pass `cursor: nil` to start a high-water ID scan. The read value contains
+  `positions`, `next_cursor`, and `high_water_id`; resume with `cursor: next_cursor`
+  until it is nil. Only reconcile absent IDs at or below the watermark after
+  completing every page. See `workforce/docs/README.md` for mutation semantics.
+  Without `cursor:`, existing list-valued offset pages remain supported.
+  """
   def positions(%Scope{} = scope, platform_company_id, as_of \\ Date.utc_today(), options \\ []) do
     with {:ok, _company} <- live_company(scope, platform_company_id) do
       case :persistent_term.get(@position_reader_key, nil) do

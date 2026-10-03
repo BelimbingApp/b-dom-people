@@ -23,6 +23,35 @@ registers that public reader during application startup; an absent owner returns
 remain distinct from Connector projections.
 `positions_available?/0` returns true only while a position reader is registered.
 
+For a full position scan, call `positions(scope, company_id, as_of,
+cursor: nil, page_size: 50)`. The current `ReadResult.value` is a map with
+`positions`, `next_cursor`, and `high_water_id`. Pass each non-nil
+`next_cursor` back as `cursor:` with the same scope, company and date; stop
+when `next_cursor` is nil. Page size defaults to 50 and accepts integers from
+1 through 100, including a different size on subsequent pages. Cursors are
+opaque URL-safe strings; malformed cursors or a different tenant, company or
+date return `{:error, :invalid_cursor}`. Cursors do not grant access: every
+page rechecks the live company boundary. Mixing `cursor:` and `page:` returns
+`{:error, :invalid_options}`.
+
+The first cursor page fixes the company's highest position ID (zero when
+empty). Every page reads IDs strictly above the last returned ID and at or
+below this high-water mark, ordered by the unique immutable ID. The same
+`high_water_id` is returned on every page, even an empty final page after
+deletions. Inserts above the mark wait for the next full scan; deleting earlier
+rows never shifts later pages, and unread deleted rows are absent. Surviving
+positions are never skipped or duplicated. This is an ID boundary, not a
+historical snapshot: projections are read at each page, and a transaction
+that allocated an ID below the mark but commits later can become visible.
+
+Only after successfully reading every page with current freshness should a
+consumer deactivate missing native positions, and only those whose native
+position IDs are **at or below `high_water_id`**. Preserve positions above it;
+never reconcile absence from an incomplete, unavailable or failed scan.
+Use the same explicit `as_of` throughout a scan, including one spanning
+midnight. Existing calls without `cursor:` retain their list-valued result
+and `page:` / `page_size:` offset behavior for the explorer.
+
 Company and employee reads use Core public APIs. Only active companies and
 non-agent employees in the company's working statuses are exposed, both as
 employees and as supervisor references. `employees_by_ids/3` applies the same
