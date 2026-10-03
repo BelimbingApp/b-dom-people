@@ -75,7 +75,9 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
       assert profile.status == "published"
 
       {:ok, welding} =
-        Skills.update_skill(Fixtures.hr_scope(ctx), 73, ctx.welding.id, %{reassessment_months: nil})
+        Skills.update_skill(Fixtures.hr_scope(ctx), 73, ctx.welding.id, %{
+          reassessment_months: nil
+        })
 
       assert welding.reassessment_months == nil
 
@@ -542,7 +544,9 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
           requires_provider: true
         })
 
-      {:ok, plain} = Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
+      {:ok, plain} =
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
+
       %{type: type, plain: plain}
     end
 
@@ -851,7 +855,9 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
     test "overdue actions tell the owner and a coverage gap tells company-wide holders", %{
       ctx: ctx
     } do
-      {:ok, plain} = Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
+      {:ok, plain} =
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
+
       assessed = finalize(ctx, :one, 0)
 
       {:ok, action} =
@@ -926,10 +932,18 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
   describe "policy" do
     test "values are bounded whole numbers stored per company", %{ctx: ctx} do
       assert {:ok, %{reassessment_due_days: 30, backup_minimum: 2}} = Skills.policy(ctx.scope, 73)
-      assert {:ok, %{backup_minimum: 5}} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 5})
+
+      assert {:ok, %{backup_minimum: 5}} =
+               Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 5})
+
       assert {:ok, %{backup_minimum: 2}} = Skills.policy(ctx.scope, 74)
-      assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 0})
-      assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{unknown: 1})
+
+      assert {:error, :invalid_policy} =
+               Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 0})
+
+      assert {:error, :invalid_policy} =
+               Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{unknown: 1})
+
       assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{})
 
       assert {:error, :invalid_policy} =
@@ -940,10 +954,16 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
       assert {:ok, []} = Skills.list_action_types(ctx.scope, 73)
 
       assert {:ok, type} =
-               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Coaching"})
+               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{
+                 code: "coaching",
+                 name: "Coaching"
+               })
 
       assert {:error, %Ecto.Changeset{}} =
-               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Again"})
+               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{
+                 code: "coaching",
+                 name: "Again"
+               })
 
       assert {:ok, %{active: false}} =
                Skills.set_action_type_active(Fixtures.hr_scope(ctx), 73, type.id, false)

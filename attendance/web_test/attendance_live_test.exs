@@ -240,7 +240,10 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       employee: employee
     } do
       {:ok, _} =
-        Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true, location_required: true})
+        Attendance.put_rules(operator(scope), 73, %{
+          self_clock_enabled: true,
+          location_required: true
+        })
 
       {:ok, location} =
         Attendance.create_clocking_location(operator(scope), 73, %{
@@ -280,7 +283,10 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       employee: employee
     } do
       {:ok, _} =
-        Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true, location_required: true})
+        Attendance.put_rules(operator(scope), 73, %{
+          self_clock_enabled: true,
+          location_required: true
+        })
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
       render_click(view, "clock_location_error", %{"reason" => "permission_denied"})

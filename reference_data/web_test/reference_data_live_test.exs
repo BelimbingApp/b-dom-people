@@ -109,7 +109,11 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
       revoke!("people.references.manage")
 
       refute render_hook(view, "create_entry", %{
-               "entry" => %{"kind" => "category", "code" => "audit", "label" => "After revocation"}
+               "entry" => %{
+                 "kind" => "category",
+                 "code" => "audit",
+                 "label" => "After revocation"
+               }
              }) =~ "Reference added."
 
       assert {:ok, []} = Bilimbi.People.ReferenceData.list_entries(scope, 73)
