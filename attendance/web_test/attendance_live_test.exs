@@ -339,7 +339,11 @@ defmodule BilimbiWeb.AttendanceLiveTest do
                )
 
       assert {:error, {:redirect, %{to: "/dashboard"}}} =
-               render_click(view, "clock", %{"type" => "in", "latitude" => 1.5, "longitude" => 103.7})
+               render_click(view, "clock", %{
+                 "type" => "in",
+                 "latitude" => 1.5,
+                 "longitude" => 103.7
+               })
 
       assert {:ok, []} = Attendance.list_days(scope, 73, employee.id)
     end

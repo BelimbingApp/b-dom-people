@@ -99,10 +99,8 @@ defmodule Bilimbi.People.Skills.Web.PolicyLive do
   defp forbidden(socket),
     do: {:noreply, put_flash(socket, :error, "You cannot change this company's skills policy.")}
 
-  # The `can_*?` assigns only decide which controls render; the facade
-  # authorizes each write for the scope's actor when it runs, so a grant
-  # revoked while the page is open refuses the next event and the page reloads
-  # its controls.
+  # The `can_*?` assigns only decide which controls render. The facade
+  # authorizes each write for the scope's actor when it runs.
   defp act(socket, capability, success, fun) do
     actor = socket.assigns.current_scope.actor
 

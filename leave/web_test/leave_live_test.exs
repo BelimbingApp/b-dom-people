@@ -76,7 +76,9 @@ defmodule BilimbiWeb.LeaveLiveTest do
 
       assert {:error, {:redirect, %{to: "/dashboard"}}} =
                type_page
-               |> form("#leave-type-form", type: %{code: "annual", name: "Annual leave", unit: "day"})
+               |> form("#leave-type-form",
+                 type: %{code: "annual", name: "Annual leave", unit: "day"}
+               )
                |> render_submit()
 
       assert {:ok, []} = Leave.list_types(scope, 73)
@@ -96,7 +98,11 @@ defmodule BilimbiWeb.LeaveLiveTest do
       assert {:error, {:redirect, %{to: "/dashboard"}}} =
                my
                |> form("#leave-request-form",
-                 request: %{leave_type_id: type.id, starts_on: Date.to_iso8601(today), day_part: "am"}
+                 request: %{
+                   leave_type_id: type.id,
+                   starts_on: Date.to_iso8601(today),
+                   day_part: "am"
+                 }
                )
                |> render_submit()
 

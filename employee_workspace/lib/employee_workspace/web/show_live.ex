@@ -168,8 +168,8 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
     )
   end
 
-  # Every read re-authorizes `people.employees.view`; a refusal shows the
-  # unavailable state rather than facts fetched before the revocation.
+  # Every read re-authorizes `people.employees.view`. A refusal clears facts
+  # already assigned on this socket.
   defp load_facts(socket) do
     scope = scope(socket)
     company_id = company_id(socket)

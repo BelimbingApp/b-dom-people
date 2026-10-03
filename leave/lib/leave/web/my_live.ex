@@ -3,8 +3,8 @@ defmodule Bilimbi.People.Leave.Web.MyLive do
   Self leave balances, requests and cancellation for the signed-in actor.
 
   The facade resolves the actor's current linked employee and self-service
-  grant on every read and write; nothing about the employee is kept here, so
-  a removed link or revoked grant takes effect on the next event.
+  grant on every read and write; nothing about the employee is kept here. A
+  removed link shows the unavailable state on the next event.
   """
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Leave

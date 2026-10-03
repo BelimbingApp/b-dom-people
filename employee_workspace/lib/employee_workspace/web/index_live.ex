@@ -3,8 +3,7 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.IndexLive do
   Company-scoped People employee workbench.
 
   Every reload reads the directory through the facade, which requires
-  `people.employees.view` now, so a filter after the grant is withdrawn shows
-  the unavailable state instead of fresh employee facts.
+  `people.employees.view` now.
   """
   use Bilimbi.Base.UI, :live_view
 

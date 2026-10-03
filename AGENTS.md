@@ -51,6 +51,7 @@ composition-lock commands.
   the actor from the scope it was handed. A route capability proven at mount
   or a `can_*?` assign is not authority: a grant revoked, or an account
   unlinked from its employee, while a page stays connected must refuse the
-  next event. Do not take an actor or actor ID as a facade argument, and do
+  next event. A revoked route capability redirects that page to `/dashboard`.
+  Do not take an actor or actor ID as a facade argument, and do
   not resolve the signed-in employee once at mount and keep acting on it.
   Tests sign in through `workforce/test/support/authorization_fixtures.ex`.

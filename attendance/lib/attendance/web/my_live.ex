@@ -1,9 +1,8 @@
 defmodule Bilimbi.People.Attendance.Web.MyLive do
   @moduledoc """
   Self attendance. The signed-in account's linked employee is resolved by the
-  facade on every read and write, never cached here: an unlinked or relinked
-  account, or a revoked self-view grant, shows the unavailable state on the
-  next event.
+  facade on every read and write, never cached here. An unlinked or relinked
+  account shows the unavailable state on the next event.
   """
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Attendance

@@ -9,8 +9,8 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
   The page never acts on an employee it resolved earlier: every submit,
   withdrawal and reload asks the Claims facade, which authorizes the
   self-service grant and resolves the account's current employee link again.
-  A grant revoked or a link removed while the page stays open refuses the next
-  event and clears the private claims from the page.
+  A link removed while the page stays open refuses the next event and clears
+  the private claims from the page.
   """
   use Bilimbi.Base.UI, :live_view
 
@@ -102,8 +102,8 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
   defp unavailable, do: "You are not a working employee of this company."
 
   # Resolves the actor's own employee through the facade on every load, so a
-  # removed link or revoked grant empties the page instead of showing or
-  # acting on a former employee's claims.
+  # removed link empties the page instead of showing or acting on a former
+  # employee's claims.
   defp load(socket) do
     scope = scope(socket)
     company_id = socket.assigns.company_id
