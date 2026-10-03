@@ -12,7 +12,7 @@ defmodule Bilimbi.People.Organisation.PositionPaging do
   def read(scope, company_id, as_of, size, cursor) do
     boundary = {Scope.tenant_id(scope), to_string(company_id), Date.to_iso8601(as_of)}
 
-    with {:ok, last_id, high_water_id} <- bounds(cursor, boundary, company_id) do
+    with {:ok, last_id, high_water_id} <- bounds(cursor, boundary) do
       rows =
         from(p in Position,
           where: p.company_id == ^company_id and p.id > ^last_id and p.id <= ^high_water_id,
@@ -31,15 +31,16 @@ defmodule Bilimbi.People.Organisation.PositionPaging do
     end
   end
 
-  defp bounds(nil, _boundary, company_id) do
-    high_water_id =
-      from(p in Position, where: p.company_id == ^company_id, select: max(p.id))
-      |> Repo.one()
+  defp bounds(nil, _boundary) do
+    %{rows: [[high_water_id]]} =
+      Repo.query!(
+        "SELECT coalesce(pg_sequence_last_value(pg_get_serial_sequence('people_positions', 'id')::regclass), 0)"
+      )
 
-    {:ok, 0, high_water_id || 0}
+    {:ok, 0, high_water_id}
   end
 
-  defp bounds(cursor, {tenant_id, company_id, day}, _company_id)
+  defp bounds(cursor, {tenant_id, company_id, day})
        when is_binary(cursor) and byte_size(cursor) <= 256 do
     with {:ok, payload} <- Base.url_decode64(cursor, padding: false),
          ["1", tenant, ^company_id, ^day, last, high] <- String.split(payload, ":"),
@@ -54,7 +55,7 @@ defmodule Bilimbi.People.Organisation.PositionPaging do
     end
   end
 
-  defp bounds(_cursor, _boundary, _company_id), do: {:error, :invalid_cursor}
+  defp bounds(_cursor, _boundary), do: {:error, :invalid_cursor}
 
   defp encode({tenant_id, company_id, day}, last_id, high_water_id) do
     ["1", tenant_id, company_id, day, last_id, high_water_id]

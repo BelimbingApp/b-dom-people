@@ -406,10 +406,9 @@ defmodule Bilimbi.People.OrganisationTest do
         position
       end
 
-    # Another company's higher ID must not widen this scan's reconciliation boundary.
-    {:ok, _foreign} = Organisation.create_position(scope, 74, %{code: "PAGE-OTHER"})
+    {:ok, foreign} = Organisation.create_position(scope, 74, %{code: "PAGE-OTHER"})
     day = ~D[2026-10-01]
-    high_water_id = List.last(positions).id
+    high_water_id = foreign.id
 
     assert {:ok, %ReadResult{freshness: :current, value: first}} =
              Workforce.positions(scope, 73, day, cursor: nil, page_size: 2)
@@ -417,6 +416,7 @@ defmodule Bilimbi.People.OrganisationTest do
     assert Enum.map(first.positions, & &1.reference.stable_id) ==
              Enum.map(Enum.take(positions, 2), &Integer.to_string(&1.id))
 
+    refute Integer.to_string(foreign.id) in Enum.map(first.positions, & &1.reference.stable_id)
     assert first.high_water_id == high_water_id
     assert is_binary(first.next_cursor)
 
@@ -543,8 +543,10 @@ defmodule Bilimbi.People.OrganisationTest do
   test "empty and deleted final cursor pages retain their high-water mark", %{scope: scope} do
     day = ~D[2026-10-01]
 
-    assert {:ok, %ReadResult{value: %{positions: [], next_cursor: nil, high_water_id: 0}}} =
+    assert {:ok, %ReadResult{value: %{positions: [], next_cursor: nil, high_water_id: empty}}} =
              Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert is_integer(empty) and empty >= 0
 
     {:ok, _first} = Organisation.create_position(scope, 73, %{code: "TAIL-1"})
     {:ok, last} = Organisation.create_position(scope, 73, %{code: "TAIL-2"})
@@ -558,6 +560,29 @@ defmodule Bilimbi.People.OrganisationTest do
              Workforce.positions(scope, 73, day, cursor: page.next_cursor)
 
     assert high == last.id
+  end
+
+  test "deleting the highest position keeps it absent at or below the mark", %{scope: scope} do
+    day = ~D[2026-10-01]
+    {:ok, first} = Organisation.create_position(scope, 73, %{code: "TOP-1"})
+    {:ok, top} = Organisation.create_position(scope, 73, %{code: "TOP-2"})
+
+    assert {:ok, %ReadResult{value: before}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert before.high_water_id == top.id
+
+    Repo.delete!(top)
+
+    assert {:ok, %ReadResult{value: after_delete}} =
+             Workforce.positions(scope, 73, day, cursor: nil)
+
+    assert after_delete.next_cursor == nil
+    assert after_delete.high_water_id == top.id
+
+    assert Enum.map(after_delete.positions, & &1.reference.stable_id) == [
+             Integer.to_string(first.id)
+           ]
   end
 
   test "many acting placements stay bounded without hiding a substantive holder", %{scope: scope} do

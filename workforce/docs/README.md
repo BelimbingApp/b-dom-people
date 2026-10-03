@@ -34,12 +34,15 @@ date return `{:error, :invalid_cursor}`. Cursors do not grant access: every
 page rechecks the live company boundary. Mixing `cursor:` and `page:` returns
 `{:error, :invalid_options}`.
 
-The first cursor page fixes the company's highest position ID (zero when
-empty). Every page reads IDs strictly above the last returned ID and at or
-below this high-water mark, ordered by the unique immutable ID. The same
-`high_water_id` is returned on every page, even an empty final page after
-deletions. Inserts above the mark wait for the next full scan; deleting earlier
-rows never shifts later pages, and unread deleted rows are absent. Surviving
+The first cursor page fixes the high-water mark: the last position ID issued
+by the positions ID sequence (zero before any position exists). It is
+monotonic, so deleting the highest-ID position never lowers it, and it may
+exceed the company's own highest ID. Every page reads the company's IDs
+strictly above the last returned ID and at or below this mark, ordered by the
+unique immutable ID. The same `high_water_id` is returned on every page, even
+an empty final page after deletions. Inserts above the mark wait for the next
+full scan; deleting earlier rows never shifts later pages, and unread deleted
+rows, including the highest-ID one, are absent at or below the mark. Surviving
 positions are never skipped or duplicated. This is an ID boundary, not a
 historical snapshot: projections are read at each page, and a transaction
 that allocated an ID below the mark but commits later can become visible.
