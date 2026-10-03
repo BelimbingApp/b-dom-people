@@ -77,7 +77,7 @@ defmodule Bilimbi.People.Training.ParticipationMigrationTest do
     event = insert!(repo, "events", %{course_id: course, name: "Event A", capacity: 1})
 
     session =
-      insert!(repo, "sessions", %{
+      insert!(repo, "session_runs", %{
         event_id: event,
         name: "Session A",
         capacity: 1,
@@ -94,29 +94,29 @@ defmodule Bilimbi.People.Training.ParticipationMigrationTest do
   end
 
   test "database refuses mutation, broken scope, revision gaps and capacity overfill", c do
-    id = insert!(c.repo, "participation_facts", fact(c.session, 1, 1, "confirmed", "record-a"))
+    id = insert!(c.repo, "attendance_facts", fact(c.session, 1, 1, "confirmed", "record-a"))
 
     for sql <- [
-          "UPDATE people_training_participation_facts SET reason = 'changed' WHERE id = $1",
-          "DELETE FROM people_training_participation_facts WHERE id = $1"
+          "UPDATE people_training_attendance_facts SET reason = 'changed' WHERE id = $1",
+          "DELETE FROM people_training_attendance_facts WHERE id = $1"
         ],
         do: refused(c.repo, sql, [id])
 
     assert {:error, %Postgrex.Error{}} =
-             insert(c.repo, "participation_facts", fact(c.session, 1, 3, "absent", "gap"))
+             insert(c.repo, "attendance_facts", fact(c.session, 1, 3, "absent", "gap"))
 
     assert {:error, %Postgrex.Error{}} =
-             insert(c.repo, "participation_facts", fact(c.session, 2, 1, "confirmed", "overfill"))
+             insert(c.repo, "attendance_facts", fact(c.session, 2, 1, "confirmed", "overfill"))
 
     assert {:error, %Postgrex.Error{postgres: %{code: :foreign_key_violation}}} =
              insert(
                c.repo,
-               "participation_facts",
+               "attendance_facts",
                Map.put(fact(c.session, 3, 1, "absent", "scope"), :company_id, 74)
              )
 
-    insert!(c.repo, "participation_facts", fact(c.session, 1, 2, "absent", "correction"))
-    insert!(c.repo, "participation_facts", fact(c.session, 2, 1, "confirmed", "record-b"))
+    insert!(c.repo, "attendance_facts", fact(c.session, 1, 2, "absent", "correction"))
+    insert!(c.repo, "attendance_facts", fact(c.session, 2, 1, "confirmed", "record-b"))
 
     evidence =
       insert!(c.repo, "evidence", %{
@@ -134,7 +134,7 @@ defmodule Bilimbi.People.Training.ParticipationMigrationTest do
         Task.async(fn ->
           insert(
             c.repo,
-            "participation_facts",
+            "attendance_facts",
             fact(c.session, employee, 1, "confirmed", "concurrent-#{employee}")
           )
         end)

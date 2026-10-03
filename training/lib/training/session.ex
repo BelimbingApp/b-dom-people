@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.Session do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_training_sessions" do
+  schema "people_training_session_runs" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:actor_user_id, :integer)
@@ -35,6 +35,6 @@ defmodule Bilimbi.People.Training.Session do
     |> validate_length(:name, min: 1, max: 160)
     |> validate_number(:capacity, greater_than: 0, less_than_or_equal_to: 2_147_483_647)
     |> validate_length(:time_zone, max: 100)
-    |> check_constraint(:ends_at, name: :people_training_sessions_times)
+    |> check_constraint(:ends_at, name: :people_training_session_runs_times)
   end
 end

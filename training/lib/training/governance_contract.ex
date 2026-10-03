@@ -35,9 +35,9 @@ defmodule Bilimbi.People.Training.GovernanceContract do
         }
       },
       %{
-        name: "people_training_requests",
+        name: "people_training_needs",
         columns:
-          Map.merge(common("people_training_requests"), %{
+          Map.merge(common("people_training_needs"), %{
             "employee_id" => column(:bigint, false),
             "course_id" => column(:bigint, true),
             "need" => column(:text, false),
@@ -51,30 +51,29 @@ defmodule Bilimbi.People.Training.GovernanceContract do
             "approved_cost" => column({:numeric, 18, 4}, true)
           }),
         indexes: %{
-          "people_training_requests_pkey" => index(["id"], true),
-          "people_training_requests_id_tenant_id_company_id_index" =>
+          "people_training_needs_pkey" => index(["id"], true),
+          "people_training_needs_id_tenant_id_company_id_index" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_training_requests_tenant_id_company_id_employee_id_index" =>
+          "people_training_needs_tenant_id_company_id_employee_id_index" =>
             index(["tenant_id", "company_id", "employee_id"], false)
         },
         foreign_keys: %{
-          "people_training_requests_course_id_scope" =>
-            fk("course_id", "people_training_courses"),
-          "people_training_requests_budget_policy_id_scope" =>
+          "people_training_needs_course_id_scope" => fk("course_id", "people_training_courses"),
+          "people_training_needs_budget_policy_id_scope" =>
             fk("budget_policy_id", "people_training_budget_policies")
         },
         checks: %{
-          "people_training_requests_status" => %{
+          "people_training_needs_status" => %{
             expression:
               "status = ANY (ARRAY['draft'::text, 'pending_hod'::text, 'pending_hr'::text, 'pending_approval'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])",
             validated: true
           },
-          "people_training_requests_cost" => %{
+          "people_training_needs_cost" => %{
             expression:
               "(estimated_cost >= (0)::numeric) AND ((approved_cost IS NULL) OR (approved_cost >= (0)::numeric))",
             validated: true
           },
-          "people_training_requests_approval" => %{
+          "people_training_needs_approval" => %{
             expression:
               "((status = 'approved'::text) AND (budget_policy_id IS NOT NULL) AND (approved_cost IS NOT NULL)) OR ((status <> 'approved'::text) AND (budget_policy_id IS NULL) AND (approved_cost IS NULL))",
             validated: true
@@ -82,9 +81,9 @@ defmodule Bilimbi.People.Training.GovernanceContract do
         }
       },
       %{
-        name: "people_training_plans",
+        name: "people_training_team_plans",
         columns:
-          Map.merge(common("people_training_plans"), %{
+          Map.merge(common("people_training_team_plans"), %{
             "plan_key" => column(:text, false),
             "version" => column(:integer, false),
             "manager_employee_id" => column(:bigint, false),
@@ -96,33 +95,33 @@ defmodule Bilimbi.People.Training.GovernanceContract do
             "reason" => column(:text, false)
           }),
         indexes: %{
-          "people_training_plans_pkey" => index(["id"], true),
-          "people_training_plans_id_tenant_id_company_id_index" =>
+          "people_training_team_plans_pkey" => index(["id"], true),
+          "people_training_team_plans_id_tenant_id_company_id_index" =>
             index(["id", "tenant_id", "company_id"], true),
-          "people_training_plans_company_id_plan_key_version_index" =>
+          "people_training_team_plans_company_id_plan_key_version_index" =>
             index(["company_id", "plan_key", "version"], true)
         },
         foreign_keys: %{
-          "people_training_plans_prior_plan_id_scope" =>
-            fk("prior_plan_id", "people_training_plans")
+          "people_training_team_plans_prior_plan_id_scope" =>
+            fk("prior_plan_id", "people_training_team_plans")
         },
         checks: %{
-          "people_training_plans_status" => %{
+          "people_training_team_plans_status" => %{
             expression:
               "status = ANY (ARRAY['draft'::text, 'submitted'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text, 'superseded'::text])",
             validated: true
           },
-          "people_training_plans_dates" => %{
+          "people_training_team_plans_dates" => %{
             expression: "period_end >= period_start",
             validated: true
           },
-          "people_training_plans_version" => %{expression: "version > 0", validated: true}
+          "people_training_team_plans_version" => %{expression: "version > 0", validated: true}
         }
       },
       %{
-        name: "people_training_plan_items",
+        name: "people_training_team_plan_items",
         columns:
-          Map.merge(common("people_training_plan_items"), %{
+          Map.merge(common("people_training_team_plan_items"), %{
             "plan_id" => column(:bigint, false),
             "request_id" => column(:bigint, true),
             "need" => column(:text, false),
@@ -133,19 +132,20 @@ defmodule Bilimbi.People.Training.GovernanceContract do
             "evaluation_approach" => column(:text, false)
           }),
         indexes: %{
-          "people_training_plan_items_pkey" => index(["id"], true)
+          "people_training_team_plan_items_pkey" => index(["id"], true)
         },
         foreign_keys: %{
-          "people_training_plan_items_plan_id_scope" => fk("plan_id", "people_training_plans"),
-          "people_training_plan_items_request_id_scope" =>
-            fk("request_id", "people_training_requests")
+          "people_training_team_plan_items_plan_id_scope" =>
+            fk("plan_id", "people_training_team_plans"),
+          "people_training_team_plan_items_request_id_scope" =>
+            fk("request_id", "people_training_needs")
         },
         checks: %{}
       },
       %{
-        name: "people_training_request_decisions",
+        name: "people_training_need_decisions",
         columns:
-          Map.merge(common("people_training_request_decisions"), %{
+          Map.merge(common("people_training_need_decisions"), %{
             "request_id" => column(:bigint, false),
             "action" => column(:text, false),
             "from_status" => column(:text, false),
@@ -153,11 +153,11 @@ defmodule Bilimbi.People.Training.GovernanceContract do
             "reason" => column(:text, false)
           }),
         indexes: %{
-          "people_training_request_decisions_pkey" => index(["id"], true)
+          "people_training_need_decisions_pkey" => index(["id"], true)
         },
         foreign_keys: %{
-          "people_training_request_decisions_request_id_scope" =>
-            fk("request_id", "people_training_requests")
+          "people_training_need_decisions_request_id_scope" =>
+            fk("request_id", "people_training_needs")
         },
         checks: %{}
       },
@@ -175,7 +175,8 @@ defmodule Bilimbi.People.Training.GovernanceContract do
           "people_training_plan_decisions_pkey" => index(["id"], true)
         },
         foreign_keys: %{
-          "people_training_plan_decisions_plan_id_scope" => fk("plan_id", "people_training_plans")
+          "people_training_plan_decisions_plan_id_scope" =>
+            fk("plan_id", "people_training_team_plans")
         },
         checks: %{}
       }

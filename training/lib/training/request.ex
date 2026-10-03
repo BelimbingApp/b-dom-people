@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.Request do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_training_requests" do
+  schema "people_training_needs" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:actor_user_id, :integer)

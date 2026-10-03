@@ -133,7 +133,7 @@ defmodule Bilimbi.People.Performance.TestFixtures do
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_performance_observations (
+      CREATE TEMPORARY TABLE people_performance_evidence (
         id bigserial PRIMARY KEY,
         tenant_id bigint NOT NULL,
         company_id bigint NOT NULL,
@@ -148,12 +148,12 @@ defmodule Bilimbi.People.Performance.TestFixtures do
         change_reason text,
         inserted_at timestamp(0) NOT NULL,
         updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_performance_observations_scope_unique UNIQUE (id,tenant_id,company_id),
-        CONSTRAINT people_performance_observations_supersedes_unique UNIQUE (supersedes_id),
-        CONSTRAINT people_performance_observations_supersedes_id_scope_fk FOREIGN KEY (supersedes_id,tenant_id,company_id) REFERENCES people_performance_observations(id,tenant_id,company_id) ON DELETE RESTRICT,
-        CONSTRAINT people_performance_observations_dates CHECK (window_end >= window_start),
-        CONSTRAINT people_performance_observations_content CHECK (length(btrim(evidence)) > 0 AND length(btrim(source_reference)) > 0 AND length(btrim(source_version)) > 0),
-        CONSTRAINT people_performance_observations_correction CHECK ((supersedes_id IS NULL AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND COALESCE(length(btrim(change_reason)), 0) > 0))
+        CONSTRAINT people_performance_evidence_scope_unique UNIQUE (id,tenant_id,company_id),
+        CONSTRAINT people_performance_evidence_supersedes_unique UNIQUE (supersedes_id),
+        CONSTRAINT people_performance_evidence_supersedes_id_scope_fk FOREIGN KEY (supersedes_id,tenant_id,company_id) REFERENCES people_performance_evidence(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_evidence_dates CHECK (window_end >= window_start),
+        CONSTRAINT people_performance_evidence_content CHECK (length(btrim(evidence)) > 0 AND length(btrim(source_reference)) > 0 AND length(btrim(source_version)) > 0),
+        CONSTRAINT people_performance_evidence_correction CHECK ((supersedes_id IS NULL AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND COALESCE(length(btrim(change_reason)), 0) > 0))
       ) ON COMMIT PRESERVE ROWS
       """,
       []
@@ -161,14 +161,14 @@ defmodule Bilimbi.People.Performance.TestFixtures do
 
     SQL.query!(
       Repo,
-      "CREATE INDEX people_performance_observations_scope_idx ON people_performance_observations(tenant_id,company_id)",
+      "CREATE INDEX people_performance_evidence_scope_idx ON people_performance_evidence(tenant_id,company_id)",
       []
     )
 
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_performance_reviews (
+      CREATE TEMPORARY TABLE people_performance_appraisals (
         id bigserial PRIMARY KEY,
         tenant_id bigint NOT NULL,
         company_id bigint NOT NULL,
@@ -188,14 +188,14 @@ defmodule Bilimbi.People.Performance.TestFixtures do
         released_by_user_id bigint,
         inserted_at timestamp(0) NOT NULL,
         updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_performance_reviews_scope_unique UNIQUE (id,tenant_id,company_id),
-        CONSTRAINT people_performance_reviews_supersedes_unique UNIQUE (supersedes_id),
-        CONSTRAINT people_performance_reviews_supersedes_id_scope_fk FOREIGN KEY (supersedes_id,tenant_id,company_id) REFERENCES people_performance_reviews(id,tenant_id,company_id) ON DELETE RESTRICT,
-        CONSTRAINT people_performance_reviews_description_id_scope_fk FOREIGN KEY (description_id,tenant_id,company_id) REFERENCES people_performance_descriptions(id,tenant_id,company_id) ON DELETE RESTRICT,
-        CONSTRAINT people_performance_reviews_dates CHECK (period_end >= period_start AND cutoff_at::date >= period_end),
-        CONSTRAINT people_performance_reviews_content CHECK (length(btrim(outcome)) > 0 AND length(btrim(rationale)) > 0),
-        CONSTRAINT people_performance_reviews_workflow CHECK ((status = 'draft' AND released_at IS NULL AND released_by_user_id IS NULL) OR (status = 'released' AND released_at IS NOT NULL AND released_by_user_id IS NOT NULL AND released_by_user_id <> actor_user_id)),
-        CONSTRAINT people_performance_reviews_correction CHECK ((supersedes_id IS NULL AND version = 1 AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND version > 1 AND COALESCE(length(btrim(change_reason)), 0) > 0))
+        CONSTRAINT people_performance_appraisals_scope_unique UNIQUE (id,tenant_id,company_id),
+        CONSTRAINT people_performance_appraisals_supersedes_unique UNIQUE (supersedes_id),
+        CONSTRAINT people_performance_appraisals_supersedes_id_scope_fk FOREIGN KEY (supersedes_id,tenant_id,company_id) REFERENCES people_performance_appraisals(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_appraisals_description_id_scope_fk FOREIGN KEY (description_id,tenant_id,company_id) REFERENCES people_performance_descriptions(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_appraisals_dates CHECK (period_end >= period_start AND cutoff_at::date >= period_end),
+        CONSTRAINT people_performance_appraisals_content CHECK (length(btrim(outcome)) > 0 AND length(btrim(rationale)) > 0),
+        CONSTRAINT people_performance_appraisals_workflow CHECK ((status = 'draft' AND released_at IS NULL AND released_by_user_id IS NULL) OR (status = 'released' AND released_at IS NOT NULL AND released_by_user_id IS NOT NULL AND released_by_user_id <> actor_user_id)),
+        CONSTRAINT people_performance_appraisals_correction CHECK ((supersedes_id IS NULL AND version = 1 AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND version > 1 AND COALESCE(length(btrim(change_reason)), 0) > 0))
       ) ON COMMIT PRESERVE ROWS
       """,
       []
@@ -203,14 +203,14 @@ defmodule Bilimbi.People.Performance.TestFixtures do
 
     SQL.query!(
       Repo,
-      "CREATE INDEX people_performance_reviews_scope_idx ON people_performance_reviews(tenant_id,company_id)",
+      "CREATE INDEX people_performance_appraisals_scope_idx ON people_performance_appraisals(tenant_id,company_id)",
       []
     )
 
     SQL.query!(
       Repo,
       """
-      CREATE TEMPORARY TABLE people_performance_review_observations (
+      CREATE TEMPORARY TABLE people_performance_review_evidence (
         id bigserial PRIMARY KEY,
         tenant_id bigint NOT NULL,
         company_id bigint NOT NULL,
@@ -219,10 +219,10 @@ defmodule Bilimbi.People.Performance.TestFixtures do
         observation_id bigint NOT NULL,
         inserted_at timestamp(0) NOT NULL,
         updated_at timestamp(0) NOT NULL,
-        CONSTRAINT people_performance_review_observations_scope_unique UNIQUE (id,tenant_id,company_id),
-        CONSTRAINT people_performance_review_observations_identity_unique UNIQUE (review_id, observation_id),
-        CONSTRAINT people_performance_review_observations_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_reviews(id,tenant_id,company_id) ON DELETE RESTRICT,
-        CONSTRAINT people_performance_review_observations_observation_id_scope_fk FOREIGN KEY (observation_id,tenant_id,company_id) REFERENCES people_performance_observations(id,tenant_id,company_id) ON DELETE RESTRICT
+        CONSTRAINT people_performance_review_evidence_scope_unique UNIQUE (id,tenant_id,company_id),
+        CONSTRAINT people_performance_review_evidence_identity_unique UNIQUE (review_id, observation_id),
+        CONSTRAINT people_performance_review_evidence_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_appraisals(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_review_evidence_observation_id_scope_fk FOREIGN KEY (observation_id,tenant_id,company_id) REFERENCES people_performance_evidence(id,tenant_id,company_id) ON DELETE RESTRICT
       ) ON COMMIT PRESERVE ROWS
       """,
       []
@@ -230,7 +230,7 @@ defmodule Bilimbi.People.Performance.TestFixtures do
 
     SQL.query!(
       Repo,
-      "CREATE INDEX people_performance_review_observations_scope_idx ON people_performance_review_observations(tenant_id,company_id)",
+      "CREATE INDEX people_performance_review_evidence_scope_idx ON people_performance_review_evidence(tenant_id,company_id)",
       []
     )
 
@@ -248,7 +248,7 @@ defmodule Bilimbi.People.Performance.TestFixtures do
         updated_at timestamp(0) NOT NULL,
         CONSTRAINT people_performance_review_targets_scope_unique UNIQUE (id,tenant_id,company_id),
         CONSTRAINT people_performance_review_targets_identity_unique UNIQUE (review_id, target_id),
-        CONSTRAINT people_performance_review_targets_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_reviews(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_review_targets_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_appraisals(id,tenant_id,company_id) ON DELETE RESTRICT,
         CONSTRAINT people_performance_review_targets_target_id_scope_fk FOREIGN KEY (target_id,tenant_id,company_id) REFERENCES people_performance_kpi_targets(id,tenant_id,company_id) ON DELETE RESTRICT
       ) ON COMMIT PRESERVE ROWS
       """,
@@ -276,7 +276,7 @@ defmodule Bilimbi.People.Performance.TestFixtures do
         updated_at timestamp(0) NOT NULL,
         CONSTRAINT people_performance_responses_scope_unique UNIQUE (id,tenant_id,company_id),
         CONSTRAINT people_performance_responses_identity_unique UNIQUE (review_id, actor_user_id),
-        CONSTRAINT people_performance_responses_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_reviews(id,tenant_id,company_id) ON DELETE RESTRICT,
+        CONSTRAINT people_performance_responses_review_id_scope_fk FOREIGN KEY (review_id,tenant_id,company_id) REFERENCES people_performance_appraisals(id,tenant_id,company_id) ON DELETE RESTRICT,
         CONSTRAINT people_performance_responses_content CHECK (length(btrim(response)) > 0)
       ) ON COMMIT PRESERVE ROWS
       """,

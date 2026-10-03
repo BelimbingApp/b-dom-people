@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.ParticipationContract do
   def tables do
     [
       table(
-        "participation_facts",
+        "attendance_facts",
         %{
           "session_id" => col(:bigint),
           "employee_id" => col(:bigint),
@@ -13,18 +13,18 @@ defmodule Bilimbi.People.Training.ParticipationContract do
           "import_key" => col({:varchar, 160})
         },
         %{
-          "people_training_participation_facts_import" =>
+          "people_training_attendance_facts_import" =>
             index(["tenant_id", "company_id", "import_key"], true),
-          "people_training_participation_facts_revision" =>
+          "people_training_attendance_facts_revision" =>
             index(["session_id", "employee_id", "revision"], true),
           "people_training_facts_scope" => index(["id", "tenant_id", "company_id"], true)
         },
         %{
-          "people_training_participation_facts_session_scope" =>
-            fk("session_id", "people_training_sessions")
+          "people_training_attendance_facts_session_scope" =>
+            fk("session_id", "people_training_session_runs")
         },
         %{
-          "people_training_participation_facts_values" => %{
+          "people_training_attendance_facts_values" => %{
             validated: true,
             expression:
               "(revision > 0) AND (employee_id > 0) AND ((status)::text = ANY ((ARRAY['confirmed'::character varying, 'absent'::character varying])::text[])) AND (length(btrim(reason)) > 0) AND (length(btrim((import_key)::text)) > 0)"
@@ -41,7 +41,7 @@ defmodule Bilimbi.People.Training.ParticipationContract do
         },
         %{
           "people_training_evidence_fact_scope" =>
-            fk("fact_id", "people_training_participation_facts")
+            fk("fact_id", "people_training_attendance_facts")
         },
         %{}
       )

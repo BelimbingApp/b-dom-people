@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.ParticipationFact do
   use Ecto.Schema
   import Ecto.Changeset
 
-  schema "people_training_participation_facts" do
+  schema "people_training_attendance_facts" do
     field(:tenant_id, :integer)
     field(:company_id, :integer)
     field(:session_id, :integer)
@@ -35,6 +35,6 @@ defmodule Bilimbi.People.Training.ParticipationFact do
     |> validate_length(:reason, min: 1, max: 2000)
     |> validate_length(:import_key, min: 1, max: 160)
     |> validate_inclusion(:status, ["confirmed", "absent"])
-    |> unique_constraint(:import_key, name: :people_training_participation_facts_import)
+    |> unique_constraint(:import_key, name: :people_training_attendance_facts_import)
   end
 end

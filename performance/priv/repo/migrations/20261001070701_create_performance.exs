@@ -108,7 +108,7 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
       )
     )
 
-    create table(:people_performance_observations) do
+    create table(:people_performance_evidence) do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
       add(:actor_user_id, :bigint, null: false)
@@ -124,24 +124,24 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     end
 
     create(
-      unique_index(:people_performance_observations, [:id, :tenant_id, :company_id],
-        name: :people_performance_observations_scope_unique
+      unique_index(:people_performance_evidence, [:id, :tenant_id, :company_id],
+        name: :people_performance_evidence_scope_unique
       )
     )
 
     create(
-      index(:people_performance_observations, [:tenant_id, :company_id],
-        name: :people_performance_observations_scope_idx
+      index(:people_performance_evidence, [:tenant_id, :company_id],
+        name: :people_performance_evidence_scope_idx
       )
     )
 
     create(
-      unique_index(:people_performance_observations, [:supersedes_id],
-        name: :people_performance_observations_supersedes_unique
+      unique_index(:people_performance_evidence, [:supersedes_id],
+        name: :people_performance_evidence_supersedes_unique
       )
     )
 
-    create table(:people_performance_reviews) do
+    create table(:people_performance_appraisals) do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
       add(:actor_user_id, :bigint, null: false)
@@ -162,24 +162,24 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     end
 
     create(
-      unique_index(:people_performance_reviews, [:id, :tenant_id, :company_id],
-        name: :people_performance_reviews_scope_unique
+      unique_index(:people_performance_appraisals, [:id, :tenant_id, :company_id],
+        name: :people_performance_appraisals_scope_unique
       )
     )
 
     create(
-      index(:people_performance_reviews, [:tenant_id, :company_id],
-        name: :people_performance_reviews_scope_idx
+      index(:people_performance_appraisals, [:tenant_id, :company_id],
+        name: :people_performance_appraisals_scope_idx
       )
     )
 
     create(
-      unique_index(:people_performance_reviews, [:supersedes_id],
-        name: :people_performance_reviews_supersedes_unique
+      unique_index(:people_performance_appraisals, [:supersedes_id],
+        name: :people_performance_appraisals_supersedes_unique
       )
     )
 
-    create table(:people_performance_review_observations) do
+    create table(:people_performance_review_evidence) do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
       add(:actor_user_id, :bigint, null: false)
@@ -189,14 +189,14 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     end
 
     create(
-      unique_index(:people_performance_review_observations, [:id, :tenant_id, :company_id],
-        name: :people_performance_review_observations_scope_unique
+      unique_index(:people_performance_review_evidence, [:id, :tenant_id, :company_id],
+        name: :people_performance_review_evidence_scope_unique
       )
     )
 
     create(
-      index(:people_performance_review_observations, [:tenant_id, :company_id],
-        name: :people_performance_review_observations_scope_idx
+      index(:people_performance_review_evidence, [:tenant_id, :company_id],
+        name: :people_performance_review_evidence_scope_idx
       )
     )
 
@@ -256,8 +256,8 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     )
 
     create(
-      unique_index(:people_performance_review_observations, [:review_id, :observation_id],
-        name: :people_performance_review_observations_identity_unique
+      unique_index(:people_performance_review_evidence, [:review_id, :observation_id],
+        name: :people_performance_review_evidence_identity_unique
       )
     )
 
@@ -282,27 +282,27 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     )
 
     execute(
-      "ALTER TABLE people_performance_observations ADD CONSTRAINT people_performance_observations_supersedes_id_scope_fk FOREIGN KEY (supersedes_id, tenant_id, company_id) REFERENCES people_performance_observations(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_evidence ADD CONSTRAINT people_performance_evidence_supersedes_id_scope_fk FOREIGN KEY (supersedes_id, tenant_id, company_id) REFERENCES people_performance_evidence(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
-      "ALTER TABLE people_performance_reviews ADD CONSTRAINT people_performance_reviews_supersedes_id_scope_fk FOREIGN KEY (supersedes_id, tenant_id, company_id) REFERENCES people_performance_reviews(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_appraisals ADD CONSTRAINT people_performance_appraisals_supersedes_id_scope_fk FOREIGN KEY (supersedes_id, tenant_id, company_id) REFERENCES people_performance_appraisals(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
-      "ALTER TABLE people_performance_reviews ADD CONSTRAINT people_performance_reviews_description_id_scope_fk FOREIGN KEY (description_id, tenant_id, company_id) REFERENCES people_performance_descriptions(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_appraisals ADD CONSTRAINT people_performance_appraisals_description_id_scope_fk FOREIGN KEY (description_id, tenant_id, company_id) REFERENCES people_performance_descriptions(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
-      "ALTER TABLE people_performance_review_observations ADD CONSTRAINT people_performance_review_observations_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_reviews(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_review_evidence ADD CONSTRAINT people_performance_review_evidence_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_appraisals(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
-      "ALTER TABLE people_performance_review_observations ADD CONSTRAINT people_performance_review_observations_observation_id_scope_fk FOREIGN KEY (observation_id, tenant_id, company_id) REFERENCES people_performance_observations(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_review_evidence ADD CONSTRAINT people_performance_review_evidence_observation_id_scope_fk FOREIGN KEY (observation_id, tenant_id, company_id) REFERENCES people_performance_evidence(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
-      "ALTER TABLE people_performance_review_targets ADD CONSTRAINT people_performance_review_targets_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_reviews(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_review_targets ADD CONSTRAINT people_performance_review_targets_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_appraisals(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     execute(
@@ -310,7 +310,7 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     )
 
     execute(
-      "ALTER TABLE people_performance_responses ADD CONSTRAINT people_performance_responses_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_reviews(id, tenant_id, company_id) ON DELETE RESTRICT"
+      "ALTER TABLE people_performance_responses ADD CONSTRAINT people_performance_responses_review_id_scope_fk FOREIGN KEY (review_id, tenant_id, company_id) REFERENCES people_performance_appraisals(id, tenant_id, company_id) ON DELETE RESTRICT"
     )
 
     create(
@@ -394,46 +394,46 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
     )
 
     create(
-      constraint(:people_performance_observations, :people_performance_observations_dates,
+      constraint(:people_performance_evidence, :people_performance_evidence_dates,
         check: "window_end >= window_start"
       )
     )
 
     create(
-      constraint(:people_performance_observations, :people_performance_observations_content,
+      constraint(:people_performance_evidence, :people_performance_evidence_content,
         check:
           "length(btrim(evidence)) > 0 AND length(btrim(source_reference)) > 0 AND length(btrim(source_version)) > 0"
       )
     )
 
     create(
-      constraint(:people_performance_observations, :people_performance_observations_correction,
+      constraint(:people_performance_evidence, :people_performance_evidence_correction,
         check:
           "(supersedes_id IS NULL AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND COALESCE(length(btrim(change_reason)), 0) > 0)"
       )
     )
 
     create(
-      constraint(:people_performance_reviews, :people_performance_reviews_dates,
+      constraint(:people_performance_appraisals, :people_performance_appraisals_dates,
         check: "period_end >= period_start AND cutoff_at::date >= period_end"
       )
     )
 
     create(
-      constraint(:people_performance_reviews, :people_performance_reviews_content,
+      constraint(:people_performance_appraisals, :people_performance_appraisals_content,
         check: "length(btrim(outcome)) > 0 AND length(btrim(rationale)) > 0"
       )
     )
 
     create(
-      constraint(:people_performance_reviews, :people_performance_reviews_workflow,
+      constraint(:people_performance_appraisals, :people_performance_appraisals_workflow,
         check:
           "(status = 'draft' AND released_at IS NULL AND released_by_user_id IS NULL) OR (status = 'released' AND released_at IS NOT NULL AND released_by_user_id IS NOT NULL AND released_by_user_id <> actor_user_id)"
       )
     )
 
     create(
-      constraint(:people_performance_reviews, :people_performance_reviews_correction,
+      constraint(:people_performance_appraisals, :people_performance_appraisals_correction,
         check:
           "(supersedes_id IS NULL AND version = 1 AND change_reason IS NULL) OR (supersedes_id IS NOT NULL AND version > 1 AND COALESCE(length(btrim(change_reason)), 0) > 0)"
       )
@@ -453,9 +453,9 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
   def down do
     drop(table(:people_performance_responses))
     drop(table(:people_performance_review_targets))
-    drop(table(:people_performance_review_observations))
-    drop(table(:people_performance_reviews))
-    drop(table(:people_performance_observations))
+    drop(table(:people_performance_review_evidence))
+    drop(table(:people_performance_appraisals))
+    drop(table(:people_performance_evidence))
     drop(table(:people_performance_kpi_targets))
     drop(table(:people_performance_kpi_definitions))
     drop(table(:people_performance_descriptions))
@@ -494,11 +494,11 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
             RAISE EXCEPTION 'Reviewed rationale is immutable' USING ERRCODE = '23514';
           END IF;
           RETURN NEW;
-        ELSIF TG_TABLE_NAME = 'people_performance_reviews' AND (to_jsonb(OLD)->>'status') = 'draft'
+        ELSIF TG_TABLE_NAME = 'people_performance_appraisals' AND (to_jsonb(OLD)->>'status') = 'draft'
           AND (to_jsonb(NEW)->>'status') = 'released' AND
           (to_jsonb(NEW) - ARRAY['status','released_at','released_by_user_id','updated_at']) =
           (to_jsonb(OLD) - ARRAY['status','released_at','released_by_user_id','updated_at']) THEN
-          IF NOT EXISTS (SELECT 1 FROM people_performance_review_observations WHERE review_id = NEW.id)
+          IF NOT EXISTS (SELECT 1 FROM people_performance_review_evidence WHERE review_id = NEW.id)
             OR NOT EXISTS (SELECT 1 FROM people_performance_review_targets WHERE review_id = NEW.id) THEN
             RAISE EXCEPTION 'Release requires pinned evidence and communicated targets' USING ERRCODE = '23514';
           END IF;
@@ -511,7 +511,7 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
       END IF;
       IF TG_TABLE_NAME = 'people_performance_descriptions' AND (to_jsonb(NEW)->>'status') <> 'draft'
         OR TG_TABLE_NAME = 'people_performance_kpi_targets' AND (to_jsonb(NEW)->>'status') <> 'proposed'
-        OR TG_TABLE_NAME = 'people_performance_reviews' AND (to_jsonb(NEW)->>'status') <> 'draft' THEN
+        OR TG_TABLE_NAME = 'people_performance_appraisals' AND (to_jsonb(NEW)->>'status') <> 'draft' THEN
         RAISE EXCEPTION 'New records must start pending' USING ERRCODE = '23514';
       END IF;
       IF TG_TABLE_NAME = 'people_performance_kpi_targets' THEN
@@ -528,28 +528,28 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
             RAISE EXCEPTION 'Invalid target correction' USING ERRCODE = '23514';
           END IF;
         END IF;
-      ELSIF TG_TABLE_NAME = 'people_performance_observations' AND (to_jsonb(NEW)->>'supersedes_id') IS NOT NULL THEN
-        SELECT * INTO prior FROM people_performance_observations WHERE id = NEW.supersedes_id;
+      ELSIF TG_TABLE_NAME = 'people_performance_evidence' AND (to_jsonb(NEW)->>'supersedes_id') IS NOT NULL THEN
+        SELECT * INTO prior FROM people_performance_evidence WHERE id = NEW.supersedes_id;
         IF (NEW.employee_id, NEW.window_start, NEW.window_end, NEW.source_reference) IS DISTINCT FROM
            (prior.employee_id, prior.window_start, prior.window_end, prior.source_reference) THEN
           RAISE EXCEPTION 'Invalid evidence correction' USING ERRCODE = '23514';
         END IF;
-      ELSIF TG_TABLE_NAME = 'people_performance_reviews' THEN
+      ELSIF TG_TABLE_NAME = 'people_performance_appraisals' THEN
         SELECT * INTO parent FROM people_performance_descriptions WHERE id = NEW.description_id;
         IF parent.status <> 'published' OR parent.effective_from > NEW.period_start OR
           (parent.effective_to IS NOT NULL AND parent.effective_to < NEW.period_end) THEN
           RAISE EXCEPTION 'Published description must cover review period' USING ERRCODE = '23514';
         END IF;
         IF NEW.supersedes_id IS NOT NULL THEN
-          SELECT * INTO prior FROM people_performance_reviews WHERE id = NEW.supersedes_id;
+          SELECT * INTO prior FROM people_performance_appraisals WHERE id = NEW.supersedes_id;
           IF prior.status <> 'released' OR
             (NEW.employee_id, NEW.period_start, NEW.period_end, NEW.version) IS DISTINCT FROM
             (prior.employee_id, prior.period_start, prior.period_end, prior.version + 1) OR NEW.cutoff_at < prior.cutoff_at THEN
             RAISE EXCEPTION 'Invalid review correction' USING ERRCODE = '23514';
           END IF;
         END IF;
-      ELSIF TG_TABLE_NAME IN ('people_performance_review_observations','people_performance_review_targets','people_performance_responses') THEN
-        SELECT * INTO parent FROM people_performance_reviews WHERE id = NEW.review_id FOR UPDATE;
+      ELSIF TG_TABLE_NAME IN ('people_performance_review_evidence','people_performance_review_targets','people_performance_responses') THEN
+        SELECT * INTO parent FROM people_performance_appraisals WHERE id = NEW.review_id FOR UPDATE;
         IF TG_TABLE_NAME = 'people_performance_responses' THEN
           IF parent.status <> 'released' OR parent.employee_id <> NEW.employee_id THEN
             RAISE EXCEPTION 'Respond only to own released review' USING ERRCODE = '23514';
@@ -558,8 +558,8 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
           IF parent.status <> 'draft' THEN
             RAISE EXCEPTION 'Released evidence cannot change' USING ERRCODE = '23514';
           END IF;
-          IF TG_TABLE_NAME = 'people_performance_review_observations' THEN
-            SELECT * INTO prior FROM people_performance_observations WHERE id = NEW.observation_id;
+          IF TG_TABLE_NAME = 'people_performance_review_evidence' THEN
+            SELECT * INTO prior FROM people_performance_evidence WHERE id = NEW.observation_id;
             IF prior.employee_id <> parent.employee_id OR prior.window_start < parent.period_start
               OR prior.window_end > parent.period_end OR prior.inserted_at > parent.cutoff_at THEN
               RAISE EXCEPTION 'Evidence outside review window' USING ERRCODE = '23514';
@@ -582,11 +582,11 @@ defmodule Bilimbi.People.Performance.Migrations.CreatePerformance do
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
     CREATE TRIGGER people_performance_kpi_targets_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_kpi_targets
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
-    CREATE TRIGGER people_performance_observations_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_observations
+    CREATE TRIGGER people_performance_evidence_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_evidence
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
-    CREATE TRIGGER people_performance_reviews_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_reviews
+    CREATE TRIGGER people_performance_appraisals_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_appraisals
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
-    CREATE TRIGGER people_performance_review_observations_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_review_observations
+    CREATE TRIGGER people_performance_review_evidence_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_review_evidence
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
     CREATE TRIGGER people_performance_review_targets_guard BEFORE INSERT OR UPDATE OR DELETE ON people_performance_review_targets
       FOR EACH ROW EXECUTE FUNCTION people_performance_guard();
