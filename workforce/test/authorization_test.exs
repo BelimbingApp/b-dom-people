@@ -87,12 +87,6 @@ defmodule Bilimbi.People.Workforce.AuthorizationTest do
     assert {:error, :not_found} = Authorization.authorize(actor_scope, 75, @capability)
     assert {:error, :not_found} = Authorization.authorize(actor_scope, "73", @capability)
 
-    assert {:ok, ^actor} =
-             Authorization.authorize_any(actor_scope, 73, ["people.other.view", @capability])
-
-    assert {:error, :unauthorized} =
-             Authorization.authorize_any(actor_scope, 73, ["people.other.view"])
-
     :ok = AuthorizationFixtures.revoke!(scope, 73, 91, @capability)
     assert {:error, :unauthorized} = Authorization.authorize(actor_scope, 73, @capability)
   end

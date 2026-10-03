@@ -57,18 +57,6 @@ defmodule Bilimbi.People.Workforce.Authorization do
     end
   end
 
-  @doc "Authorizes the actor holding at least one of the capabilities, in order."
-  @spec authorize_any(Scope.t(), term(), [String.t(), ...]) ::
-          {:ok, Actor.t()} | {:error, refusal()}
-  def authorize_any(%Scope{} = scope, company_id, [_ | _] = capabilities) do
-    Enum.reduce_while(capabilities, {:error, :unauthorized}, fn capability, _last ->
-      case authorize(scope, company_id, capability) do
-        {:ok, actor} -> {:halt, {:ok, actor}}
-        error -> {:cont, error}
-      end
-    end)
-  end
-
   @doc """
   Whether the actor currently holds the capability for the company.
 
