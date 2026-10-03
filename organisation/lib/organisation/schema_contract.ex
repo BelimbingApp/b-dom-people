@@ -97,7 +97,8 @@ defmodule Bilimbi.People.Organisation.SchemaContract do
         "people_positions_pkey" => index(["id"], true),
         "people_positions_company_id_code_index" => index(["company_id", "code"], true),
         "people_positions_id_company_id_index" => index(["id", "company_id"], true),
-        "people_positions_company_id_parent_id_index" => index(["company_id", "parent_id"])
+        "people_positions_company_id_parent_id_index" => index(["company_id", "parent_id"]),
+        "people_positions_company_id_id_index" => index(["company_id", "id"])
       },
       checks: %{
         "people_positions_not_own_parent" => check("parent_id IS NULL OR parent_id <> id")
