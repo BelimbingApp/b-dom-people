@@ -290,12 +290,8 @@ defmodule BilimbiWeb.AttendanceLiveTest do
     } do
       {:ok, _} = Attendance.put_rules(scope, 73, %{self_clock_enabled: true})
       signed = Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)
-      actor = %{type: :user, id: 91, company_id: 73}
-      assert {:error, :unavailable} = Attendance.self_clock(scope, 73, "in", "system")
+      assert {:error, :unavailable} = Attendance.self_clock(scope, 73, "in", "system", %{})
       assert {:error, :unavailable} = Attendance.self_clock(signed, 74, "in", "company", %{})
-
-      assert {:error, :unavailable} =
-               Attendance.self_clock(signed, 73, %{actor | id: 92}, "in", "forged")
 
       assert {:ok, :stored} =
                Bilimbi.Base.Authz.put_principal_capability(

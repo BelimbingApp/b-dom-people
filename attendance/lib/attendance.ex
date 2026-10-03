@@ -145,21 +145,6 @@ defmodule Bilimbi.People.Attendance do
   end
 
   @doc "Records a browser clock using the scope's authenticated actor and optional coordinates."
-  def self_clock(scope, company_id, type, key),
-    do: self_clock(scope, company_id, type, key, %{})
-
-  # Compatibility for callers of the original actor-bearing API. The supplied
-  # actor can only match the authenticated scope; it cannot select a performer.
-  def self_clock(%Scope{} = scope, company_id, actor, type, key) when is_map(actor) do
-    with {:ok, performer} <- Authz.scope_actor(scope),
-         %{type: :user, id: user_id, company_id: ^company_id} <- actor,
-         true <- user_id == performer.id do
-      self_clock(scope, company_id, type, key, %{})
-    else
-      _ -> {:error, :unavailable}
-    end
-  end
-
   def self_clock(%Scope{} = scope, company_id, type, key, coordinates)
       when type in ["in", "out"] and is_binary(key) and is_map(coordinates) do
     with true <- can_self_clock?(scope, company_id),

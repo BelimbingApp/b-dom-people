@@ -146,10 +146,7 @@ how to retry and keep adjustment requests available as the fallback. Browser
 coordinates are browser-reported evidence, not proof against location spoofing.
 
 `self_clock/5` checks the scope's authenticated, non-impersonated user, current
-self-view capability, company and linked working employee before recording;
-`self_clock/4` serves policies that do not require coordinates. The original
-actor-bearing `self_clock/5` signature remains a wrapper that checks the supplied
-identity against the authenticated scope.
+self-view capability, company and linked working employee before recording.
 Ingestion and independently approved adjustments retain their existing paths.
 
 After host compilation and `mix cmd --app web mix esbuild.install --if-missing`,

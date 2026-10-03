@@ -313,7 +313,7 @@ defmodule Bilimbi.People.Attendance.RostersTest do
                )
     end
 
-    test "self clocking refuses a caller-supplied actor on a system scope", %{scope: scope} do
+    test "self clocking refuses a system scope without an authenticated user", %{scope: scope} do
       assert {:ok, _} =
                Attendance.put_rules(scope, 73, %{
                  self_clock_enabled: true,
@@ -321,7 +321,10 @@ defmodule Bilimbi.People.Attendance.RostersTest do
                })
 
       assert {:error, :unavailable} =
-               Attendance.self_clock(scope, 73, @employee_actor, "in", "key")
+               Attendance.self_clock(scope, 73, "in", "key", %{
+                 latitude: 3.1395,
+                 longitude: 101.687
+               })
     end
 
     test "locations are validated and company scoped", %{scope: scope, other_scope: other} do
