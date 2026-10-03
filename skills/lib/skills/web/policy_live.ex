@@ -65,7 +65,7 @@ defmodule Bilimbi.People.Skills.Web.PolicyLive do
         {name, Support.to_integer(Map.get(values, Atom.to_string(name)))}
       end
 
-    act(socket, "Skills policy saved.", fn _actor, scope, company_id ->
+    act(socket, @capability, "Skills policy saved.", fn _actor, scope, company_id ->
       Skills.put_policy(scope, company_id, changes)
     end)
   end
@@ -73,25 +73,25 @@ defmodule Bilimbi.People.Skills.Web.PolicyLive do
   def handle_event("create_action_type", %{"type" => attrs}, socket) do
     attrs = Map.put(attrs, "requires_provider", Map.get(attrs, "requires_provider") == "true")
 
-    act(socket, "Action type added.", fn _actor, scope, company_id ->
+    act(socket, @types_capability, "Action type added.", fn _actor, scope, company_id ->
       Skills.create_action_type(scope, company_id, attrs)
     end)
   end
 
   def handle_event("toggle_action_type", %{"id" => id, "active" => active}, socket) do
-    act(socket, "Action type updated.", fn _actor, scope, company_id ->
+    act(socket, @types_capability, "Action type updated.", fn _actor, scope, company_id ->
       Skills.set_action_type_active(scope, company_id, Support.to_integer(id), active == "true")
     end)
   end
 
   def handle_event("run_reminders", _params, socket) do
-    act(socket, "Reminders queued.", fn _actor, scope, company_id ->
+    act(socket, @remind_capability, "Reminders queued.", fn _actor, scope, company_id ->
       with :ok <- Skills.enqueue_reminders(scope, company_id), do: {:ok, :queued}
     end)
   end
 
   def handle_event("retry_reminders", _params, socket) do
-    act(socket, "Failed reminders retried.", fn actor, _scope, company_id ->
+    act(socket, @remind_capability, "Failed reminders retried.", fn actor, _scope, company_id ->
       Skills.retry_reminders(actor, company_id)
     end)
   end
@@ -103,30 +103,37 @@ defmodule Bilimbi.People.Skills.Web.PolicyLive do
   # authorizes each write for the scope's actor when it runs, so a grant
   # revoked while the page is open refuses the next event and the page reloads
   # its controls.
-  defp act(socket, success, fun) do
+  defp act(socket, capability, success, fun) do
     actor = socket.assigns.current_scope.actor
 
-    case socket.assigns.company do
-      %{id: company_id} ->
-        case fun.(actor, socket.assigns.current_scope.scope, company_id) do
-          {:ok, _} ->
-            {:noreply, socket |> load() |> put_flash(:success, success)}
+    with %{id: company_id} <- socket.assigns.company,
+         true <- Access.allowed?(actor, company_id, @capability),
+         true <- Access.allowed?(actor, company_id, capability) do
+      case fun.(actor, socket.assigns.current_scope.scope, company_id) do
+        {:ok, _} ->
+          {:noreply, socket |> load() |> put_flash(:success, success)}
 
-          {:error, :unauthorized} ->
-            {:noreply,
-             socket
-             |> load()
-             |> put_flash(
-               :error,
-               "You no longer have permission to change this company's skills policy."
-             )}
+        {:error, :unauthorized} ->
+          {:noreply,
+           socket
+           |> load()
+           |> put_flash(
+             :error,
+             "You no longer have permission to change this company's skills policy."
+           )}
 
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, Support.message(reason))}
-        end
-
-      nil ->
-        forbidden(socket)
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, Support.message(reason))}
+      end
+    else
+      _ ->
+        {:noreply,
+         socket
+         |> load()
+         |> put_flash(
+           :error,
+           "You no longer have permission to change this company's skills policy."
+         )}
     end
   end
 

@@ -459,12 +459,65 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       approver = AuthorizationFixtures.sign_in(scope, 91, 73)
       assert {:ok, %{id: linked_employee_id}} = Claims.self_service_employee(approver, 73)
       assert linked_employee_id == other.id
+
       assert render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)}) =~
                "This claim cannot be withdrawn."
 
       assert has_element?(mine, "#my-claims-empty")
       refute has_element?(mine, "#claim-#{request.id}")
       assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(approver, 73, employee.id)
+    end
+
+    for action <- ~w(reimburse handoff reimburse_batch) do
+      test "#{action} confirmation refuses a revoked route grant with reimbursement retained", %{
+        conn: conn,
+        scope: scope,
+        employee: employee
+      } do
+        UserFixtures.insert_user!(%{id: 91, company_id: 73, employee_id: employee.id})
+        UserFixtures.insert_user!(%{id: 92, company_id: 73, email: "approver@example.com"})
+        grant_capabilities!(["people.claims.submit", "people.claims.approve"], user_id: 91)
+        grant_capabilities!(["people.claims.approve", "people.claims.reimburse"], user_id: 92)
+        request = submitted_claim!(scope, employee)
+        operator = AuthorizationFixtures.sign_in(scope, 92, 73)
+        {:ok, _} = Claims.approve_request(operator, 73, request.id, %{})
+
+        {params, tab, batch} =
+          case unquote(action) do
+            "reimburse" ->
+              {%{"request_id" => to_string(request.id)}, "approved", nil}
+
+            "handoff" ->
+              {%{"currency" => "AAA"}, "approved", nil}
+
+            "reimburse_batch" ->
+              {:ok, batch} = Claims.create_handoff_batch(operator, 73, "AAA")
+              {%{"batch_id" => to_string(batch.id)}, "batches", batch}
+          end
+
+        {:ok, view, _} =
+          conn
+          |> log_in_as(%{"user_id" => 92, "company_id" => 73})
+          |> live("/people/claims/operations?tab=#{tab}")
+
+        render_hook(view, unquote(action), params)
+        assert has_element?(view, "#claim-operations-confirm")
+        revoke!(scope, 92, "people.claims.approve")
+
+        if batch do
+          assert render_hook(view, "export", %{"id" => to_string(batch.id)}) =~
+                   "cannot be exported"
+
+          refute has_element?(view, "#claim-batch-download-#{batch.id}")
+        end
+
+        assert render_click(view, "confirm") =~ "not allowed to do that"
+        refute has_element?(view, "#claim-operations-confirm")
+        reader = AuthorizationFixtures.sign_in(scope, 91, 73)
+        assert {:ok, [%{status: "approved"}]} = Claims.employee_requests(reader, 73, employee.id)
+        assert {:ok, batches} = Claims.handoff_batches(reader, 73)
+        assert length(batches) == if(batch, do: 1, else: 0)
+      end
     end
 
     test "an open operations page stops deciding once the approve grant is revoked", %{

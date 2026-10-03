@@ -134,6 +134,7 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
     actor = socket.assigns.current_scope.actor
 
     with %{id: company_id} <- socket.assigns.company,
+         {:ok, _} <- Company.authorize_company_target(actor, company_id, @capability),
          {:ok, _} <- Company.authorize_company_target(actor, company_id, @manage_capability) do
       case fun.(socket.assigns.current_scope.scope, company_id) do
         {:ok, _} ->

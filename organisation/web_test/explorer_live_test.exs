@@ -164,6 +164,48 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
     assert {:ok, []} = Audit.list_actions(system)
   end
 
+  test "ending an assignment after only the view grant is revoked changes nothing", %{
+    conn: conn,
+    scope: scope,
+    system: system
+  } do
+    grant_capabilities!(["people.organisation.view", @manage])
+    {:ok, position} = Organisation.create_position(scope, 73, %{code: "P-REVOKED"})
+
+    {:ok, employee} =
+      Employee.create_employee(scope, 73, %{employee_number: "E-REV", full_name: "Holder"})
+
+    {:ok, assignment} =
+      Organisation.assign(scope, 73, position.id, %{
+        employee_id: employee.id,
+        kind: "substantive",
+        effective_from: ~D[2026-01-01]
+      })
+
+    {:ok, view, _html} =
+      conn |> log_in_as() |> live(~p"/people/organisation?company_id=73&as_of=2026-09-30")
+
+    assert has_element?(view, "#end-assignment-#{assignment.id}")
+
+    assert {:ok, :stored} =
+             Authz.put_principal_capability(
+               system,
+               73,
+               :user,
+               91,
+               "people.organisation.view",
+               false
+             )
+
+    assert render_hook(view, "end_assignment", %{
+             "assignment_id" => Integer.to_string(assignment.id),
+             "effective_to" => "2026-09-30"
+           }) =~ "You no longer have permission to change this company"
+
+    assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
+    assert {:ok, []} = Audit.list_actions(system)
+  end
+
   test "route refuses an actor without the capability", %{conn: conn} do
     assert {:error, {_kind, _redirect}} = conn |> log_in_as() |> live(~p"/people/organisation")
   end

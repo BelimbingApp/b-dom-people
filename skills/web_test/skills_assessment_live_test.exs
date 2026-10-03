@@ -169,7 +169,10 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
   describe "actions page" do
     setup %{ctx: ctx} do
       {:ok, type} =
-        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Coaching"})
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{
+          code: "coaching",
+          name: "Coaching"
+        })
 
       Fixtures.grant!(ctx.scope, :manager, 73, ["people.skills.actions.view"])
       %{type: type}
@@ -365,6 +368,48 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
 
       assert {:ok, ^before} = Skills.policy(ctx.scope, 73)
       refute has_element?(view, "#skills-policy-form button", "Save policy")
+    end
+
+    test "policy route revocation refuses action types and reminders with operation grants retained",
+         %{conn: conn, ctx: ctx} do
+      {:ok, type} =
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{
+          code: "existing",
+          name: "Existing"
+        })
+
+      views =
+        for _ <- 1..4 do
+          {:ok, view, _} = conn |> login(:hr) |> live("/people/skills/policy")
+          assert has_element?(view, "#action-type-form")
+          assert has_element?(view, "#reminders-due")
+          view
+        end
+
+      assert {:ok, :stored} =
+               Authz.put_principal_capability(
+                 ctx.scope,
+                 73,
+                 :user,
+                 Fixtures.users()[:hr],
+                 "people.skills.policy.manage",
+                 false
+               )
+
+      events = [
+        {"create_action_type", %{"type" => %{"code" => "denied", "name" => "Denied"}}},
+        {"toggle_action_type", %{"id" => to_string(type.id), "active" => "false"}},
+        {"run_reminders", %{}},
+        {"retry_reminders", %{}}
+      ]
+
+      for {view, {event, params}} <- Enum.zip(views, events) do
+        html = render_hook(view, event, params)
+        assert html =~ "You no longer have permission" or html =~ "You cannot change this company"
+      end
+
+      assert {:ok, [%{id: id, active: true}]} = Skills.list_action_types(ctx.scope, 73)
+      assert id == type.id
     end
 
     test "a viewer without the write capabilities is refused", %{conn: conn, ctx: ctx} do

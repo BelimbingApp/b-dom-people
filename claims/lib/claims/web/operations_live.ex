@@ -195,14 +195,16 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   def refusal(_reason), do: "The action could not be completed."
 
   defp authorized?(socket, capability) do
-    match?(
-      {:ok, _company},
-      Company.authorize_company_target(
-        socket.assigns.current_scope.actor,
-        company_id(socket),
-        capability
+    Enum.all?([@approve, capability], fn required ->
+      match?(
+        {:ok, _company},
+        Company.authorize_company_target(
+          socket.assigns.current_scope.actor,
+          company_id(socket),
+          required
+        )
       )
-    )
+    end)
   end
 
   defp find(socket, raw_id),

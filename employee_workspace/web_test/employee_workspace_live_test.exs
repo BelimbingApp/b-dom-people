@@ -123,6 +123,58 @@ defmodule BilimbiWeb.EmployeeWorkspaceLiveTest do
       assert {:ok, nil} = EmployeeWorkspace.work_profile(actor_scope(scope), 73, employee.id)
     end
 
+    test "employee actions refuse a revoked view grant while operation grants remain", %{
+      conn: conn,
+      employee: employee,
+      scope: scope
+    } do
+      operator = actor_scope(scope)
+
+      {:ok, request} =
+        EmployeeWorkspace.request_change(operator, 73, employee.id, %{
+          field: "full_name",
+          proposed_value: "Updated Name",
+          reason: "Correction"
+        })
+
+      {:ok, before_access} = EmployeeWorkspace.access(operator, 73, employee.id)
+
+      views =
+        for _ <- 1..4 do
+          {:ok, view, _} = conn |> log_in_as() |> live("/people/employees/#{employee.id}")
+          view
+        end
+
+      revoke!(scope, "people.employees.view")
+
+      events = [
+        {"save_profile", %{"profile" => %{"work_location" => "After revocation"}}},
+        {"save_access", %{"access" => %{"portal_enabled" => "true"}}},
+        {"request_change",
+         %{
+           "request" => %{
+             "field" => "full_name",
+             "proposed_value" => "Denied",
+             "reason" => "Correction"
+           }
+         }},
+        {"review_change", %{"id" => to_string(request.id), "decision" => "approved"}}
+      ]
+
+      for {view, {event, params}} <- Enum.zip(views, events) do
+        assert render_hook(view, event, params) =~ "You no longer have permission"
+      end
+
+      assert {:ok, :stored} =
+               Authz.put_principal_capability(scope, 73, :user, 91, "people.employees.view", true)
+
+      assert {:ok, nil} = EmployeeWorkspace.work_profile(operator, 73, employee.id)
+      assert {:ok, ^before_access} = EmployeeWorkspace.access(operator, 73, employee.id)
+
+      assert {:ok, [%{status: "pending"}]} =
+               EmployeeWorkspace.change_requests(operator, 73, employee.id)
+    end
+
     test "a review after the review grant is revoked is refused", %{
       conn: conn,
       employee: employee,

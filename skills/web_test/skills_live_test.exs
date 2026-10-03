@@ -72,7 +72,11 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
       end
 
     {:ok, profile} =
-      Skills.create_profile(operator, 73, %{code: code, name: "Profile #{code}", scale_id: scale.id})
+      Skills.create_profile(operator, 73, %{
+        code: code,
+        name: "Profile #{code}",
+        scale_id: scale.id
+      })
 
     {:ok, _} =
       Skills.put_item(operator, 73, profile.id, %{
@@ -213,6 +217,55 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
            }) =~ "You cannot change this company&#39;s skills."
 
     assert {:ok, []} = Skills.list_categories(scope, 73)
+  end
+
+  test "a catalog write after only the view grant is revoked changes nothing", %{
+    conn: conn,
+    scope: scope
+  } do
+    grant_capabilities!([@view, @manage])
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/skills")
+    assert has_element?(view, "#skill-category-form")
+
+    # The page stays open while an administrator revokes the grant.
+    assert {:ok, :stored} = Authz.put_principal_capability(scope, 73, :user, 91, @view, false)
+
+    assert render_hook(view, "create_category", %{
+             "category" => %{"code" => "after", "name" => "After revocation"}
+           }) =~ "You cannot change this company&#39;s skills."
+
+    assert {:ok, []} = Skills.list_categories(scope, 73)
+  end
+
+  test "profile edits and publication refuse a revoked route grant", %{
+    conn: conn,
+    scope: scope,
+    operator: operator
+  } do
+    grant_capabilities!([@view, @manage, @publish])
+    draft = profile_ready(operator)
+    published = profile_ready(operator, "published")
+    {:ok, _} = Skills.publish_profile(operator, 73, published.id, ~D[2026-01-01])
+
+    {:ok, draft_page, _} =
+      conn |> log_in_as() |> live("/people/skills/profiles/#{draft.id}?company_id=73")
+
+    {:ok, published_page, _} =
+      conn |> log_in_as() |> live("/people/skills/profiles/#{published.id}?company_id=73")
+
+    {:ok, before} = Skills.get_profile(scope, 73, draft.id)
+    assert {:ok, :stored} = Authz.put_principal_capability(scope, 73, :user, 91, @view, false)
+
+    assert render_hook(draft_page, "discard", %{}) =~ "You cannot change this company"
+
+    assert render_hook(draft_page, "publish", %{"effective_from" => "2027-01-01"}) =~
+             "You cannot publish"
+
+    assert render_hook(published_page, "retire", %{"effective_to" => "2026-12-31"}) =~
+             "You cannot publish"
+
+    assert {:ok, ^before} = Skills.get_profile(scope, 73, draft.id)
+    assert {:ok, %{status: "published"}} = Skills.get_profile(scope, 73, published.id)
   end
 
   test "published versions supersede, never overlap and resolve by date", %{

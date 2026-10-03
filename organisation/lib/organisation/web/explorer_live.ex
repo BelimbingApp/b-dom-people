@@ -123,7 +123,19 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
       )
       when not is_nil(company) do
     result =
-      with {id, ""} <- Integer.parse(assignment_id) do
+      with {:ok, _} <-
+             Company.authorize_company_target(
+               socket.assigns.current_scope.actor,
+               company.id,
+               @capability
+             ),
+           {:ok, _} <-
+             Company.authorize_company_target(
+               socket.assigns.current_scope.actor,
+               company.id,
+               @manage_capability
+             ),
+           {id, ""} <- Integer.parse(assignment_id) do
         Organisation.end_assignment(
           socket.assigns.current_scope.scope,
           company.id,

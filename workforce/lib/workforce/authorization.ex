@@ -2,10 +2,11 @@ defmodule Bilimbi.People.Workforce.Authorization do
   @moduledoc """
   Per-operation authorization for People, and the signed-in actor's own employee.
 
-  A People LiveView proves its route capability once, at mount, and a
-  `can_*?` assign only decides which controls to render. Neither is authority
-  for an operation: an administrator can revoke the grant, or unlink the login
-  account from its employee, while the page stays connected. Every People
+  People LiveViews must recheck their route capability before acting, and a
+  `can_*?` assign only decides which controls to render. Route authorization
+  does not replace authority for an operation: an administrator can revoke
+  the grant, or unlink the login account from its employee, while the page
+  stays connected. Every People
   public write, and every public read of private employee facts, therefore
   calls this module first with the scope it was handed, so that LiveViews,
   jobs and other adapters share one boundary and a revocation takes effect on

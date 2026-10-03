@@ -36,7 +36,15 @@ defmodule Bilimbi.People.EmployeeWorkspace.Web.ShowLive do
       |> assign(:employee_id, employee_id)
       |> refresh_access()
       |> attach_hook(:employee_access, :handle_event, fn _event, _params, socket ->
-        {:cont, refresh_access(socket)}
+        if Authorization.allowed?(
+             scope(socket),
+             company_id(socket),
+             EmployeeWorkspace.view_capability()
+           ) do
+          {:cont, refresh_access(socket)}
+        else
+          {:halt, socket |> clear_facts() |> put_flash(:error, refusal(:unauthorized))}
+        end
       end)
 
     case result do
