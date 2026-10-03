@@ -10,7 +10,7 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @capability) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         _ -> []
       end

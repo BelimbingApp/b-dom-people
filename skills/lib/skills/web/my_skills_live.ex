@@ -13,7 +13,7 @@ defmodule Bilimbi.People.Skills.Web.MySkillsLive do
      socket
      |> assign(:page_title, "My skills")
      |> assign(:active_nav, "people.my_work.skills")
-     |> assign(:companies, Support.companies(socket.assigns.current_scope.actor, @capability))}
+     |> assign(:companies, Support.companies(socket.assigns.current_scope.scope, @capability))}
   end
 
   @impl true

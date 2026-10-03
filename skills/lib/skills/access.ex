@@ -53,7 +53,7 @@ defmodule Bilimbi.People.Skills.Access do
 
   @doc "Authorizes a login actor for one company and returns the live workforce company."
   def authorize(%Actor{type: :user} = actor, company_id, capability) do
-    with {:ok, _company} <- Company.authorize_company_target(actor, company_id, capability),
+    with {:ok, _company} <- Company.authorize_company_target(actor.scope, company_id, capability),
          do: current_company(actor.scope, company_id)
   end
 
@@ -68,7 +68,7 @@ defmodule Bilimbi.People.Skills.Access do
   end
 
   def allowed?(%Actor{type: :user} = actor, company_id, capability),
-    do: match?({:ok, _}, Company.authorize_company_target(actor, company_id, capability))
+    do: match?({:ok, _}, Company.authorize_company_target(actor.scope, company_id, capability))
 
   def allowed?(_actor, _company_id, _capability), do: false
 

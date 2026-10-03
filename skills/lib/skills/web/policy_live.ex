@@ -34,7 +34,7 @@ defmodule Bilimbi.People.Skills.Web.PolicyLive do
      |> assign(:page_title, "Skills policy")
      |> assign(:active_nav, "people.settings.skills_policy")
      |> assign(:fields, @fields)
-     |> assign(:companies, Support.companies(socket.assigns.current_scope.actor, @capability))}
+     |> assign(:companies, Support.companies(socket.assigns.current_scope.scope, @capability))}
   end
 
   @impl true

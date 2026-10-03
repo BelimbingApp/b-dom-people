@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Training.Web.Support do
   alias Bilimbi.Core.Company
 
   def companies(current_scope, capability) do
-    case Company.list_selectable_companies(current_scope.actor, capability) do
+    case Company.list_selectable_companies(current_scope.scope, capability) do
       {:ok, companies} -> Enum.filter(companies, &(&1.status == "active"))
       _ -> []
     end

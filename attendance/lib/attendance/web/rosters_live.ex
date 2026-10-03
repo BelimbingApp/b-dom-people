@@ -17,7 +17,7 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
      |> assign(:active_nav, "people.attendance.rosters")
      |> assign(
        :companies,
-       AttendanceComponents.companies(socket.assigns.current_scope.actor, @capability)
+       AttendanceComponents.companies(socket.assigns.current_scope.scope, @capability)
      )}
   end
 

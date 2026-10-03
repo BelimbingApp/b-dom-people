@@ -24,7 +24,7 @@ defmodule Bilimbi.People.Skills.Web.AssessmentsLive do
      socket
      |> assign(:page_title, "Assessments")
      |> assign(:active_nav, "people.development.assessments")
-     |> assign(:companies, Support.companies(socket.assigns.current_scope.actor, @capability))
+     |> assign(:companies, Support.companies(socket.assigns.current_scope.scope, @capability))
      |> assign(:status_filter, "")
      |> assign(:correcting, nil)}
   end

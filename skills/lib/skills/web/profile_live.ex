@@ -23,17 +23,17 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
 
   @impl true
   def handle_params(params, _uri, socket) do
-    actor = socket.assigns.current_scope.actor
+    scope = socket.assigns.current_scope.scope
 
     with {company_id, ""} <- Integer.parse(Map.get(params, "company_id", "")),
          {profile_id, ""} <- Integer.parse(Map.get(params, "id", "")),
-         {:ok, company} <- Company.authorize_company_target(actor, company_id, @capability) do
+         {:ok, company} <- Company.authorize_company_target(scope, company_id, @capability) do
       {:noreply,
        socket
        |> assign(:company, company)
        |> assign(:profile_id, profile_id)
-       |> assign(:can_manage?, allowed?(actor, company_id, @manage_capability))
-       |> assign(:can_publish?, allowed?(actor, company_id, Skills.publish_capability()))
+       |> assign(:can_manage?, allowed?(scope, company_id, @manage_capability))
+       |> assign(:can_publish?, allowed?(scope, company_id, Skills.publish_capability()))
        |> load()}
     else
       _ ->
@@ -152,27 +152,27 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   end
 
   defp draft(socket, success, fun) do
-    actor = socket.assigns.current_scope.actor
+    scope = socket.assigns.current_scope.scope
     company_id = socket.assigns.company.id
 
-    if allowed?(actor, company_id, @capability) and
-         allowed?(actor, company_id, @manage_capability),
-       do: respond(socket, success, fun.(actor.scope, company_id, socket.assigns.profile_id)),
+    if allowed?(scope, company_id, @capability) and
+         allowed?(scope, company_id, @manage_capability),
+       do: respond(socket, success, fun.(scope, company_id, socket.assigns.profile_id)),
        else: {:noreply, put_flash(socket, :error, "You cannot change this company's skills.")}
   end
 
   # The facade authorizes the publish capability for the scope's actor now;
   # the `can_publish?` assign only decides whether the form renders.
   defp decide(socket, success, fun) do
-    actor = socket.assigns.current_scope.actor
+    scope = socket.assigns.current_scope.scope
     company_id = socket.assigns.company.id
 
-    if allowed?(actor, company_id, @capability) and
-         allowed?(actor, company_id, Skills.publish_capability()) do
+    if allowed?(scope, company_id, @capability) and
+         allowed?(scope, company_id, Skills.publish_capability()) do
       respond(
         socket,
         success,
-        fun.(socket.assigns.current_scope.scope, company_id, socket.assigns.profile_id)
+        fun.(scope, company_id, socket.assigns.profile_id)
       )
     else
       respond(socket, success, {:error, :unauthorized})
@@ -245,8 +245,8 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
     end
   end
 
-  defp allowed?(actor, company_id, capability),
-    do: match?({:ok, _}, Company.authorize_company_target(actor, company_id, capability))
+  defp allowed?(scope, company_id, capability),
+    do: match?({:ok, _}, Company.authorize_company_target(scope, company_id, capability))
 
   defp to_integer(value) when is_binary(value) do
     case Integer.parse(String.trim(value)) do

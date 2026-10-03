@@ -18,7 +18,7 @@ defmodule Bilimbi.People.Skills.Web.ActionsLive do
      socket
      |> assign(:page_title, "Development actions")
      |> assign(:active_nav, "people.development.actions")
-     |> assign(:companies, Support.companies(socket.assigns.current_scope.actor, @capability))
+     |> assign(:companies, Support.companies(socket.assigns.current_scope.scope, @capability))
      |> assign(:group, :open)
      |> assign(:history, nil)}
   end

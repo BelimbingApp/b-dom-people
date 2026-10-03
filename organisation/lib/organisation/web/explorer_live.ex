@@ -14,7 +14,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @capability) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         {:error, :unauthorized} -> []
       end
@@ -72,7 +72,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
         match?(
           {:ok, _},
           Company.authorize_company_target(
-            socket.assigns.current_scope.actor,
+            socket.assigns.current_scope.scope,
             company.id,
             @manage_capability
           )
@@ -125,13 +125,13 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
     result =
       with {:ok, _} <-
              Company.authorize_company_target(
-               socket.assigns.current_scope.actor,
+               socket.assigns.current_scope.scope,
                company.id,
                @capability
              ),
            {:ok, _} <-
              Company.authorize_company_target(
-               socket.assigns.current_scope.actor,
+               socket.assigns.current_scope.scope,
                company.id,
                @manage_capability
              ),

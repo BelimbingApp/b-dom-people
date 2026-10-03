@@ -16,7 +16,8 @@ defmodule Bilimbi.People.Workforce.Authorization do
   `Bilimbi.Base.Tenancy.Scope.actor/1`, which verifies the seal the
   authentication edge gave it, and a system scope names nobody, so it is
   refused. The capability is evaluated now, by `Bilimbi.Base.Authz`, and the
-  company axis by `Bilimbi.Core.Company.authorize_company_target/3`.
+  company axis by `Bilimbi.Core.Company.authorize_company_target/3` with this
+  scope, not the actor taken from it.
 
   Self-service operations act on the employee the login account is linked to
   *now*. `self_employee/2` resolves that link on every call, and
@@ -50,7 +51,7 @@ defmodule Bilimbi.People.Workforce.Authorization do
   @spec authorize(Scope.t(), term(), String.t()) :: {:ok, Actor.t()} | {:error, refusal()}
   def authorize(%Scope{} = scope, company_id, capability) when is_binary(capability) do
     with {:ok, actor} <- Authz.scope_actor(scope),
-         {:ok, _company} <- Company.authorize_company_target(actor, company_id, capability) do
+         {:ok, _company} <- Company.authorize_company_target(scope, company_id, capability) do
       {:ok, actor}
     else
       {:error, :not_found} -> {:error, :not_found}

@@ -9,7 +9,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLive do
   def mount(_params, _session, socket) do
     companies =
       case Company.list_selectable_companies(
-             socket.assigns.current_scope.actor,
+             socket.assigns.current_scope.scope,
              "people.payroll.view"
            ) do
         {:ok, companies} -> Enum.filter(companies, &(&1.status == "active"))
