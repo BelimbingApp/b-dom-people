@@ -28,13 +28,17 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateRosters do
     )
 
     create(
-      constraint(:people_attendance_shift_definitions, :people_attendance_shift_definitions_status_check,
+      constraint(
+        :people_attendance_shift_definitions,
+        :people_attendance_shift_definitions_status_check,
         check: "status IN ('active', 'retired')"
       )
     )
 
     create(
-      constraint(:people_attendance_shift_definitions, :people_attendance_shift_definitions_span_check,
+      constraint(
+        :people_attendance_shift_definitions,
+        :people_attendance_shift_definitions_span_check,
         check:
           "start_minute BETWEEN 0 AND 1439 AND end_minute BETWEEN 0 AND 1439 AND " <>
             "start_minute <> end_minute AND break_minutes >= 0"

@@ -24,25 +24,31 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateAllowanceRules do
     )
 
     create(
-      index(:people_attendance_allowance_policies, [:tenant_id, :company_id, :status, :effective_from],
+      index(
+        :people_attendance_allowance_policies,
+        [:tenant_id, :company_id, :status, :effective_from],
         name: :people_attendance_allowance_policies_company_effective_index
       )
     )
 
     create(
-      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_status_check,
+      constraint(
+        :people_attendance_allowance_policies,
+        :people_attendance_allowance_policies_status_check,
         check: "status IN ('active', 'retired')"
       )
     )
 
     create(
-      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_value_check,
-        check: "value > 0"
-      )
+      constraint(
+        :people_attendance_allowance_policies,
+        :people_attendance_allowance_policies_value_check, check: "value > 0")
     )
 
     create(
-      constraint(:people_attendance_allowance_policies, :people_attendance_allowance_policies_period_check,
+      constraint(
+        :people_attendance_allowance_policies,
+        :people_attendance_allowance_policies_period_check,
         check: "effective_until IS NULL OR effective_until >= effective_from"
       )
     )

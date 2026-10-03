@@ -21,9 +21,11 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateCore do
       )
     )
 
-    create(index(:people_attendance_daily_summaries, [:tenant_id, :company_id, :on_date],
+    create(
+      index(:people_attendance_daily_summaries, [:tenant_id, :company_id, :on_date],
         name: :people_attendance_daily_summaries_scope_date_index
-      ))
+      )
+    )
 
     create table(:people_attendance_clock_facts, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
@@ -31,7 +33,9 @@ defmodule Bilimbi.People.Attendance.Migrations.CreateCore do
       add(:company_id, :bigint, null: false)
       add(:employee_id, :bigint, null: false)
 
-      add(:day_id, references(:people_attendance_daily_summaries, type: :bigint, on_delete: :restrict),
+      add(
+        :day_id,
+        references(:people_attendance_daily_summaries, type: :bigint, on_delete: :restrict),
         null: false
       )
 

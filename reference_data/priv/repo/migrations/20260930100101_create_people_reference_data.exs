@@ -26,7 +26,9 @@ defmodule Bilimbi.People.ReferenceData.Migrations.CreateReferenceData do
       add(:tenant_id, :bigint, null: false)
       add(:company_id, :bigint, null: false)
 
-      add(:entry_id, references(:people_reference_data_entries, type: :bigint, on_delete: :restrict),
+      add(
+        :entry_id,
+        references(:people_reference_data_entries, type: :bigint, on_delete: :restrict),
         null: false
       )
 
@@ -41,9 +43,11 @@ defmodule Bilimbi.People.ReferenceData.Migrations.CreateReferenceData do
       )
     )
 
-    create(index(:people_reference_data_aliases, [:tenant_id, :company_id, :entry_id],
+    create(
+      index(:people_reference_data_aliases, [:tenant_id, :company_id, :entry_id],
         name: :people_reference_data_aliases_scope_entry_index
-      ))
+      )
+    )
 
     create table(:people_reference_data_calendar_overrides, primary_key: false) do
       add(:id, :bigserial, primary_key: true)
@@ -60,9 +64,11 @@ defmodule Bilimbi.People.ReferenceData.Migrations.CreateReferenceData do
       )
     )
 
-    create(index(:people_reference_data_calendar_overrides, [:tenant_id, :company_id, :on_date],
+    create(
+      index(:people_reference_data_calendar_overrides, [:tenant_id, :company_id, :on_date],
         name: :people_reference_data_calendar_overrides_scope_date_index
-      ))
+      )
+    )
   end
 
   def down do
