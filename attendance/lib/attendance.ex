@@ -5,6 +5,13 @@ defmodule Bilimbi.People.Attendance do
 
   Every function takes a validated `Bilimbi.Base.Tenancy.Scope` and an explicit
   platform company ID; employees are read through `people/workforce`.
+
+  Operator writes and the approval and roster reads authorize their
+  capability on every call through `Bilimbi.People.Workforce.Authorization`
+  with the scope's sealed actor. Self-service operations resolve the signed-in
+  account's current linked working employee on every call and, for writes,
+  prove the link again under the Core Employee affiliation lock. A caller
+  never names the performer or the employee it acts for.
   """
   import Ecto.Query
 
@@ -23,6 +30,11 @@ defmodule Bilimbi.People.Attendance do
     Locations,
     Rosters
   }
+
+  alias Bilimbi.People.Workforce.Authorization
+
+  @rules_capability "people.attendance.rules.manage"
+  @self_capability "people.attendance.self.view"
 
   @timezone_key "people.attendance.timezone"
   @self_clock_key "people.attendance.self_clock_enabled"
@@ -53,9 +65,13 @@ defmodule Bilimbi.People.Attendance do
         max_shift_hours: max_shift_hours
       })
 
-  @doc "Stores the given company rules; omitted rules keep their current value."
+  @doc """
+  Stores the given company rules; omitted rules keep their current value.
+  The scope's actor must hold `people.attendance.rules.manage` for the company now.
+  """
   def put_rules(%Scope{} = scope, company_id, %{} = changes) do
-    with :ok <- validate_rules(changes),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @rules_capability),
+         :ok <- validate_rules(changes),
          {:ok, company} <- Access.current_company(scope, company_id) do
       settings_scope = Access.settings_scope(scope, company)
 
@@ -148,8 +164,8 @@ defmodule Bilimbi.People.Attendance do
   def self_clock(%Scope{} = scope, company_id, type, key, coordinates)
       when type in ["in", "out"] and is_binary(key) and is_map(coordinates) do
     with true <- can_self_clock?(scope, company_id),
-         {:ok, performer} <- Authz.scope_actor(scope),
-         {:ok, employee_id} <- Access.self_employee(scope, company_id, performer),
+         {:ok, %{actor: performer, employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self_capability),
          {:ok, %{self_clock_enabled: true}} <- rules(scope, company_id) do
       record_clock(scope, company_id, employee_id, %{
         event_key: key,
@@ -167,8 +183,10 @@ defmodule Bilimbi.People.Attendance do
 
   def self_clock(%Scope{}, _, _, _, _), do: {:error, :invalid_event}
 
-  def self_days(%Scope{} = scope, company_id, actor) do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor) do
+  @doc "Recent days of the signed-in actor's own linked working employee, resolved now."
+  def self_days(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self_capability) do
       list_days(scope, company_id, employee_id)
     end
   end
@@ -425,11 +443,11 @@ defmodule Bilimbi.People.Attendance do
   defdelegate set_shift_template_status(scope, company_id, template_id, status), to: Rosters
   defdelegate roster(scope, company_id, from, days, options \\ []), to: Rosters
 
-  defdelegate plan_roster_entry(scope, company_id, actor, employee_id, on_date, value),
+  defdelegate plan_roster_entry(scope, company_id, employee_id, on_date, value),
     to: Rosters
 
-  defdelegate publish_roster(scope, company_id, actor, from, to), to: Rosters
-  defdelegate self_roster(scope, company_id, actor, from, days), to: Rosters
+  defdelegate publish_roster(scope, company_id, from, to), to: Rosters
+  defdelegate self_roster(scope, company_id, from, days), to: Rosters
 
   defdelegate list_clocking_locations(scope, company_id), to: Locations
   defdelegate create_clocking_location(scope, company_id, attrs), to: Locations
@@ -445,11 +463,11 @@ defmodule Bilimbi.People.Attendance do
     to: Allowances,
     as: :end_date
 
-  defdelegate submit_adjustment(scope, company_id, actor, attrs), to: Adjustments
-  defdelegate self_adjustments(scope, company_id, actor), to: Adjustments
-  defdelegate cancel_adjustment(scope, company_id, actor, request_id), to: Adjustments
+  defdelegate submit_adjustment(scope, company_id, attrs), to: Adjustments
+  defdelegate self_adjustments(scope, company_id), to: Adjustments
+  defdelegate cancel_adjustment(scope, company_id, request_id), to: Adjustments
   defdelegate pending_adjustments(scope, company_id), to: Adjustments
 
-  defdelegate decide_adjustment(scope, company_id, actor, request_id, decision, note),
+  defdelegate decide_adjustment(scope, company_id, request_id, decision, note),
     to: Adjustments
 end

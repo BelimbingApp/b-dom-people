@@ -12,27 +12,35 @@ defmodule Bilimbi.People.Attendance.Adjustments do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Attendance
   alias Bilimbi.People.Attendance.{Access, AdjustmentRequest}
+  alias Bilimbi.People.Workforce.Authorization
+
+  @self_capability "people.attendance.self.view"
+  @approve_capability "people.attendance.adjustments.approve"
 
   # Recent requests shown on one employee's My attendance page.
   @self_limit 20
   # Oldest pending requests loaded into one approvals page render.
   @queue_limit 200
 
-  def submit_adjustment(%Scope{} = scope, company_id, actor, attrs) when is_map(attrs) do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor),
-         {:ok, rules} <- Attendance.rules(scope, company_id),
+  @doc """
+  Submits a missing-punch request for the signed-in actor's own linked
+  employee, resolved now and proven again under the affiliation lock.
+  """
+  def submit_adjustment(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
+    with {:ok, rules} <- Attendance.rules(scope, company_id),
          {:ok, proposed_at} <- proposed_at(field(attrs, :local_at), rules.timezone),
          {:ok, on_date} <- Attendance.local_date(proposed_at, rules.timezone),
          :ok <- within_window(proposed_at, on_date, rules) do
-      request = %AdjustmentRequest{
-        tenant_id: Scope.tenant_id(scope),
-        company_id: company_id,
-        employee_id: employee_id,
-        requested_by_user_id: actor.id
-      }
+      Authorization.with_self_employee_lock(scope, company_id, @self_capability, fn self ->
+        request = %AdjustmentRequest{
+          tenant_id: Scope.tenant_id(scope),
+          company_id: company_id,
+          employee_id: self.employee_id,
+          requested_by_user_id: self.actor.id
+        }
 
-      changeset =
-        AdjustmentRequest.changeset(request, %{
+        request
+        |> AdjustmentRequest.changeset(%{
           request_key: field(attrs, :request_key),
           event_type: field(attrs, :event_type),
           reason: field(attrs, :reason) || "",
@@ -40,13 +48,14 @@ defmodule Bilimbi.People.Attendance.Adjustments do
           on_date: on_date,
           timezone: rules.timezone
         })
-
-      Access.transact(fn -> insert_request(scope, company_id, changeset) end)
+        |> then(&insert_request(scope, company_id, &1))
+      end)
     end
   end
 
-  def self_adjustments(%Scope{} = scope, company_id, actor) do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor) do
+  def self_adjustments(%Scope{} = scope, company_id) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self_capability) do
       {:ok,
        Repo.all(
          from(r in Tenancy.scope_query(AdjustmentRequest, scope),
@@ -58,28 +67,29 @@ defmodule Bilimbi.People.Attendance.Adjustments do
     end
   end
 
-  def cancel_adjustment(%Scope{} = scope, company_id, actor, request_id) do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor) do
-      Access.transact(fn ->
-        case locked_request(scope, company_id, request_id) do
-          %AdjustmentRequest{employee_id: ^employee_id, status: "pending"} = request ->
-            request
-            |> AdjustmentRequest.decision_changeset("cancelled", actor.id, nil)
-            |> Repo.update()
+  def cancel_adjustment(%Scope{} = scope, company_id, request_id) do
+    Authorization.with_self_employee_lock(scope, company_id, @self_capability, fn self ->
+      employee_id = self.employee_id
 
-          %AdjustmentRequest{employee_id: ^employee_id} ->
-            {:error, :not_pending}
+      case locked_request(scope, company_id, request_id) do
+        %AdjustmentRequest{employee_id: ^employee_id, status: "pending"} = request ->
+          request
+          |> AdjustmentRequest.decision_changeset("cancelled", self.actor.id, nil)
+          |> Repo.update()
 
-          _ ->
-            {:error, :not_found}
-        end
-      end)
-    end
+        %AdjustmentRequest{employee_id: ^employee_id} ->
+          {:error, :not_pending}
+
+        _ ->
+          {:error, :not_found}
+      end
+    end)
   end
 
-  @doc "Pending requests, oldest proposed time first, with the employee's name."
+  @doc "Pending requests, oldest proposed time first, with the employee's name, for an approver."
   def pending_adjustments(%Scope{} = scope, company_id) do
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @approve_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id) do
       requests =
         Repo.all(
           from(r in Tenancy.scope_query(AdjustmentRequest, scope),
@@ -110,12 +120,13 @@ defmodule Bilimbi.People.Attendance.Adjustments do
   Approves or rejects a pending request. Refuses the requester and the
   request's own employee; a rejection needs a note.
   """
-  def decide_adjustment(%Scope{} = scope, company_id, actor, request_id, decision, note)
+  def decide_adjustment(%Scope{} = scope, company_id, request_id, decision, note)
       when decision in [:approve, :reject] do
     note = if is_binary(note), do: String.trim(note), else: nil
     note = if note == "", do: nil, else: note
 
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @approve_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          :ok <- note_given(decision, note) do
       Access.transact(fn ->
         with %AdjustmentRequest{status: "pending"} = request <-
@@ -133,7 +144,7 @@ defmodule Bilimbi.People.Attendance.Adjustments do
     end
   end
 
-  def decide_adjustment(%Scope{}, _, _, _, _, _), do: {:error, :invalid_decision}
+  def decide_adjustment(%Scope{}, _, _, _, _), do: {:error, :invalid_decision}
 
   defp apply_decision(_scope, _company_id, actor, request, :reject, note) do
     request |> AdjustmentRequest.decision_changeset("rejected", actor.id, note) |> Repo.update()

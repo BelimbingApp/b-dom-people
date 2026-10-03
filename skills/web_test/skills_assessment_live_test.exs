@@ -2,6 +2,7 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
   use BilimbiWeb.ConnCase, async: false
   import Phoenix.LiveViewTest
 
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.WorkflowFixtures, as: Fixtures
@@ -168,14 +169,14 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
   describe "actions page" do
     setup %{ctx: ctx} do
       {:ok, type} =
-        Skills.create_action_type(ctx.scope, 73, %{code: "coaching", name: "Coaching"})
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Coaching"})
 
       Fixtures.grant!(ctx.scope, :manager, 73, ["people.skills.actions.view"])
       %{type: type}
     end
 
     test "starts empty and asks for an action type first", %{conn: conn, ctx: ctx, type: type} do
-      {:ok, _} = Skills.set_action_type_active(ctx.scope, 73, type.id, false)
+      {:ok, _} = Skills.set_action_type_active(Fixtures.hr_scope(ctx), 73, type.id, false)
       {:ok, view, _} = conn |> login(:hr) |> live("/people/skills/actions")
       assert has_element?(view, "#actions-empty")
       assert has_element?(view, "#action-types-empty")
@@ -336,6 +337,34 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
                "Enter whole numbers within the shown limits."
 
       assert {:ok, %{backup_minimum: 2}} = Skills.policy(ctx.scope, 73)
+    end
+
+    test "a policy save after the grant is revoked changes nothing", %{conn: conn, ctx: ctx} do
+      {:ok, view, _} = conn |> login(:hr) |> live("/people/skills/policy")
+      assert has_element?(view, "#skills-policy-form button", "Save policy")
+      {:ok, before} = Skills.policy(ctx.scope, 73)
+
+      values =
+        before
+        |> Map.put(:backup_minimum, 97)
+        |> Map.new(fn {key, value} -> {Atom.to_string(key), to_string(value)} end)
+
+      # The page stays open while an administrator revokes the grant.
+      assert {:ok, :stored} =
+               Authz.put_principal_capability(
+                 ctx.scope,
+                 73,
+                 :user,
+                 Fixtures.users()[:hr],
+                 "people.skills.policy.manage",
+                 false
+               )
+
+      assert render_hook(view, "save_policy", %{"policy" => values}) =~
+               "You no longer have permission to change this company"
+
+      assert {:ok, ^before} = Skills.policy(ctx.scope, 73)
+      refute has_element?(view, "#skills-policy-form button", "Save policy")
     end
 
     test "a viewer without the write capabilities is refused", %{conn: conn, ctx: ctx} do

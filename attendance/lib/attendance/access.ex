@@ -34,16 +34,8 @@ defmodule Bilimbi.People.Attendance.Access do
   def settings_scope(scope, company),
     do: SettingsScope.company(company.platform_company_id, Scope.tenant_id(scope))
 
-  @doc "The working employee linked to a user actor signed in to this company."
-  def self_employee(scope, company_id, actor) do
-    with {:ok, employee_id} <- linked_employee_id(scope, company_id, actor),
-         {:ok, _employee} <- current_employee(scope, company_id, employee_id) do
-      {:ok, employee_id}
-    else
-      _ -> {:error, :unavailable}
-    end
-  end
-
+  # Self-service resolution lives in `Bilimbi.People.Workforce.Authorization`;
+  # this is only the independence check an approver's own link needs.
   @doc "The employee linked to a user actor, whatever its working status."
   def linked_employee_id(scope, company_id, actor) do
     with %{type: :user, company_id: ^company_id, id: user_id} <- actor,

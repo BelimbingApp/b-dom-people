@@ -10,6 +10,13 @@ defmodule BilimbiWeb.AttendanceLiveTest do
   alias Bilimbi.People.Attendance.TestFixtures, as: AttendanceFixtures
   alias Bilimbi.People.Attendance
 
+  # Operator writes authorize the scope's actor now; the system scope is refused.
+  defp operator(scope), do: Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)
+
+  defp local_at do
+    DateTime.utc_now() |> DateTime.add(-3600) |> Calendar.strftime("%Y-%m-%dT%H:%M")
+  end
+
   test "self attendance requires authentication", %{conn: conn} do
     assert {:error, {:redirect, %{to: "/"}}} = live(conn, "/people/attendance/my")
   end
@@ -75,7 +82,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
 
     test "linked employee can clock after operator enables it", %{conn: conn} do
       {:ok, scope} = Tenancy.scope(41)
-      assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", true, 16)
+      assert {:ok, _} = Attendance.put_rules(operator(scope), 73, "Etc/UTC", true, 16)
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
       assert has_element?(view, "button[data-clock-type='in']")
       render_click(view, "clock", %{"type" => "in"})
@@ -132,7 +139,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       employee: employee
     } do
       {:ok, day} =
-        Attendance.create_shift_template(scope, 73, %{
+        Attendance.create_shift_template(operator(scope), 73, %{
           "code" => "day",
           "name" => "Day",
           "starts_at" => "09:00",
@@ -209,7 +216,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       scope: scope
     } do
       assert {:ok, _} =
-               Attendance.put_rules(scope, 73, %{
+               Attendance.put_rules(operator(scope), 73, %{
                  self_clock_enabled: true,
                  location_required: true
                })
@@ -233,10 +240,10 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       employee: employee
     } do
       {:ok, _} =
-        Attendance.put_rules(scope, 73, %{self_clock_enabled: true, location_required: true})
+        Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true, location_required: true})
 
       {:ok, location} =
-        Attendance.create_clocking_location(scope, 73, %{
+        Attendance.create_clocking_location(operator(scope), 73, %{
           code: "site-one",
           name: "Clocking location",
           latitude: "1.5",
@@ -273,7 +280,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       employee: employee
     } do
       {:ok, _} =
-        Attendance.put_rules(scope, 73, %{self_clock_enabled: true, location_required: true})
+        Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true, location_required: true})
 
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
       render_click(view, "clock_location_error", %{"reason" => "permission_denied"})
@@ -288,7 +295,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       scope: scope,
       employee: employee
     } do
-      {:ok, _} = Attendance.put_rules(scope, 73, %{self_clock_enabled: true})
+      {:ok, _} = Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true})
       signed = Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)
       assert {:error, :unavailable} = Attendance.self_clock(scope, 73, "in", "system", %{})
       assert {:error, :unavailable} = Attendance.self_clock(signed, 74, "in", "company", %{})
@@ -312,7 +319,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       scope: scope,
       employee: employee
     } do
-      {:ok, _} = Attendance.put_rules(scope, 73, %{self_clock_enabled: true})
+      {:ok, _} = Attendance.put_rules(operator(scope), 73, %{self_clock_enabled: true})
       {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
 
       assert {:ok, :stored} =
@@ -328,6 +335,90 @@ defmodule BilimbiWeb.AttendanceLiveTest do
       render_click(view, "clock", %{"type" => "in", "latitude" => 1.5, "longitude" => 103.7})
       assert render(view) =~ "Self clocking is unavailable"
       assert {:ok, []} = Attendance.list_days(scope, 73, employee.id)
+    end
+
+    test "rules saved after the grant is revoked change nothing", %{conn: conn, scope: scope} do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/rules")
+      assert {:ok, before} = Attendance.rules(scope, 73)
+      refute before.self_clock_enabled
+
+      assert {:ok, :stored} =
+               Bilimbi.Base.Authz.put_principal_capability(
+                 scope,
+                 73,
+                 :user,
+                 91,
+                 "people.attendance.rules.manage",
+                 false
+               )
+
+      render_hook(view, "save", %{
+        "timezone" => "Etc/UTC",
+        "enabled" => "true",
+        "max_shift_hours" => "23",
+        "location_required" => "false",
+        "adjustment_window_days" => "30"
+      })
+
+      assert {:ok, ^before} = Attendance.rules(scope, 73)
+    end
+
+    test "an adjustment request after the self-view grant is revoked writes nothing", %{
+      conn: conn,
+      scope: scope
+    } do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
+
+      assert {:ok, :stored} =
+               Bilimbi.Base.Authz.put_principal_capability(
+                 scope,
+                 73,
+                 :user,
+                 91,
+                 "people.attendance.self.view",
+                 false
+               )
+
+      html =
+        render_hook(view, "request_adjustment", %{
+          "adjustment" => %{"event_type" => "in", "local_at" => local_at(), "reason" => "Forgot"}
+        })
+
+      assert html =~ "You no longer have permission to use attendance self-service here."
+      assert has_element?(view, "#my-attendance-unavailable")
+      assert [] = Bilimbi.Base.Repo.all(Bilimbi.People.Attendance.AdjustmentRequest)
+    end
+
+    test "an adjustment request after the account is unlinked writes nothing", %{
+      conn: conn,
+      scope: scope,
+      employee: employee
+    } do
+      {:ok, view, _} = conn |> log_in_as() |> live("/people/attendance/my")
+      assert has_element?(view, "#my-attendance-adjustment-form")
+
+      assert {:ok, _} = Bilimbi.Core.User.update_user(scope, 73, 91, %{employee_id: nil})
+
+      html =
+        render_hook(view, "request_adjustment", %{
+          "adjustment" => %{"event_type" => "in", "local_at" => local_at(), "reason" => "Forgot"}
+        })
+
+      assert html =~ "Your account is no longer linked to a working employee in this company."
+      assert has_element?(view, "#my-attendance-unavailable")
+      assert [] = Bilimbi.Base.Repo.all(Bilimbi.People.Attendance.AdjustmentRequest)
+
+      # Relinked to the employee, the next request is accepted for them.
+      assert {:ok, _} = Bilimbi.Core.User.update_user(scope, 73, 91, %{employee_id: employee.id})
+
+      render_hook(view, "request_adjustment", %{
+        "adjustment" => %{"event_type" => "in", "local_at" => local_at(), "reason" => "Forgot"}
+      })
+
+      assert [%{employee_id: employee_id, status: "pending"}] =
+               Bilimbi.Base.Repo.all(Bilimbi.People.Attendance.AdjustmentRequest)
+
+      assert employee_id == employee.id
     end
 
     test "new pages require their own capability", %{conn: conn} do

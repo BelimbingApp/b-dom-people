@@ -5,6 +5,9 @@ defmodule Bilimbi.People.Skills.Policy do
 
   alias Bilimbi.Base.Settings
   alias Bilimbi.People.Skills.Access
+  alias Bilimbi.People.Workforce.Authorization
+
+  @capability "people.skills.policy.manage"
 
   @keys %{
     reassessment_due_days: "people.skills.reassessment_due_days",
@@ -35,9 +38,13 @@ defmodule Bilimbi.People.Skills.Policy do
     end
   end
 
-  @doc "Stores the given values; omitted policy values keep their current value."
+  @doc """
+  Stores the given values; omitted policy values keep their current value.
+  The scope's actor must hold `people.skills.policy.manage` for the company now.
+  """
   def put(scope, company_id, %{} = changes) do
-    with :ok <- validate(changes),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @capability),
+         :ok <- validate(changes),
          {:ok, company} <- Access.current_company(scope, company_id) do
       settings_scope = Access.settings_scope(scope, company)
 

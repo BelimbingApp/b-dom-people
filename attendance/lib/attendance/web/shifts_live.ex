@@ -38,6 +38,9 @@ defmodule Bilimbi.People.Attendance.Web.ShiftsLive do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, put_flash(socket, :error, error_message(changeset))}
 
+      {:error, :unauthorized} ->
+        {:noreply, put_flash(socket, :error, refusal(:unauthorized))}
+
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Shift templates are unavailable for this company.")}
     end
@@ -54,9 +57,13 @@ defmodule Bilimbi.People.Attendance.Web.ShiftsLive do
            ) do
       {:noreply, socket |> load() |> put_flash(:success, "Shift template updated.")}
     else
+      {:error, :unauthorized} -> {:noreply, put_flash(socket, :error, refusal(:unauthorized))}
       _ -> {:noreply, put_flash(socket, :error, "Shift template could not be updated.")}
     end
   end
+
+  defp refusal(:unauthorized),
+    do: "You no longer have permission to change this company's shift templates."
 
   defp error_message(changeset) do
     cond do

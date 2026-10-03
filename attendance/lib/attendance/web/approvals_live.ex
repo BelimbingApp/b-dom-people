@@ -39,7 +39,6 @@ defmodule Bilimbi.People.Attendance.Web.ApprovalsLive do
            Attendance.decide_adjustment(
              socket.assigns.current_scope.scope,
              socket.assigns.company.id,
-             socket.assigns.current_scope.actor,
              id,
              String.to_existing_atom(decision),
              params["note"]
@@ -53,6 +52,10 @@ defmodule Bilimbi.People.Attendance.Web.ApprovalsLive do
   end
 
   def refusal(:self_approval), do: "You cannot decide your own attendance request."
+
+  def refusal(:unauthorized),
+    do: "You no longer have permission to decide attendance requests for this company."
+
   def refusal(:note_required), do: "Add a note explaining the rejection."
   def refusal(:note_too_long), do: "Keep the note within 500 characters."
   def refusal(:not_pending), do: "This request has already been decided."

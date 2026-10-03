@@ -134,6 +134,9 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
          |> clear_flash(:error)
          |> put_flash(:info, "Assignment members saved.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, socket |> load() |> put_flash(:error, forbidden())}
+
       _ ->
         {:noreply, put_flash(socket, :error, "Choose claim types and employees of this company.")}
     end
@@ -147,6 +150,9 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
          |> load()
          |> clear_flash(:error)
          |> put_flash(:info, "Policy added.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, socket |> load() |> put_flash(:error, forbidden())}
 
       {:error, :overlapping_policy} ->
         {:noreply,
@@ -171,6 +177,9 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
          |> clear_flash(:error)
          |> put_flash(:info, "Policy end date saved.")}
 
+      {:error, :unauthorized} ->
+        {:noreply, socket |> load() |> put_flash(:error, forbidden())}
+
       {:error, :requests_after_end} ->
         {:noreply,
          put_flash(socket, :error, "Claims under this policy were incurred after that date.")}
@@ -188,8 +197,13 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
        |> clear_flash(:error)
        |> put_flash(:info, success)}
 
+  defp outcome(socket, {:error, :unauthorized}, _success, _failure),
+    do: {:noreply, socket |> load() |> put_flash(:error, forbidden())}
+
   defp outcome(socket, {:error, _reason}, _success, failure),
     do: {:noreply, put_flash(socket, :error, failure)}
+
+  defp forbidden, do: "You no longer have permission to change this company's claim policies."
 
   defp select_company(%{assigns: %{companies: []}} = socket, _company_id),
     do: socket |> assign(:company, nil) |> clear()

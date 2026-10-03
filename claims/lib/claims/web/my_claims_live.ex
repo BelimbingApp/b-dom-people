@@ -5,94 +5,83 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
   The signed-in actor's company is the explicit company axis. A login actor
   that is not linked to a working employee there sees an unavailable state and
   cannot submit.
+
+  The page never acts on an employee it resolved earlier: every submit,
+  withdrawal and reload asks the Claims facade, which authorizes the
+  self-service grant and resolves the account's current employee link again.
+  A grant revoked or a link removed while the page stays open refuses the next
+  event and clears the private claims from the page.
   """
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
   alias Bilimbi.People.Claims
 
-  @capability "people.claims.submit"
+  @write_events ~w(submit_claim withdraw_claim)
 
   @impl true
   def mount(_params, _session, socket) do
-    actor = socket.assigns.current_scope.actor
-    company_id = actor.company_id
-
-    employee =
-      with {:ok, _company} <- Company.authorize_company_target(actor, company_id, @capability),
-           {:ok, employee} <- Claims.self_service_employee(actor.scope, company_id, actor.id) do
-        employee
-      else
-        _ -> nil
-      end
-
     {:ok,
      socket
      |> assign(:page_title, "My claims")
-     |> assign(:company_id, company_id)
-     |> assign(:employee, employee)
+     |> assign(:company_id, socket.assigns.current_scope.actor.company_id)
      |> assign(:possible_duplicate?, false)
      |> assign(:claim, %{})
      |> load()}
   end
 
-  # Submitting and withdrawing act only on the signed-in actor's own linked
-  # employee; the route capability is the self-service grant.
+  # The deny clause only reflects the last resolution; the facade decides.
   @impl true
-  def handle_event("submit_claim", %{"claim" => attrs}, socket) do
-    if socket.assigns.employee do
-      case Claims.submit_request(
-             scope(socket),
-             socket.assigns.company_id,
-             socket.assigns.employee.id,
-             actor_id(socket),
-             attrs
-           ) do
-        {:ok, _request} ->
-          {:noreply,
-           socket
-           |> assign(:possible_duplicate?, false)
-           |> assign(:claim, %{})
-           |> load()
-           |> clear_flash(:error)
-           |> put_flash(:info, "Claim submitted.")}
+  def handle_event(event, _params, %{assigns: %{can_submit?: false}} = socket)
+      when event in @write_events,
+      do: {:noreply, socket |> load() |> put_flash(:error, unavailable())}
 
-        {:error, reason} ->
-          {:noreply,
-           socket
-           |> assign(:possible_duplicate?, reason == :possible_duplicate)
-           |> assign(:claim, attrs)
-           |> clear_flash(:info)
-           |> put_flash(:error, refusal(reason))}
-      end
-    else
-      {:noreply, socket}
+  def handle_event("submit_claim", %{"claim" => attrs}, socket) do
+    case Claims.submit_request(scope(socket), socket.assigns.company_id, attrs) do
+      {:ok, _request} ->
+        {:noreply,
+         socket
+         |> assign(:possible_duplicate?, false)
+         |> assign(:claim, %{})
+         |> load()
+         |> clear_flash(:error)
+         |> put_flash(:info, "Claim submitted.")}
+
+      {:error, reason} when reason in [:unauthorized, :not_linked, :not_found] ->
+        {:noreply, socket |> load() |> clear_flash(:info) |> put_flash(:error, refusal(reason))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:possible_duplicate?, reason == :possible_duplicate)
+         |> assign(:claim, attrs)
+         |> clear_flash(:info)
+         |> put_flash(:error, refusal(reason))}
     end
   end
 
   def handle_event("withdraw_claim", %{"id" => raw_id}, socket) do
-    with %{id: employee_id} <- socket.assigns.employee,
-         {id, ""} <- Integer.parse(raw_id),
-         {:ok, _request} <-
-           Claims.withdraw_request(
-             scope(socket),
-             socket.assigns.company_id,
-             employee_id,
-             id,
-             actor_id(socket)
-           ) do
+    with {id, ""} <- Integer.parse(raw_id),
+         {:ok, _request} <- Claims.withdraw_request(scope(socket), socket.assigns.company_id, id) do
       {:noreply,
        socket
        |> load()
        |> clear_flash(:error)
        |> put_flash(:info, "Claim withdrawn.")}
     else
-      _ -> {:noreply, put_flash(socket, :error, "This claim cannot be withdrawn.")}
+      {:error, reason} when reason in [:unauthorized, :not_linked] ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(reason))}
+
+      # A claim that is not the current employee's own, or no longer submitted.
+      _ ->
+        {:noreply, socket |> load() |> put_flash(:error, "This claim cannot be withdrawn.")}
     end
   end
 
   @doc "Employee-facing text for a submission refusal."
-  def refusal(:employee_unavailable), do: "You are not a working employee of this company."
+  def refusal(:employee_unavailable), do: unavailable()
+  def refusal(:not_linked), do: unavailable()
+  def refusal(:not_found), do: unavailable()
+  def refusal(:unauthorized), do: "You no longer have permission to submit claims here."
   def refusal(:claim_type_unavailable), do: "Choose a claim type that is open for claims."
   def refusal(:claim_type_not_assigned), do: "This claim type is not assigned to you."
   def refusal(:future_incurred_on), do: "The expense date cannot be in the future."
@@ -110,31 +99,37 @@ defmodule Bilimbi.People.Claims.Web.MyClaimsLive do
 
   def refusal(_reason), do: "Check the claim details."
 
-  defp load(%{assigns: %{employee: nil}} = socket),
-    do: socket |> assign(:open_types, []) |> assign(:requests, []) |> assign(:type_names, %{})
+  defp unavailable, do: "You are not a working employee of this company."
 
+  # Resolves the actor's own employee through the facade on every load, so a
+  # removed link or revoked grant empties the page instead of showing or
+  # acting on a former employee's claims.
   defp load(socket) do
     scope = scope(socket)
     company_id = socket.assigns.company_id
 
-    with {:ok, open_types} <-
-           Claims.open_claim_types(scope, company_id, nil,
-             employee_id: socket.assigns.employee.id
-           ),
+    with {:ok, employee} <- Claims.self_service_employee(scope, company_id),
+         {:ok, open_types} <- Claims.self_open_claim_types(scope, company_id),
          {:ok, all_types} <- Claims.claim_types(scope, company_id),
-         {:ok, requests} <-
-           Claims.employee_requests(scope, company_id, socket.assigns.employee.id) do
+         {:ok, requests} <- Claims.self_requests(scope, company_id) do
       socket
+      |> assign(:employee, employee)
+      |> assign(:can_submit?, true)
       |> assign(:open_types, open_types)
       |> assign(:requests, requests)
       |> assign(:type_names, Map.new(all_types, &{&1.id, &1.name}))
     else
-      _ -> socket |> assign(:employee, nil) |> load()
+      _ ->
+        socket
+        |> assign(:employee, nil)
+        |> assign(:can_submit?, false)
+        |> assign(:open_types, [])
+        |> assign(:requests, [])
+        |> assign(:type_names, %{})
     end
   end
 
   defp scope(socket), do: socket.assigns.current_scope.scope
-  defp actor_id(socket), do: socket.assigns.current_scope.actor.id
 
   defp limits(policy) do
     [

@@ -29,7 +29,7 @@ cross-tenant records are indistinguishable.
   carried into the next leave year; without one the type does not carry
   forward.
 - **Ledger.** Entries are append-only, enforced by a database trigger;
-  corrections are new entries. `grant_entitlements/4` gives every current
+  corrections are new entries. `grant_entitlements/3` gives every current
   workforce employee each active type's entitlement from the version in force
   on the first day of the leave year, once per employee, type and year, and
   records the policy version; it skips, and counts as `closed`, an employee and
@@ -40,11 +40,27 @@ cross-tenant records are indistinguishable.
   `balances/4` sums entries per type and also reports the quantity `pending`
   requests reserve and the `available` balance after that reservation.
 
+## Authorization
+
+Every write, and every read of other employees' requests, authorizes the
+scope's signed-in actor for its own capability when it runs, through
+`Bilimbi.People.Workforce.Authorization` at the facade, so pages, the
+carry-forward worker and any other adapter share one boundary. Policy,
+ledger, grant and carry-forward operations and the skip report need
+`people.leave.policies.manage`; `pending_requests/2` and `decide_request/5`
+need `people.leave.requests.approve`; `submit_request/3`, `cancel_request/3`,
+`self_summary/3` and `self_requests/2` need `people.leave.self.view` and
+resolve the account's current link to a working employee on every call,
+proving it again under the employee's affiliation lock inside the write
+transaction. A system scope, a grant revoked while a page stays open, and an
+account unlinked from its employee are refused with `:unauthorized` or
+`:not_linked`; the performer is the scope's actor, never an argument.
+
 ## Requests and approval
 
 An employee requests leave for the Core Employee linked to their Core User,
 only while that employee is current in the workforce seam.
-`submit_request/4` takes a leave type, dates, a `day_part` and a client
+`submit_request/3` takes a leave type, dates, a `day_part` and a client
 `request_key`:
 
 - `full` counts each date in the range; `am` and `pm` are half of one date;
@@ -68,12 +84,12 @@ only while that employee is current in the workforce seam.
   different request under the key is refused.
 
 Every write for one employee takes Core Employee's affiliation lock, so
-balance and overlap checks cannot race. `decide_request/6` approves or
+balance and overlap checks cannot race. `decide_request/5` approves or
 rejects a pending request. The requester and the request's own employee are
 refused (`:self_approval`), as is an approver whose user cannot be resolved,
 and a rejection needs a note. Approval rechecks the employee, the type and the
 balance, then writes a `taken` ledger entry of the negative quantity with the
-approver as actor. `cancel_request/4` lets the
+approver as actor. `cancel_request/3` lets the
 employee cancel a pending request, or an approved one before its start date,
 which writes a `cancelled` entry returning the quantity. Rejected and cancelled
 requests release their slots. Each transition is an append-only row in
@@ -81,7 +97,7 @@ requests release their slots. Each transition is an append-only row in
 
 ## Carry-forward
 
-`carry_forward/4` closes one leave year after it has ended. For every active
+`carry_forward/3` closes one leave year after it has ended. For every active
 type whose policy in force on the year's last day has a cap, each current
 employee's closing balance up to the cap becomes a `carried_forward` entry on
 the first day of the next year, and any excess becomes an `expired` entry on

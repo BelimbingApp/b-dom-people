@@ -70,12 +70,12 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
     end
 
     test "the company's default interval applies to a skill with none", %{ctx: ctx} do
-      {:ok, _} = Skills.put_policy(ctx.scope, 73, %{default_reassessment_months: 3})
+      {:ok, _} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{default_reassessment_months: 3})
       {:ok, profile} = Skills.get_profile(ctx.scope, 73, ctx.profile.id)
       assert profile.status == "published"
 
       {:ok, welding} =
-        Skills.update_skill(ctx.scope, 73, ctx.welding.id, %{reassessment_months: nil})
+        Skills.update_skill(Fixtures.hr_scope(ctx), 73, ctx.welding.id, %{reassessment_months: nil})
 
       assert welding.reassessment_months == nil
 
@@ -87,7 +87,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
 
     test "policy multipliers are snapshotted on each assessment", %{ctx: ctx} do
       {:ok, old} = submit(ctx, :lead, :one, 0)
-      {:ok, _} = Skills.put_policy(ctx.scope, 73, %{multiplier_critical: 5})
+      {:ok, _} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{multiplier_critical: 5})
       {:ok, new} = submit(ctx, :lead, :two, 0)
 
       assert old.priority_multiplier == 3 and old.priority_score == 6
@@ -108,7 +108,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
                submit(ctx, :lead, :one, 1, %{assessed_on: "2026-09-01", valid_until: "2026-08-01"})
 
       assert {:error, :skill_unavailable} = submit(ctx, :lead, :one, 1, %{skill_id: 999_999})
-      assert {:ok, _} = Skills.set_skill_active(ctx.scope, 73, ctx.welding.id, false)
+      assert {:ok, _} = Skills.set_skill_active(Fixtures.hr_scope(ctx), 73, ctx.welding.id, false)
       assert {:error, :skill_unavailable} = submit(ctx, :lead, :one, 1)
     end
 
@@ -376,7 +376,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
       finalize(ctx, :two, 3)
       assert {:ok, [%{holders: 2, covered: true}]} = Skills.coverage(actor(ctx, :hr), 73)
 
-      {:ok, _} = Skills.put_policy(ctx.scope, 73, %{backup_minimum: 3})
+      {:ok, _} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 3})
 
       assert {:ok, [%{holders: 2, minimum: 3, covered: false}]} =
                Skills.coverage(actor(ctx, :hr), 73)
@@ -475,7 +475,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
 
     test "the due window is a company policy", %{ctx: ctx} do
       finalize(ctx, :one, 2)
-      {:ok, _} = Skills.put_policy(ctx.scope, 73, %{reassessment_due_days: 10})
+      {:ok, _} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{reassessment_due_days: 10})
 
       assert {:ok, request} =
                Skills.request_reassessment(
@@ -536,13 +536,13 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
   describe "development actions" do
     setup %{ctx: ctx} do
       {:ok, type} =
-        Skills.create_action_type(ctx.scope, 73, %{
+        Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{
           code: "coaching",
           name: "Coaching",
           requires_provider: true
         })
 
-      {:ok, plain} = Skills.create_action_type(ctx.scope, 73, %{code: "reading", name: "Reading"})
+      {:ok, plain} = Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
       %{type: type, plain: plain}
     end
 
@@ -590,7 +590,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
       assert action.priority_explanation =~ "Score 6 = gap 2 x critical multiplier 3"
       assert {:error, :already_proposed} = propose(ctx, type, assessed.id)
 
-      {:ok, _} = Skills.put_policy(ctx.scope, 73, %{multiplier_critical: 4})
+      {:ok, _} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{multiplier_critical: 4})
       assert {:ok, [listed]} = Skills.list_actions(actor(ctx, :hr), 73)
       assert listed.priority_score == 6
     end
@@ -851,7 +851,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
     test "overdue actions tell the owner and a coverage gap tells company-wide holders", %{
       ctx: ctx
     } do
-      {:ok, plain} = Skills.create_action_type(ctx.scope, 73, %{code: "reading", name: "Reading"})
+      {:ok, plain} = Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "reading", name: "Reading"})
       assessed = finalize(ctx, :one, 0)
 
       {:ok, action} =
@@ -926,31 +926,33 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
   describe "policy" do
     test "values are bounded whole numbers stored per company", %{ctx: ctx} do
       assert {:ok, %{reassessment_due_days: 30, backup_minimum: 2}} = Skills.policy(ctx.scope, 73)
-      assert {:ok, %{backup_minimum: 5}} = Skills.put_policy(ctx.scope, 73, %{backup_minimum: 5})
+      assert {:ok, %{backup_minimum: 5}} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 5})
       assert {:ok, %{backup_minimum: 2}} = Skills.policy(ctx.scope, 74)
-      assert {:error, :invalid_policy} = Skills.put_policy(ctx.scope, 73, %{backup_minimum: 0})
-      assert {:error, :invalid_policy} = Skills.put_policy(ctx.scope, 73, %{unknown: 1})
-      assert {:error, :invalid_policy} = Skills.put_policy(ctx.scope, 73, %{})
+      assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{backup_minimum: 0})
+      assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{unknown: 1})
+      assert {:error, :invalid_policy} = Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{})
 
       assert {:error, :invalid_policy} =
-               Skills.put_policy(ctx.scope, 73, %{reassessment_due_days: "30"})
+               Skills.put_policy(Fixtures.hr_scope(ctx), 73, %{reassessment_due_days: "30"})
     end
 
     test "action types are company data with unique codes", %{ctx: ctx} do
       assert {:ok, []} = Skills.list_action_types(ctx.scope, 73)
 
       assert {:ok, type} =
-               Skills.create_action_type(ctx.scope, 73, %{code: "coaching", name: "Coaching"})
+               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Coaching"})
 
       assert {:error, %Ecto.Changeset{}} =
-               Skills.create_action_type(ctx.scope, 73, %{code: "coaching", name: "Again"})
+               Skills.create_action_type(Fixtures.hr_scope(ctx), 73, %{code: "coaching", name: "Again"})
 
       assert {:ok, %{active: false}} =
-               Skills.set_action_type_active(ctx.scope, 73, type.id, false)
+               Skills.set_action_type_active(Fixtures.hr_scope(ctx), 73, type.id, false)
 
       assert {:ok, [_]} = Skills.list_action_types(ctx.scope, 73)
       assert {:ok, []} = Skills.list_action_types(ctx.scope, 74)
-      assert {:error, :not_found} = Skills.set_action_type_active(ctx.scope, 74, type.id, true)
+      # The HR operator's grants are in company 73 only.
+      assert {:error, :unauthorized} =
+               Skills.set_action_type_active(Fixtures.hr_scope(ctx), 74, type.id, true)
     end
   end
 end

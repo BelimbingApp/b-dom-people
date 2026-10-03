@@ -32,13 +32,10 @@ defmodule Bilimbi.People.Leave.Web.ApprovalsLive do
         {:noreply, socket}
 
       company ->
-        %{scope: scope, actor: actor} = socket.assigns.current_scope
-
         result =
           Leave.decide_request(
-            scope,
+            socket.assigns.current_scope.scope,
             company.id,
-            actor,
             parse_integer(id),
             String.to_existing_atom(decision),
             params["note"]
@@ -63,6 +60,10 @@ defmodule Bilimbi.People.Leave.Web.ApprovalsLive do
     do: "That leave year has been carried forward and is closed."
 
   defp message({:error, :not_pending}, _), do: "That request has already been decided."
+
+  defp message({:error, :unauthorized}, _),
+    do: "You no longer have permission to decide leave requests for this company."
+
   defp message(_, _), do: "The request could not be decided."
 
   defp parse_integer(value) when is_binary(value) do
@@ -93,6 +94,7 @@ defmodule Bilimbi.People.Leave.Web.ApprovalsLive do
          {:ok, types} <- Leave.list_types(scope, company_id) do
       assign(socket, requests: requests, types: types)
     else
+      {:error, :unauthorized} -> assign(socket, requests: :unauthorized, types: [])
       _ -> assign(socket, requests: :unavailable, types: [])
     end
   end
@@ -122,6 +124,9 @@ defmodule Bilimbi.People.Leave.Web.ApprovalsLive do
         <.empty_state :if={@company && @requests == :unavailable} id="leave-approvals-unavailable"
           title="Leave requests are unavailable for this company."
           reason="Workforce data for this company is not current." />
+        <.empty_state :if={@company && @requests == :unauthorized} id="leave-approvals-forbidden"
+          title="Leave requests are unavailable for this company."
+          reason="You no longer have permission to decide leave requests here." />
         <p :if={@requests == []} id="leave-approvals-none" class="mt-5 text-sm text-ink-muted">
           No leave requests are waiting for a decision.
         </p>

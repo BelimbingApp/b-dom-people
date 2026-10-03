@@ -1,5 +1,12 @@
 defmodule Bilimbi.People.Organisation do
-  @moduledoc "Company-scoped positions, immutable versions and assignments."
+  @moduledoc """
+  Company-scoped positions, immutable versions and assignments.
+
+  Every write authorizes `people.organisation.manage` for the scope's
+  signed-in actor and the explicit company when it runs, through
+  `Bilimbi.People.Workforce.Authorization`; a system scope, a revoked grant
+  or a company outside the actor's reach is refused with `:unauthorized`.
+  """
 
   import Ecto.Query
 
@@ -12,6 +19,7 @@ defmodule Bilimbi.People.Organisation do
   alias Bilimbi.People.Organisation.{Position, PositionAssignment, PositionVersion}
   alias Bilimbi.People.Organisation.PositionPaging
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.Position, as: WorkforcePosition
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Reference
@@ -23,7 +31,8 @@ defmodule Bilimbi.People.Organisation do
 
   @doc "Creates a stable position identity in one live workforce company."
   def create_position(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- Workforce.company(scope, company_id),
+    with {:ok, _actor} <- manage(scope, company_id),
+         {:ok, _company} <- Workforce.company(scope, company_id),
          {:ok, parent_id} <- parent_id(company_id, Map.get(attrs, :parent_id)) do
       code = attrs |> Map.get(:code) |> normalize_text()
 
@@ -35,7 +44,8 @@ defmodule Bilimbi.People.Organisation do
 
   @doc "Moves a position below another position after checking company and cycles."
   def set_parent(%Scope{} = scope, company_id, position_id, new_parent_id) do
-    with {:ok, _company} <- Workforce.company(scope, company_id) do
+    with {:ok, _actor} <- manage(scope, company_id),
+         {:ok, _company} <- Workforce.company(scope, company_id) do
       case Repo.transaction(fn ->
              with {:ok, _locked} <- Company.lock_live_company(scope, company_id),
                   {:ok, position} <- get_position(company_id, position_id),
@@ -54,7 +64,8 @@ defmodule Bilimbi.People.Organisation do
 
   @doc "Appends a version; dates are inclusive and existing versions never change."
   def record_version(%Scope{} = scope, company_id, position_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- Workforce.company(scope, company_id),
+    with {:ok, _actor} <- manage(scope, company_id),
+         {:ok, _company} <- Workforce.company(scope, company_id),
          {:ok, _position} <- get_position(company_id, position_id) do
       %PositionVersion{}
       |> PositionVersion.changeset(Map.put(attrs, :position_id, position_id))
@@ -71,7 +82,8 @@ defmodule Bilimbi.People.Organisation do
   def assign(%Scope{} = scope, company_id, position_id, attrs) when is_map(attrs) do
     employee_id = Map.get(attrs, :employee_id)
 
-    with {:ok, _company} <- Workforce.company(scope, company_id),
+    with {:ok, _actor} <- manage(scope, company_id),
+         {:ok, _company} <- Workforce.company(scope, company_id),
          {:ok, _position} <- get_position(company_id, position_id),
          {:ok, _employee} <- Workforce.employee(scope, company_id, employee_id) do
       changeset =
@@ -89,16 +101,18 @@ defmodule Bilimbi.People.Organisation do
     end
   end
 
-  @doc "Ends one assignment on an inclusive day, only ever earlier, and records the action."
-  def end_assignment(%Actor{} = actor, company_id, assignment_id, effective_to) do
-    with {:ok, _company} <-
-           Company.authorize_company_target(actor, company_id, @manage_capability),
-         {:ok, _company} <- Workforce.company(actor.scope, company_id) do
+  @doc """
+  Ends one assignment on an inclusive day, only ever earlier, and records the
+  action as performed by the scope's actor.
+  """
+  def end_assignment(%Scope{} = scope, company_id, assignment_id, effective_to) do
+    with {:ok, actor} <- manage(scope, company_id),
+         {:ok, _company} <- Workforce.company(scope, company_id) do
       transact(fn ->
-        with {:ok, _locked} <- Company.lock_live_company(actor.scope, company_id),
+        with {:ok, _locked} <- Company.lock_live_company(scope, company_id),
              {:ok, assignment} <- get_assignment(company_id, assignment_id) do
           end_placement(
-            actor.scope,
+            scope,
             company_id,
             assignment,
             effective_to,
@@ -319,6 +333,9 @@ defmodule Bilimbi.People.Organisation do
       {:ok, ended}
     end
   end
+
+  defp manage(scope, company_id),
+    do: Authorization.authorize(scope, company_id, @manage_capability)
 
   defp transact(fun) do
     Repo.transaction(fn ->

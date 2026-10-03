@@ -1,5 +1,11 @@
 defmodule Bilimbi.People.Leave.Web.MyLive do
-  @moduledoc "Self leave balances, requests and cancellation, resolved through Core User."
+  @moduledoc """
+  Self leave balances, requests and cancellation for the signed-in actor.
+
+  The facade resolves the actor's current linked employee and self-service
+  grant on every read and write; nothing about the employee is kept here, so
+  a removed link or revoked grant takes effect on the next event.
+  """
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Leave
 
@@ -32,10 +38,13 @@ defmodule Bilimbi.People.Leave.Web.MyLive do
       |> Map.put("leave_type_id", parse_integer(attrs["leave_type_id"]))
       |> Map.put("request_key", socket.assigns.request_key)
 
-    case Leave.submit_request(scope, actor.company_id, actor, attrs) do
+    case Leave.submit_request(scope, actor.company_id, attrs) do
       {:ok, _request} ->
         {:noreply,
          socket |> new_request_key() |> load() |> put_flash(:success, "Leave request submitted.")}
+
+      {:error, reason} when reason in [:unauthorized, :not_linked] ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(reason))}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, refusal(reason))}
@@ -45,9 +54,12 @@ defmodule Bilimbi.People.Leave.Web.MyLive do
   def handle_event("cancel_request", %{"id" => id}, socket) do
     %{scope: scope, actor: actor} = socket.assigns.current_scope
 
-    case Leave.cancel_request(scope, actor.company_id, actor, parse_integer(id)) do
+    case Leave.cancel_request(scope, actor.company_id, parse_integer(id)) do
       {:ok, _request} ->
         {:noreply, socket |> load() |> put_flash(:success, "Leave request cancelled.")}
+
+      {:error, reason} when reason in [:unauthorized, :not_linked] ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(reason))}
 
       {:error, :year_closed} ->
         {:noreply,
@@ -62,8 +74,8 @@ defmodule Bilimbi.People.Leave.Web.MyLive do
     %{scope: scope, actor: actor} = socket.assigns.current_scope
     company_id = actor.company_id
 
-    with {:ok, summary} <- Leave.self_summary(scope, company_id, actor),
-         {:ok, requests} <- Leave.self_requests(scope, company_id, actor),
+    with {:ok, summary} <- Leave.self_summary(scope, company_id),
+         {:ok, requests} <- Leave.self_requests(scope, company_id),
          {:ok, today} <- Leave.today(scope, company_id) do
       assign(socket, summary: summary, requests: requests, today: today)
     else
@@ -73,6 +85,11 @@ defmodule Bilimbi.People.Leave.Web.MyLive do
 
   defp new_request_key(socket),
     do: assign(socket, :request_key, Base.url_encode64(:crypto.strong_rand_bytes(18)))
+
+  defp refusal(:unauthorized), do: "You no longer have permission to use leave self-service."
+
+  defp refusal(:not_linked),
+    do: "Your account is not linked to a working employee in this company."
 
   defp refusal(:insufficient_balance), do: "The available balance does not cover this request."
 

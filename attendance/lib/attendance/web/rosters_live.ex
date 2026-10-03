@@ -52,7 +52,6 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
            Attendance.plan_roster_entry(
              scope(socket),
              socket.assigns.company.id,
-             socket.assigns.current_scope.actor,
              employee_id,
              on_date,
              value
@@ -61,6 +60,9 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
     else
       {:error, :shift_unavailable} ->
         {:noreply, socket |> load() |> put_flash(:error, "That shift template is retired.")}
+
+      {:error, :unauthorized} ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(:unauthorized))}
 
       _ ->
         {:noreply, socket |> load() |> put_flash(:error, "The roster entry could not be saved.")}
@@ -73,7 +75,6 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
     case Attendance.publish_roster(
            scope(socket),
            socket.assigns.company.id,
-           socket.assigns.current_scope.actor,
            from,
            Date.add(from, @days - 1)
          ) do
@@ -86,10 +87,16 @@ defmodule Bilimbi.People.Attendance.Web.RostersLive do
            "Published #{count} roster #{if count == 1, do: "change", else: "changes"}."
          )}
 
+      {:error, :unauthorized} ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(:unauthorized))}
+
       _ ->
         {:noreply, put_flash(socket, :error, "The roster could not be published.")}
     end
   end
+
+  defp refusal(:unauthorized),
+    do: "You no longer have permission to plan rosters for this company."
 
   defp plan_value(""), do: {:ok, :none}
   defp plan_value("rest"), do: {:ok, :rest}

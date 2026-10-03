@@ -35,6 +35,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         {:ok, _} ->
           socket |> load() |> put_flash(:success, "Leave year saved.")
 
+        {:error, :unauthorized} ->
+          forbidden(socket)
+
         {:error, :year_in_use} ->
           put_flash(
             socket,
@@ -60,6 +63,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         {:ok, _} ->
           socket |> load() |> put_flash(:success, "Request rules saved.")
 
+        {:error, :unauthorized} ->
+          forbidden(socket)
+
         _ ->
           put_flash(
             socket,
@@ -80,6 +86,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
             "Carry-forward queued. Balances update once it runs; running it again changes nothing."
           )
 
+        {:error, :unauthorized} ->
+          forbidden(socket)
+
         _ ->
           put_flash(socket, :error, "Carry-forward could not be queued for that year.")
       end
@@ -97,6 +106,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
         {:ok, _} ->
           socket |> load() |> put_flash(:success, "Leave type added.")
 
+        {:error, :unauthorized} ->
+          forbidden(socket)
+
         _ ->
           put_flash(
             socket,
@@ -111,6 +123,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
     with_company(socket, fn company ->
       case Leave.set_type_status(scope(socket), company.id, parse_integer(id), status) do
         {:ok, _} -> socket |> load() |> put_flash(:success, "Leave type updated.")
+        {:error, :unauthorized} -> forbidden(socket)
         _ -> put_flash(socket, :error, "The leave type could not be updated.")
       end
     end)
@@ -122,11 +135,13 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
              scope(socket),
              company.id,
              parse_integer(attrs["leave_type_id"]),
-             attrs,
-             actor_user_id(socket)
+             attrs
            ) do
         {:ok, _} ->
           socket |> load() |> put_flash(:success, "Policy version added.")
+
+        {:error, :unauthorized} ->
+          forbidden(socket)
 
         {:error, :not_after_latest} ->
           put_flash(socket, :error, "A new version must start after the latest version.")
@@ -150,12 +165,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
 
   def handle_event("grant", %{"leave_year" => year}, socket) do
     with_company(socket, fn company ->
-      case Leave.grant_entitlements(
-             scope(socket),
-             company.id,
-             parse_integer(year),
-             actor_user_id(socket)
-           ) do
+      case Leave.grant_entitlements(scope(socket), company.id, parse_integer(year)) do
         {:ok, %{granted: granted, existing: existing, closed: closed}} ->
           put_flash(
             socket,
@@ -163,6 +173,9 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
             "#{granted} entitlements granted; #{existing} were already granted; " <>
               "#{closed} skipped because the year is carried forward."
           )
+
+        {:error, :unauthorized} ->
+          forbidden(socket)
 
         _ ->
           put_flash(socket, :error, "Entitlements could not be granted for that year.")
@@ -179,12 +192,16 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
 
   defp scope(socket), do: socket.assigns.current_scope.scope
 
-  defp actor_user_id(socket) do
-    case socket.assigns.current_scope.actor do
-      %{type: :user, id: id} -> id
-      _ -> nil
-    end
-  end
+  # The facade decides each write with the actor's current grant; the page
+  # only reports the refusal and shows what it may still read.
+  defp forbidden(socket),
+    do:
+      socket
+      |> load()
+      |> put_flash(
+        :error,
+        "You no longer have permission to change this company's leave policies."
+      )
 
   defp parse_integer(value) when is_binary(value) do
     case Integer.parse(String.trim(value)) do
@@ -216,8 +233,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
          current_year = Leave.leave_year(rules, today),
          {:ok, carried} <-
            Leave.carried_forward_count(scope(socket), company_id, current_year - 1),
-         {:ok, skipped} <-
-           Leave.carry_forward_skipped(scope(socket), company_id) do
+         {:ok, skipped} <- skipped(scope(socket), company_id) do
       assign(socket,
         rules: rules,
         request_rules: request_rules,
@@ -231,6 +247,16 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
       )
     else
       _ -> assign(socket, empty_assigns())
+    end
+  end
+
+  # The skip report names employees, so it needs the manage grant now; a page
+  # that lost it still shows the company's rules and types.
+  defp skipped(scope, company_id) do
+    case Leave.carry_forward_skipped(scope, company_id) do
+      {:ok, skipped} -> {:ok, skipped}
+      {:error, :unauthorized} -> {:ok, %{skips: [], total: 0}}
+      error -> error
     end
   end
 

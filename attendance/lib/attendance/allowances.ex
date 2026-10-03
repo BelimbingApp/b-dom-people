@@ -8,6 +8,9 @@ defmodule Bilimbi.People.Attendance.Allowances do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Attendance.{Access, AllowanceRule}
+  alias Bilimbi.People.Workforce.Authorization
+
+  @capability "people.attendance.allowances.manage"
 
   def list(scope, company_id) do
     with {:ok, _company} <- Access.current_company(scope, company_id) do
@@ -22,7 +25,8 @@ defmodule Bilimbi.People.Attendance.Allowances do
   end
 
   def create(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @capability),
+         {:ok, company} <- Access.current_company(scope, company_id) do
       values =
         Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
         |> Map.put("tenant_id", Scope.tenant_id(scope))
@@ -56,7 +60,8 @@ defmodule Bilimbi.People.Attendance.Allowances do
   def create(%Scope{}, _, _), do: {:error, :invalid_rule}
 
   def retire(%Scope{} = scope, company_id, rule_id) when is_integer(rule_id) do
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          %AllowanceRule{} = rule <- get_rule(scope, company_id, rule_id),
          {:ok, saved} <- rule |> AllowanceRule.retire_changeset() |> Repo.update() do
       {:ok, saved}
@@ -71,7 +76,8 @@ defmodule Bilimbi.People.Attendance.Allowances do
   @doc "Ends an active version on an inclusive day, only ever earlier, and records the action."
   def end_date(%Scope{} = scope, company_id, rule_id, %Date{} = until_date)
       when is_integer(rule_id) do
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @capability),
+         {:ok, _company} <- Access.current_company(scope, company_id) do
       Repo.transaction(fn ->
         rule =
           Repo.one(

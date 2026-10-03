@@ -150,6 +150,23 @@ coordinates are browser-reported evidence, not proof against location spoofing.
 self-view capability, company and linked working employee before recording.
 Ingestion and independently approved adjustments retain their existing paths.
 
+## Per-operation authorization
+
+A page proves its route capability at mount, but the facade is the authority:
+every operator write (`put_rules/3`, shift templates, clocking locations,
+allowance rules, roster planning and publishing, adjustment decisions) and the
+approval queue and planner roster reads call
+`Bilimbi.People.Workforce.Authorization.authorize/3` with the scope they are
+handed, so a grant revoked while a page stays connected refuses the next
+event with `:unauthorized`. Self-service (`self_days/2`, `self_roster/4`,
+`self_adjustments/2`, `submit_adjustment/3`, `cancel_adjustment/3`,
+`self_clock/5`) resolves the signed-in account's current linked working
+employee on every call; writes prove the link again under the Core Employee
+affiliation lock in the same transaction, so an unlinked or relinked account
+gets `:not_linked` and My attendance shows its unavailable state. No facade
+function takes an actor or employee argument for the performer; attribution
+comes from the scope's sealed actor.
+
 After host compilation and `mix cmd --app web mix esbuild.install --if-missing`,
 run the browser-hook behavior tests from Bilimbi's root:
 `node --test apps/domains/people/attendance/assets/test/clock_location.test.mjs`.

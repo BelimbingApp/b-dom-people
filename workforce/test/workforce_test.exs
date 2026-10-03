@@ -1,17 +1,21 @@
 defmodule Bilimbi.People.WorkforceTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions
   alias Bilimbi.People.Workforce.ReadResult
+
+  @settings_capability "people.workforce.settings.manage"
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -22,14 +26,15 @@ defmodule Bilimbi.People.WorkforceTest do
         %{descriptor: %{id: "people/workforce"}, payload: Contributions.contributions().settings}
       ])
 
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "people-workforce-test",
-      consumers: %{settings: settings}
+    AuthorizationFixtures.install_snapshot!("people-workforce-test", %{
+      settings: settings,
+      authz: AuthorizationFixtures.authz_consumer!([Contributions])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
 
-    EmployeeFixtures.create_employee_tables!()
+    UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
 
     CompanyFixtures.insert_tenant!(%{id: 41, name: "Tenant A"})
@@ -50,7 +55,9 @@ defmodule Bilimbi.People.WorkforceTest do
 
     {:ok, scope} = Tenancy.scope(41)
     {:ok, other_scope} = Tenancy.scope(42)
-    %{scope: scope, other_scope: other_scope}
+    UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Operator"})
+    operator = AuthorizationFixtures.sign_in!(scope, 73, 91, [@settings_capability])
+    %{scope: scope, other_scope: other_scope, operator: operator}
   end
 
   test "native company identity keeps platform and workforce company axes explicit", %{
@@ -113,14 +120,22 @@ defmodule Bilimbi.People.WorkforceTest do
 
   test "missing, cross-tenant, and suspended companies refuse all native reads", %{
     scope: scope,
-    other_scope: other_scope
+    other_scope: other_scope,
+    operator: operator
   } do
     for id <- [0, 75, 76, 999] do
       assert {:error, :not_found} = Workforce.company(scope, id)
       assert {:error, :not_found} = Workforce.employees(scope, id)
       assert {:error, :not_found} = Workforce.working_statuses(scope, id)
-      assert {:error, :not_found} = Workforce.put_working_statuses(scope, id, ["active"])
     end
+
+    # The operator holds the capability in company 73 only: an unknown or
+    # cross-tenant company is not found, and a sibling company is out of reach.
+    for id <- [0, 75, 999] do
+      assert {:error, :not_found} = Workforce.put_working_statuses(operator, id, ["active"])
+    end
+
+    assert {:error, :unauthorized} = Workforce.put_working_statuses(operator, 76, ["active"])
 
     assert {:error, :not_found} = Workforce.company(other_scope, 73)
   end
@@ -217,12 +232,12 @@ defmodule Bilimbi.People.WorkforceTest do
     assert {:error, :invalid_options} = Workforce.employees_by_ids(scope, 73, ["1"])
   end
 
-  test "working statuses are a per-company setting", %{scope: scope} do
+  test "working statuses are a per-company setting", %{scope: scope, operator: operator} do
     probation = create_employee!(scope, 73, "P-2", "probation")
     active = create_employee!(scope, 73, "A-2", "active", probation.id)
     other_probation = create_employee!(scope, 74, "P-3", "probation")
 
-    assert {:ok, ["active"]} = Workforce.put_working_statuses(scope, 73, ["active"])
+    assert {:ok, ["active"]} = Workforce.put_working_statuses(operator, 73, ["active"])
 
     assert {:ok, %ReadResult{value: ["active"], freshness: :current}} =
              Workforce.working_statuses(scope, 73)
@@ -241,15 +256,37 @@ defmodule Bilimbi.People.WorkforceTest do
              Workforce.employee(scope, 74, other_probation.id)
 
     assert {:ok, ["probation", "active", "terminated"]} =
-             Workforce.put_working_statuses(scope, 73, ["terminated", "active", "probation"])
+             Workforce.put_working_statuses(operator, 73, ["terminated", "active", "probation"])
   end
 
-  test "working statuses reject empty and unknown values", %{scope: scope} do
+  test "working statuses reject empty and unknown values", %{scope: scope, operator: operator} do
     for statuses <- [[], ["retired"], ["active", 1], "active", nil] do
-      assert {:error, :invalid_statuses} = Workforce.put_working_statuses(scope, 73, statuses)
+      assert {:error, :invalid_statuses} = Workforce.put_working_statuses(operator, 73, statuses)
     end
 
     assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
+             Workforce.working_statuses(scope, 73)
+  end
+
+  test "writing working statuses needs the settings capability now", %{
+    scope: scope,
+    operator: operator
+  } do
+    # A system scope names nobody, and a signed-in user without the grant is
+    # refused; a grant revoked after sign-in is refused on the next write.
+    assert {:error, :unauthorized} = Workforce.put_working_statuses(scope, 73, ["active"])
+
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Viewer", email: "v@example.com"})
+    viewer = AuthorizationFixtures.sign_in(scope, 92, 73)
+    assert {:error, :unauthorized} = Workforce.put_working_statuses(viewer, 73, ["active"])
+
+    assert {:ok, ["active"]} = Workforce.put_working_statuses(operator, 73, ["active"])
+    :ok = AuthorizationFixtures.revoke!(scope, 73, 91, @settings_capability)
+
+    assert {:error, :unauthorized} =
+             Workforce.put_working_statuses(operator, 73, ["active", "probation"])
+
+    assert {:ok, %ReadResult{value: ["active"], freshness: :current}} =
              Workforce.working_statuses(scope, 73)
   end
 

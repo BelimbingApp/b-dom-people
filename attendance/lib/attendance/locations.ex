@@ -7,6 +7,9 @@ defmodule Bilimbi.People.Attendance.Locations do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Attendance.{Access, ClockingLocation}
+  alias Bilimbi.People.Workforce.Authorization
+
+  @rules_capability "people.attendance.rules.manage"
 
   def list_clocking_locations(%Scope{} = scope, company_id) do
     with {:ok, _company} <- Access.current_company(scope, company_id) do
@@ -21,7 +24,8 @@ defmodule Bilimbi.People.Attendance.Locations do
   end
 
   def create_clocking_location(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @rules_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id) do
       %ClockingLocation{tenant_id: Scope.tenant_id(scope), company_id: company_id}
       |> ClockingLocation.changeset(attrs)
       |> Repo.insert()
@@ -30,7 +34,8 @@ defmodule Bilimbi.People.Attendance.Locations do
 
   def set_clocking_location_status(%Scope{} = scope, company_id, location_id, status)
       when status in ~w(active retired) do
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @rules_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          %ClockingLocation{} = location <- get(scope, company_id, location_id) do
       location |> ClockingLocation.status_changeset(status) |> Repo.update()
     else

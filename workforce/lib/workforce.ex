@@ -14,6 +14,7 @@ defmodule Bilimbi.People.Workforce do
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.Employee
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.Company, as: WorkforceCompany
   alias Bilimbi.People.Workforce.Employee, as: WorkforceEmployee
   alias Bilimbi.People.Workforce.ReadResult
@@ -23,6 +24,7 @@ defmodule Bilimbi.People.Workforce do
 
   @source_id "people/native"
   @working_statuses_key "people.workforce.working_statuses"
+  @settings_capability "people.workforce.settings.manage"
   @employee_statuses ~w(pending probation active inactive terminated)
   @lookup_limit 1_000
 
@@ -76,11 +78,14 @@ defmodule Bilimbi.People.Workforce do
     end
   end
 
+  @doc "Replaces the company's working statuses; the scope's actor must hold the settings capability now."
   @spec put_working_statuses(Scope.t(), term(), term()) ::
           {:ok, [String.t()]}
-          | {:error, :not_found | :invalid_statuses | Ecto.Changeset.t()}
+          | {:error, :unauthorized | :not_found | :invalid_statuses | Ecto.Changeset.t()}
   def put_working_statuses(%Scope{} = scope, platform_company_id, statuses) do
-    with {:ok, core_company} <- live_company(scope, platform_company_id),
+    with {:ok, _actor} <-
+           Authorization.authorize(scope, platform_company_id, @settings_capability),
+         {:ok, core_company} <- live_company(scope, platform_company_id),
          {:ok, statuses} <- normalize_statuses(statuses) do
       Settings.put(@working_statuses_key, statuses, settings_scope(core_company))
     end

@@ -9,6 +9,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
   @capability "people.organisation.view"
   @manage_capability "people.organisation.manage"
   @page_size 50
+  @forbidden "You no longer have permission to change this company's assignments."
 
   @impl true
   def mount(_params, _session, socket) do
@@ -110,6 +111,11 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
      )}
   end
 
+  # The assign decides whether the End control renders; the facade authorizes
+  # the operation itself when it runs.
+  def handle_event("end_assignment", _params, %{assigns: %{can_manage?: false}} = socket),
+    do: {:noreply, put_flash(socket, :error, @forbidden)}
+
   def handle_event(
         "end_assignment",
         %{"assignment_id" => assignment_id, "effective_to" => effective_to},
@@ -119,7 +125,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
     result =
       with {id, ""} <- Integer.parse(assignment_id) do
         Organisation.end_assignment(
-          socket.assigns.current_scope.actor,
+          socket.assigns.current_scope.scope,
           company.id,
           id,
           effective_to
@@ -128,7 +134,8 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
 
     socket =
       case result do
-        {:ok, _assignment} -> put_flash(socket, :info, "Assignment ended.")
+        {:ok, _assignment} -> put_flash(socket, :success, "Assignment ended.")
+        {:error, :unauthorized} -> put_flash(socket, :error, @forbidden)
         _error -> put_flash(socket, :error, "The assignment could not be ended on that date.")
       end
 

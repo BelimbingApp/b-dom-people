@@ -9,6 +9,11 @@ defmodule Bilimbi.People.Attendance.Rosters do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.People.Attendance.{Access, RosterEntry, ShiftTemplate}
+  alias Bilimbi.People.Workforce.Authorization
+
+  @rules_capability "people.attendance.rules.manage"
+  @roster_capability "people.attendance.roster.manage"
+  @self_capability "people.attendance.self.view"
 
   # Keeps one roster read or publish transaction to about a month of rows.
   @max_days 31
@@ -28,7 +33,8 @@ defmodule Bilimbi.People.Attendance.Rosters do
   end
 
   def create_shift_template(%Scope{} = scope, company_id, attrs) when is_map(attrs) do
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @rules_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id) do
       %ShiftTemplate{tenant_id: Scope.tenant_id(scope), company_id: company_id}
       |> ShiftTemplate.changeset(attrs)
       |> Repo.insert()
@@ -37,7 +43,8 @@ defmodule Bilimbi.People.Attendance.Rosters do
 
   def set_shift_template_status(%Scope{} = scope, company_id, template_id, status)
       when status in ~w(active retired) do
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @rules_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          %ShiftTemplate{} = template <- get_template(scope, company_id, template_id) do
       template |> ShiftTemplate.status_changeset(status) |> Repo.update()
     else
@@ -56,7 +63,8 @@ defmodule Bilimbi.People.Attendance.Rosters do
 
   def roster(%Scope{} = scope, company_id, %Date{} = from, days, options)
       when days in 1..@max_days do
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @roster_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          {:ok, employees} <- Access.current_employees(scope, company_id),
          {:ok, templates} <- list_shift_templates(scope, company_id) do
       to = Date.add(from, days - 1)
@@ -111,15 +119,9 @@ defmodule Bilimbi.People.Attendance.Rosters do
   Sets a working roster value: `{:shift, template_id}`, `:rest`, or `:none` to
   clear. A never-published cleared entry is removed outright.
   """
-  def plan_roster_entry(
-        %Scope{} = scope,
-        company_id,
-        actor,
-        employee_id,
-        %Date{} = on_date,
-        value
-      ) do
-    with {:ok, {kind, template_id}} <- plan_value(value),
+  def plan_roster_entry(%Scope{} = scope, company_id, employee_id, %Date{} = on_date, value) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @roster_capability),
+         {:ok, {kind, template_id}} <- plan_value(value),
          {:ok, _employee} <- Access.current_employee(scope, company_id, employee_id),
          :ok <- active_template(scope, company_id, template_id) do
       Access.transact(fn ->
@@ -164,11 +166,12 @@ defmodule Bilimbi.People.Attendance.Rosters do
     end
   end
 
-  def plan_roster_entry(%Scope{}, _, _, _, _, _), do: {:error, :invalid_entry}
+  def plan_roster_entry(%Scope{}, _, _, _, _), do: {:error, :invalid_entry}
 
   @doc "Publishes every pending entry between the two dates and returns their count."
-  def publish_roster(%Scope{} = scope, company_id, actor, %Date{} = from, %Date{} = to) do
-    with :ok <- period(from, to),
+  def publish_roster(%Scope{} = scope, company_id, %Date{} = from, %Date{} = to) do
+    with {:ok, actor} <- Authorization.authorize(scope, company_id, @roster_capability),
+         :ok <- period(from, to),
          {:ok, _company} <- Access.current_company(scope, company_id) do
       now = DateTime.utc_now() |> DateTime.truncate(:second)
 
@@ -207,10 +210,11 @@ defmodule Bilimbi.People.Attendance.Rosters do
     )
   end
 
-  @doc "The actor's own published roster for up to #{@max_days} days from `from`."
-  def self_roster(%Scope{} = scope, company_id, actor, %Date{} = from, days)
+  @doc "The signed-in actor's own published roster for up to #{@max_days} days from `from`."
+  def self_roster(%Scope{} = scope, company_id, %Date{} = from, days)
       when days in 1..@max_days do
-    with {:ok, employee_id} <- Access.self_employee(scope, company_id, actor) do
+    with {:ok, %{employee_id: employee_id}} <-
+           Authorization.authorize_self(scope, company_id, @self_capability) do
       to = Date.add(from, days - 1)
 
       {:ok,
@@ -236,7 +240,7 @@ defmodule Bilimbi.People.Attendance.Rosters do
     end
   end
 
-  def self_roster(%Scope{}, _, _, _, _), do: {:error, :invalid_period}
+  def self_roster(%Scope{}, _, _, _), do: {:error, :invalid_period}
 
   defp publish_entry(%RosterEntry{kind: "none"} = entry, _actor, _now), do: Repo.delete!(entry)
 

@@ -1,5 +1,10 @@
 defmodule Bilimbi.People.Attendance.Web.MyLive do
-  @moduledoc "Self attendance with account-to-employee resolution through Core User."
+  @moduledoc """
+  Self attendance. The signed-in account's linked employee is resolved by the
+  facade on every read and write, never cached here: an unlinked or relinked
+  account, or a revoked self-view grant, shows the unavailable state on the
+  next event.
+  """
   use Bilimbi.Base.UI, :live_view
   alias Bilimbi.People.Attendance
   alias Phoenix.LiveView.JS
@@ -73,18 +78,16 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
     current = socket.assigns.current_scope
     attrs = Map.put(attrs, "request_key", socket.assigns.request_key)
 
-    case Attendance.submit_adjustment(
-           current.scope,
-           current.actor.company_id,
-           current.actor,
-           attrs
-         ) do
+    case Attendance.submit_adjustment(current.scope, current.actor.company_id, attrs) do
       {:ok, _request} ->
         {:noreply,
          socket
          |> assign(:request_key, Ecto.UUID.generate())
          |> load()
          |> put_flash(:success, "Adjustment request submitted.")}
+
+      {:error, reason} when reason in [:not_linked, :unauthorized] ->
+        {:noreply, socket |> load() |> put_flash(:error, refusal(reason))}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, refusal(reason))}
@@ -95,13 +98,7 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
     current = socket.assigns.current_scope
 
     with {id, ""} <- Integer.parse(id),
-         {:ok, _} <-
-           Attendance.cancel_adjustment(
-             current.scope,
-             current.actor.company_id,
-             current.actor,
-             id
-           ) do
+         {:ok, _} <- Attendance.cancel_adjustment(current.scope, current.actor.company_id, id) do
       {:noreply, socket |> load() |> put_flash(:success, "Adjustment request cancelled.")}
     else
       _ ->
@@ -127,6 +124,13 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
   def refusal(:outside_window), do: "That date is outside the adjustment request window."
   def refusal(:duplicate_request), do: "A request for this clock event already exists."
   def refusal(:unavailable), do: "Adjustment requests are unavailable for this account."
+
+  def refusal(:not_linked),
+    do: "Your account is no longer linked to a working employee in this company."
+
+  def refusal(:unauthorized),
+    do: "You no longer have permission to use attendance self-service here."
+
   def refusal(_), do: "Choose clock in or out, a time, and give a reason."
 
   defp load(socket) do
@@ -135,11 +139,11 @@ defmodule Bilimbi.People.Attendance.Web.MyLive do
     company_id = actor.company_id
 
     state =
-      with {:ok, days} <- Attendance.self_days(scope, company_id, actor),
+      with {:ok, days} <- Attendance.self_days(scope, company_id),
            {:ok, rules} <- Attendance.rules(scope, company_id),
            {:ok, today} <- Attendance.local_date(DateTime.utc_now(), rules.timezone),
-           {:ok, shifts} <- Attendance.self_roster(scope, company_id, actor, today, @roster_days),
-           {:ok, requests} <- Attendance.self_adjustments(scope, company_id, actor) do
+           {:ok, shifts} <- Attendance.self_roster(scope, company_id, today, @roster_days),
+           {:ok, requests} <- Attendance.self_adjustments(scope, company_id) do
         %{days: days, rules: rules, today: today, shifts: shifts, requests: requests}
       else
         _ -> :unavailable

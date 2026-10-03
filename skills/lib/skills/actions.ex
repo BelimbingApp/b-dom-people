@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Skills.Actions do
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
+  alias Bilimbi.People.Workforce.Authorization
 
   alias Bilimbi.People.Skills.{
     Access,
@@ -27,6 +28,8 @@ defmodule Bilimbi.People.Skills.Actions do
   @update "people.skills.actions.update"
   @manage "people.skills.actions.manage"
   @approve "people.skills.actions.approve"
+  # Action types are company catalog data, edited under the catalog capability.
+  @types_capability "people.skills.catalog.manage"
   @limit 300
   @open ~w(not_started scheduled in_progress on_hold)
   @criticalities ~w(critical essential development)
@@ -49,7 +52,8 @@ defmodule Bilimbi.People.Skills.Actions do
   def create_type(scope, company_id, attrs) when is_map(attrs) do
     attrs = Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
 
-    with {:ok, _company} <- Access.current_company(scope, company_id) do
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @types_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id) do
       %ActionType{tenant_id: Scope.tenant_id(scope), company_id: company_id, active: true}
       |> ActionType.create_changeset(attrs)
       |> Repo.insert()
@@ -61,7 +65,8 @@ defmodule Bilimbi.People.Skills.Actions do
   end
 
   def set_type_active(scope, company_id, type_id, active) when is_boolean(active) do
-    with {:ok, _company} <- Access.current_company(scope, company_id),
+    with {:ok, _actor} <- Authorization.authorize(scope, company_id, @types_capability),
+         {:ok, _company} <- Access.current_company(scope, company_id),
          %ActionType{} = type <- get_type(scope, company_id, type_id) || {:error, :not_found},
          {:ok, type} <- type |> Ecto.Changeset.change(active: active) |> Repo.update() do
       {:ok, type_view(type)}

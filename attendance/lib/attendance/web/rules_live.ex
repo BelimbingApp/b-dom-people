@@ -44,6 +44,14 @@ defmodule Bilimbi.People.Attendance.Web.RulesLive do
              |> assign(:rules, rules)
              |> put_flash(:success, "Attendance rules saved.")}
 
+          {:error, :unauthorized} ->
+            {:noreply,
+             put_flash(
+               socket,
+               :error,
+               "You no longer have permission to change this company's attendance rules."
+             )}
+
           _ ->
             {:noreply,
              put_flash(

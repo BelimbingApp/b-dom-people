@@ -121,14 +121,14 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   end
 
   def handle_event("publish", %{"effective_from" => date}, socket) do
-    decide(socket, "Profile published.", fn actor, company_id, id ->
-      Skills.publish_profile(actor, company_id, id, date)
+    decide(socket, "Profile published.", fn scope, company_id, id ->
+      Skills.publish_profile(scope, company_id, id, date)
     end)
   end
 
   def handle_event("retire", %{"effective_to" => date}, socket) do
-    decide(socket, "Profile retired.", fn actor, company_id, id ->
-      Skills.retire_profile(actor, company_id, id, date)
+    decide(socket, "Profile retired.", fn scope, company_id, id ->
+      Skills.retire_profile(scope, company_id, id, date)
     end)
   end
 
@@ -160,10 +160,12 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
       else: {:noreply, put_flash(socket, :error, "You cannot change this company's skills.")}
   end
 
+  # The facade authorizes the publish capability for the scope's actor now;
+  # the `can_publish?` assign only decides whether the form renders.
   defp decide(socket, success, fun) do
     result =
       fun.(
-        socket.assigns.current_scope.actor,
+        socket.assigns.current_scope.scope,
         socket.assigns.company.id,
         socket.assigns.profile_id
       )

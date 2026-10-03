@@ -45,3 +45,12 @@ composition-lock commands.
   `.github/workflows/ci.yml` and pins Bilimbi via `.github/bilimbi-revision`.
 - Use `workforce/docs/README.md` and `Bilimbi.People.Workforce.ReadResult` for
   workforce freshness; consumers should not invent their own status wrapper.
+- Authorize every public write, and every public read of private employee
+  facts, inside the facade with `Bilimbi.People.Workforce.Authorization`
+  (`authorize/3`, `authorize_self/3`, `with_self_employee_lock/4`), taking
+  the actor from the scope it was handed. A route capability proven at mount
+  or a `can_*?` assign is not authority: a grant revoked, or an account
+  unlinked from its employee, while a page stays connected must refuse the
+  next event. Do not take an actor or actor ID as a facade argument, and do
+  not resolve the signed-in employee once at mount and keep acting on it.
+  Tests sign in through `workforce/test/support/authorization_fixtures.ex`.

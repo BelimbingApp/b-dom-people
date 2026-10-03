@@ -62,6 +62,23 @@ rule to at most 1,000 employee IDs without reading the whole workforce.
 Missing, cross-tenant, archived, and malformed company IDs are
 indistinguishable.
 
+## Per-operation authorization
+
+`Bilimbi.People.Workforce.Authorization` is the one boundary every People
+facade authorizes through, at the public API so LiveViews, jobs and other
+adapters share it. `authorize/3` evaluates a capability now for the scope's
+sealed actor and the explicit company, through `Bilimbi.Base.Authz` and
+`Bilimbi.Core.Company.authorize_company_target/3`; a system scope is refused.
+`self_employee/2` resolves the login account's current link to a working
+employee on every call, `authorize_self/3` combines both, and
+`with_self_employee_lock/4` runs a self-service write inside a transaction
+that holds the Core Employee affiliation lock and proves the link again under
+it, so an unlinked or relinked account cannot act on its former employee.
+`put_working_statuses/3` requires `people.workforce.settings.manage` this way.
+Facades return `:unauthorized` and `:not_linked`; a `can_*?` assign only
+decides which controls a page renders. Tests sign a user in with the shared
+`Bilimbi.People.Workforce.AuthorizationFixtures`.
+
 Working statuses are the company-scoped Base Setting
 `people.workforce.working_statuses`, defaulting to `probation` and `active`. A
 value must be a non-empty subset of Core Employee statuses. Operators holding

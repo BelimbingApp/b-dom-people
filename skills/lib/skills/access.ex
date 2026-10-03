@@ -84,7 +84,11 @@ defmodule Bilimbi.People.Skills.Access do
 
   def linked_employee_id(_scope, _company_id, _actor), do: :none
 
-  @doc "The working employee linked to a user actor signed in to this company."
+  @doc """
+  The working employee linked to a user actor signed in to this company,
+  resolved through Core User and the workforce seam on every call, never
+  cached by a page.
+  """
   def self_employee(scope, company_id, actor) do
     with {:ok, employee_id} <- linked_employee_id(scope, company_id, actor),
          {:ok, _employee} <- current_employee(scope, company_id, employee_id) do

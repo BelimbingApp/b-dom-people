@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
   use BilimbiWeb.ConnCase, async: false
   import Phoenix.LiveViewTest
 
-  alias Bilimbi.Base.Authz.Actor
+  alias Bilimbi.Base.Authz
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
@@ -12,6 +12,7 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
   alias Bilimbi.People.Organisation.TestFixtures, as: OrganisationFixtures
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.TestFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
 
   @view "people.skills.catalog.view"
   @manage "people.skills.catalog.manage"
@@ -25,17 +26,23 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})
     CompanyFixtures.insert_company!(%{id: 73, tenant_id: 41, name: "Company A", code: "a"})
     UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Operator"})
+    UserFixtures.insert_user!(%{id: 90, company_id: 73, name: "Catalog", email: "c@example.com"})
     :ok = Employee.ensure_system_types()
     {:ok, scope} = Tenancy.scope(41)
-    %{scope: scope, actor: %Actor{type: :user, id: 91, company_id: 73, scope: scope}}
+
+    # Catalog and publish writes authorize the scope's actor: fixtures are built
+    # by user 90, who holds both grants; user 91 is the page's signed-in actor.
+    operator = AuthorizationFixtures.sign_in!(scope, 73, 90, [@manage, @publish])
+    me = AuthorizationFixtures.sign_in(scope, 91, 73)
+    %{scope: scope, operator: operator, me: me}
   end
 
-  defp profile_ready(scope, code \\ "base", target \\ :company) do
+  defp profile_ready(operator, code \\ "base", target \\ :company) do
     {:ok, category} =
-      Skills.create_category(scope, 73, %{code: "cat-#{code}", name: "Category #{code}"})
+      Skills.create_category(operator, 73, %{code: "cat-#{code}", name: "Category #{code}"})
 
     {:ok, skill} =
-      Skills.create_skill(scope, 73, %{
+      Skills.create_skill(operator, 73, %{
         code: "skill-#{code}",
         name: "Skill #{code}",
         definition: "Defined",
@@ -43,16 +50,16 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
       })
 
     scale =
-      case Skills.list_scales(scope, 73) do
+      case Skills.list_scales(operator, 73) do
         {:ok, [%{status: "published"} = scale | _]} ->
           scale
 
         _ ->
-          {:ok, scale} = Skills.create_scale(scope, 73, %{code: "standard", name: "Standard"})
+          {:ok, scale} = Skills.create_scale(operator, 73, %{code: "standard", name: "Standard"})
 
           for level <- 0..1 do
             {:ok, _} =
-              Skills.put_scale_level(scope, 73, scale.id, %{
+              Skills.put_scale_level(operator, 73, scale.id, %{
                 level: level,
                 name: "Level #{level}",
                 anchor: "Anchor",
@@ -60,22 +67,22 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
               })
           end
 
-          {:ok, scale} = Skills.publish_scale(scope, 73, scale.id)
+          {:ok, scale} = Skills.publish_scale(operator, 73, scale.id)
           scale
       end
 
     {:ok, profile} =
-      Skills.create_profile(scope, 73, %{code: code, name: "Profile #{code}", scale_id: scale.id})
+      Skills.create_profile(operator, 73, %{code: code, name: "Profile #{code}", scale_id: scale.id})
 
     {:ok, _} =
-      Skills.put_item(scope, 73, profile.id, %{
+      Skills.put_item(operator, 73, profile.id, %{
         skill_id: skill.id,
         required_level: 1,
         criticality: "critical",
         weight_percent: "100"
       })
 
-    {:ok, _} = Skills.add_selector(scope, 73, profile.id, target)
+    {:ok, _} = Skills.add_selector(operator, 73, profile.id, target)
     profile
   end
 
@@ -177,139 +184,159 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
 
   test "a catalog manager without the publish capability cannot publish", %{
     conn: conn,
-    scope: scope,
-    actor: actor
+    operator: operator,
+    me: me
   } do
     grant_capabilities!([@view, @manage])
-    profile = profile_ready(scope)
+    profile = profile_ready(operator)
 
     {:ok, page, _} =
       conn |> log_in_as() |> live("/people/skills/profiles/#{profile.id}?company_id=73")
 
     refute has_element?(page, "#skill-profile-publish-form")
-    assert {:error, :unauthorized} = Skills.publish_profile(actor, 73, profile.id, ~D[2026-01-01])
+    assert {:error, :unauthorized} = Skills.publish_profile(me, 73, profile.id, ~D[2026-01-01])
+  end
+
+  test "a catalog write after the grant is revoked changes nothing", %{
+    conn: conn,
+    scope: scope
+  } do
+    grant_capabilities!([@view, @manage])
+    {:ok, view, _} = conn |> log_in_as() |> live("/people/skills")
+    assert has_element?(view, "#skill-category-form")
+
+    # The page stays open while an administrator revokes the grant.
+    assert {:ok, :stored} = Authz.put_principal_capability(scope, 73, :user, 91, @manage, false)
+
+    assert render_hook(view, "create_category", %{
+             "category" => %{"code" => "after", "name" => "After revocation"}
+           }) =~ "You cannot change this company&#39;s skills."
+
+    assert {:ok, []} = Skills.list_categories(scope, 73)
   end
 
   test "published versions supersede, never overlap and resolve by date", %{
     scope: scope,
-    actor: actor
+    operator: operator
   } do
     grant_capabilities!([@view, @manage, @publish])
-    v1 = profile_ready(scope)
+    v1 = profile_ready(operator)
 
     assert {:ok, %{status: "published"}} =
-             Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
+             Skills.publish_profile(operator, 73, v1.id, ~D[2026-01-01])
 
-    assert {:ok, draft} = Skills.new_profile_version(scope, 73, v1.id)
+    assert {:ok, draft} = Skills.new_profile_version(operator, 73, v1.id)
     assert %{version: 2, status: "draft", items: [_], selectors: [_]} = draft
 
     assert {:error, :not_after_latest} =
-             Skills.publish_profile(actor, 73, draft.id, ~D[2026-01-01])
+             Skills.publish_profile(operator, 73, draft.id, ~D[2026-01-01])
 
-    assert {:ok, _} = Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
+    assert {:ok, _} = Skills.publish_profile(operator, 73, draft.id, ~D[2026-07-01])
 
     assert {:ok, %{version: 1}} = Skills.requirements(scope, 73, nil, ~D[2026-03-01])
     assert {:ok, %{version: 2}} = Skills.requirements(scope, 73, nil, ~D[2026-08-01])
     assert {:ok, nil} = Skills.requirements(scope, 73, nil, ~D[2025-12-31])
 
-    other = profile_ready(scope, "other")
+    other = profile_ready(operator, "other")
 
     assert {:error, :overlapping_profile} =
-             Skills.publish_profile(actor, 73, other.id, ~D[2027-01-01])
+             Skills.publish_profile(operator, 73, other.id, ~D[2027-01-01])
 
     assert {:ok, %{status: "retired", effective_to: ~D[2026-12-31]}} =
-             Skills.retire_profile(actor, 73, draft.id, ~D[2026-12-31])
+             Skills.retire_profile(operator, 73, draft.id, ~D[2026-12-31])
 
-    {:ok, v3} = Skills.new_profile_version(scope, 73, draft.id)
+    {:ok, v3} = Skills.new_profile_version(operator, 73, draft.id)
 
     assert {:error, :not_after_latest} =
-             Skills.publish_profile(actor, 73, v3.id, ~D[2026-12-01])
+             Skills.publish_profile(operator, 73, v3.id, ~D[2026-12-01])
 
-    {:ok, _} = Skills.discard_profile(scope, 73, v3.id)
+    {:ok, _} = Skills.discard_profile(operator, 73, v3.id)
 
-    assert {:ok, _} = Skills.publish_profile(actor, 73, other.id, ~D[2027-01-01])
+    assert {:ok, _} = Skills.publish_profile(operator, 73, other.id, ~D[2027-01-01])
     assert {:ok, %{code: "other"}} = Skills.requirements(scope, 73, nil, ~D[2027-02-01])
   end
 
   test "position targets use the Organisation position read", %{
     conn: conn,
     scope: scope,
-    actor: actor
+    operator: operator
   } do
     grant_capabilities!([@view, @manage, @publish])
-    {:ok, a} = Organisation.create_position(scope, 73, %{code: "P-A"})
-    {:ok, b} = Organisation.create_position(scope, 73, %{code: "P-B"})
-    first = profile_ready(scope, "first", {:position, a.id})
-    second = profile_ready(scope, "second", {:position, b.id})
+    # Organisation writes authorize the scope's actor too: the fixture user
+    # 90 holds the organisation grant for the seeded positions.
+    grant_capabilities!(["people.organisation.manage"], user_id: 90)
+    {:ok, a} = Organisation.create_position(operator, 73, %{code: "P-A"})
+    {:ok, b} = Organisation.create_position(operator, 73, %{code: "P-B"})
+    first = profile_ready(operator, "first", {:position, a.id})
+    second = profile_ready(operator, "second", {:position, b.id})
 
     conn = log_in_as(conn)
     {:ok, page, _} = live(conn, "/people/skills/profiles/#{second.id}?company_id=73")
 
     assert has_element?(page, "#skill-profile-selectors", "P-B")
 
-    assert {:ok, _} = Skills.publish_profile(actor, 73, first.id, ~D[2026-01-01])
-    assert {:ok, _} = Skills.publish_profile(actor, 73, second.id, ~D[2026-01-01])
+    assert {:ok, _} = Skills.publish_profile(operator, 73, first.id, ~D[2026-01-01])
+    assert {:ok, _} = Skills.publish_profile(operator, 73, second.id, ~D[2026-01-01])
     {:ok, published, _} = live(conn, "/people/skills/profiles/#{second.id}?company_id=73")
     assert has_element?(published, "#skill-profile-selectors", "P-B")
     assert {:ok, %{code: "first"}} = Skills.requirements(scope, 73, a.id, ~D[2026-02-01])
     assert {:ok, %{code: "second"}} = Skills.requirements(scope, 73, b.id, ~D[2026-02-01])
     assert {:ok, nil} = Skills.requirements(scope, 73, nil, ~D[2026-02-01])
 
-    wide = profile_ready(scope, "wide")
+    wide = profile_ready(operator, "wide")
 
     assert {:error, :overlapping_profile} =
-             Skills.publish_profile(actor, 73, wide.id, ~D[2026-02-01])
+             Skills.publish_profile(operator, 73, wide.id, ~D[2026-02-01])
   end
 
-  defp publish_new_scale_version(scope, scale, drop_levels \\ []) do
-    {:ok, draft} = Skills.new_scale_version(scope, 73, scale.id)
+  defp publish_new_scale_version(operator, scale, drop_levels \\ []) do
+    {:ok, draft} = Skills.new_scale_version(operator, 73, scale.id)
 
     for level <- drop_levels,
-        do: {:ok, :ok} = Skills.delete_scale_level(scope, 73, draft.id, level)
+        do: {:ok, :ok} = Skills.delete_scale_level(operator, 73, draft.id, level)
 
-    {:ok, published} = Skills.publish_scale(scope, 73, draft.id)
+    {:ok, published} = Skills.publish_scale(operator, 73, draft.id)
     published
   end
 
   test "a new profile version adopts the revised scale and publishes", %{
-    scope: scope,
-    actor: actor
+    operator: operator
   } do
     grant_capabilities!([@view, @manage, @publish])
-    v1 = profile_ready(scope)
-    {:ok, _} = Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
-    scale_v2 = publish_new_scale_version(scope, %{id: v1.scale_id})
+    v1 = profile_ready(operator)
+    {:ok, _} = Skills.publish_profile(operator, 73, v1.id, ~D[2026-01-01])
+    scale_v2 = publish_new_scale_version(operator, %{id: v1.scale_id})
 
     assert {:ok, %{scale_id: scale_id, missing_levels: []} = draft} =
-             Skills.new_profile_version(scope, 73, v1.id)
+             Skills.new_profile_version(operator, 73, v1.id)
 
     assert scale_id == scale_v2.id
 
     assert {:ok, %{status: "published"}} =
-             Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
+             Skills.publish_profile(operator, 73, draft.id, ~D[2026-07-01])
   end
 
   test "a draft keeps its scale until required levels exist on the revised scale", %{
     conn: conn,
     scope: scope,
-    actor: actor
+    operator: operator
   } do
     grant_capabilities!([@view, @manage, @publish])
-    {:ok, category} = Skills.create_category(scope, 73, %{code: "cat", name: "Category"})
+    {:ok, category} = Skills.create_category(operator, 73, %{code: "cat", name: "Category"})
 
     {:ok, skill} =
-      Skills.create_skill(scope, 73, %{
+      Skills.create_skill(operator, 73, %{
         code: "skill",
         name: "Skill",
         definition: "Defined",
         category_id: category.id
       })
 
-    {:ok, scale} = Skills.create_scale(scope, 73, %{code: "deep", name: "Deep"})
+    {:ok, scale} = Skills.create_scale(operator, 73, %{code: "deep", name: "Deep"})
 
     for level <- 0..2 do
       {:ok, _} =
-        Skills.put_scale_level(scope, 73, scale.id, %{
+        Skills.put_scale_level(operator, 73, scale.id, %{
           level: level,
           name: "Level #{level}",
           anchor: "Anchor",
@@ -317,19 +344,19 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
         })
     end
 
-    {:ok, scale} = Skills.publish_scale(scope, 73, scale.id)
+    {:ok, scale} = Skills.publish_scale(operator, 73, scale.id)
 
     {:ok, v1} =
-      Skills.create_profile(scope, 73, %{code: "deep", name: "Deep", scale_id: scale.id})
+      Skills.create_profile(operator, 73, %{code: "deep", name: "Deep", scale_id: scale.id})
 
     item = %{skill_id: skill.id, criticality: "critical", weight_percent: "100"}
-    {:ok, _} = Skills.put_item(scope, 73, v1.id, Map.put(item, :required_level, 2))
-    {:ok, _} = Skills.add_selector(scope, 73, v1.id, :company)
-    {:ok, _} = Skills.publish_profile(actor, 73, v1.id, ~D[2026-01-01])
-    scale_v2 = publish_new_scale_version(scope, scale, [2])
+    {:ok, _} = Skills.put_item(operator, 73, v1.id, Map.put(item, :required_level, 2))
+    {:ok, _} = Skills.add_selector(operator, 73, v1.id, :company)
+    {:ok, _} = Skills.publish_profile(operator, 73, v1.id, ~D[2026-01-01])
+    scale_v2 = publish_new_scale_version(operator, scale, [2])
 
     assert {:ok, %{scale_id: scale_id, missing_levels: [2]} = draft} =
-             Skills.new_profile_version(scope, 73, v1.id)
+             Skills.new_profile_version(operator, 73, v1.id)
 
     assert scale_id == scale.id
 
@@ -340,9 +367,9 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
              "Each required level must exist on the scale"
 
     assert {:error, :level_not_on_scale} =
-             Skills.update_profile(scope, 73, draft.id, %{scale_id: scale_v2.id})
+             Skills.update_profile(operator, 73, draft.id, %{scale_id: scale_v2.id})
 
-    {:ok, _} = Skills.put_item(scope, 73, draft.id, Map.put(item, :required_level, 1))
+    {:ok, _} = Skills.put_item(operator, 73, draft.id, Map.put(item, :required_level, 1))
 
     assert page |> form("#skill-profile-scale-form", scale_id: scale_v2.id) |> render_submit() =~
              "Scale changed."
@@ -351,12 +378,13 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     assert moved == scale_v2.id
 
     assert {:ok, %{status: "published"}} =
-             Skills.publish_profile(actor, 73, draft.id, ~D[2026-07-01])
+             Skills.publish_profile(operator, 73, draft.id, ~D[2026-07-01])
   end
 
   test "publish and retire events are refused without the publish capability", %{
     conn: conn,
-    scope: scope
+    scope: scope,
+    operator: operator
   } do
     grant_capabilities!([@view, @manage])
 
@@ -368,10 +396,10 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     })
 
     grant_capabilities!([@publish], user_id: 92)
-    publisher = %Actor{type: :user, id: 92, company_id: 73, scope: scope}
-    published = profile_ready(scope)
+    publisher = AuthorizationFixtures.sign_in(scope, 92, 73)
+    published = profile_ready(operator)
     {:ok, _} = Skills.publish_profile(publisher, 73, published.id, ~D[2026-01-01])
-    draft = profile_ready(scope, "other", :company)
+    draft = profile_ready(operator, "other", :company)
     conn = log_in_as(conn)
 
     {:ok, page, _} = live(conn, "/people/skills/profiles/#{draft.id}?company_id=73")

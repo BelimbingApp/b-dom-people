@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.AttendanceTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Settings.ContributionValidator
@@ -8,11 +9,14 @@ defmodule Bilimbi.People.AttendanceTest do
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Core.Company.TestFixtures, as: CompanyFixtures
   alias Bilimbi.Core.Employee
-  alias Bilimbi.Core.Employee.TestFixtures, as: EmployeeFixtures
+  alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Attendance
   alias Bilimbi.People.Attendance.Contributions
   alias Bilimbi.People.Attendance.TestFixtures
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions, as: WorkforceContributions
+
+  @rules_capability "people.attendance.rules.manage"
 
   setup do
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
@@ -27,13 +31,14 @@ defmodule Bilimbi.People.AttendanceTest do
         %{descriptor: %{id: "people/attendance"}, payload: Contributions.contributions().settings}
       ])
 
-    ContributionRegistry.put_snapshot_for_test!(%{
-      graph_fingerprint: "attendance-test",
-      consumers: %{settings: settings}
+    AuthorizationFixtures.install_snapshot!("attendance-test", %{
+      settings: settings,
+      authz: AuthorizationFixtures.authz_consumer!([Contributions])
     })
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
-    EmployeeFixtures.create_employee_tables!()
+    UserFixtures.create_user_tables!()
+    AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     TestFixtures.create_attendance_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "First tenant"})
@@ -48,7 +53,28 @@ defmodule Bilimbi.People.AttendanceTest do
     {:ok, employee} =
       Employee.create_employee(scope, 73, %{employee_number: "E-1", full_name: "Employee One"})
 
-    %{scope: scope, other_scope: other_scope, employee: employee}
+    UserFixtures.insert_user!(%{id: 91, company_id: 73, name: "Operator"})
+    operator = AuthorizationFixtures.sign_in!(scope, 73, 91, [@rules_capability])
+    %{scope: scope, other_scope: other_scope, employee: employee, operator: operator}
+  end
+
+  test "company rules are written only by an actor holding the rules capability now", %{
+    scope: scope,
+    operator: operator
+  } do
+    assert {:error, :unauthorized} = Attendance.put_rules(scope, 73, %{max_shift_hours: 10})
+
+    UserFixtures.insert_user!(%{id: 92, company_id: 73, name: "Viewer", email: "v@example.com"})
+    viewer = AuthorizationFixtures.sign_in(scope, 92, 73)
+    assert {:error, :unauthorized} = Attendance.put_rules(viewer, 73, %{max_shift_hours: 10})
+    assert {:error, :unauthorized} = Attendance.put_rules(operator, 74, %{max_shift_hours: 10})
+
+    assert {:ok, %{max_shift_hours: 10}} =
+             Attendance.put_rules(operator, 73, %{max_shift_hours: 10})
+
+    :ok = AuthorizationFixtures.revoke!(scope, 73, 91, @rules_capability)
+    assert {:error, :unauthorized} = Attendance.put_rules(operator, 73, %{max_shift_hours: 12})
+    assert {:ok, %{max_shift_hours: 10}} = Attendance.rules(scope, 73)
   end
 
   test "records once and projects a scoped day", %{scope: scope, employee: employee} do
@@ -129,11 +155,15 @@ defmodule Bilimbi.People.AttendanceTest do
     assert {:error, :not_found} = Attendance.list_days(scope, 74, employee.id)
   end
 
-  test "company policy controls local date and self clocking", %{scope: scope, employee: employee} do
+  test "company policy controls local date and self clocking", %{
+    scope: scope,
+    operator: operator,
+    employee: employee
+  } do
     assert {:ok, %{self_clock_enabled: false, max_shift_hours: 16}} = Attendance.rules(scope, 73)
 
     assert {:ok, %{timezone: "Asia/Kuala_Lumpur", self_clock_enabled: true}} =
-             Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", true, 16)
+             Attendance.put_rules(operator, 73, "Asia/Kuala_Lumpur", true, 16)
 
     assert {:ok, _} =
              Attendance.record_clock(scope, 73, employee.id, %{
@@ -149,6 +179,7 @@ defmodule Bilimbi.People.AttendanceTest do
 
   test "replays stay idempotent after the company time zone changes", %{
     scope: scope,
+    operator: operator,
     employee: employee
   } do
     attrs = %{
@@ -159,7 +190,7 @@ defmodule Bilimbi.People.AttendanceTest do
     }
 
     assert {:ok, event} = Attendance.record_clock(scope, 73, employee.id, attrs)
-    assert {:ok, _} = Attendance.put_rules(scope, 73, "Asia/Kuala_Lumpur", false, 16)
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Asia/Kuala_Lumpur", false, 16)
     assert {:ok, ^event} = Attendance.record_clock(scope, 73, employee.id, attrs)
   end
 
@@ -203,9 +234,10 @@ defmodule Bilimbi.People.AttendanceTest do
 
   test "a shift without a clock-out after the maximum shift length is a missed clock-out", %{
     scope: scope,
+    operator: operator,
     employee: employee
   } do
-    assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", false, 8)
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Etc/UTC", false, 8)
 
     assert {:ok, _} =
              Attendance.record_clock(scope, 73, employee.id, %{
@@ -270,9 +302,10 @@ defmodule Bilimbi.People.AttendanceTest do
 
   test "a same-day clock-out past the maximum shift length stays in exception", %{
     scope: scope,
+    operator: operator,
     employee: employee
   } do
-    assert {:ok, _} = Attendance.put_rules(scope, 73, "Etc/UTC", false, 8)
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Etc/UTC", false, 8)
 
     shift = %{
       source: "provider",

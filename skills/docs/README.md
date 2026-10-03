@@ -13,9 +13,19 @@ assessment slice adds `people_skill_assessments`,
 `people_skill_reminders`. Catalog functions take a validated
 `Bilimbi.Base.Tenancy.Scope` and an explicit company ID whose
 `people/workforce` company read is current. Missing, sibling-company and
-cross-tenant records are indistinguishable. Assessment, reassessment, action
-and reminder functions take an Authz login actor (`%Bilimbi.Base.Authz.Actor{}`)
-and check its capability for that company themselves.
+cross-tenant records are indistinguishable. Every write authorizes its own
+capability for the scope's signed-in actor when it runs, through
+`Bilimbi.People.Workforce.Authorization`: catalog, scale, profile-draft and
+action-type writes need `people.skills.catalog.manage`, publishing and
+retiring a profile need `people.skills.profiles.publish`, the policy write
+needs `people.skills.policy.manage`, queuing reminders needs
+`people.skills.reminders.send`, and a system scope is refused with
+`:unauthorized`. A page's `can_*?` assign only decides which controls render;
+a grant revoked while the page stays open refuses the next event. Assessment,
+reassessment, action and reminder functions take an Authz login actor
+(`%Bilimbi.Base.Authz.Actor{}`) and check its capability for that company on
+each call; the signed-in employee behind My skills and owned actions is
+resolved on every call through the same boundary, never cached at mount.
 
 - **Catalog.** Categories and skills have lowercase codes unique per company.
   A skill's code is its stable identity; revisions change its name,
