@@ -7,6 +7,7 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
   alias Bilimbi.Base.Settings.TestFixtures, as: SettingsFixtures
   alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.People.{Organisation, Performance, Skills}
+  alias Bilimbi.People.Workforce.AuthorizationFixtures
 
   @users %{manager: 101, reviewer: 102, employee: 103, peer: 104, other: 105, viewer: 106}
   def seed!(opts \\ []) do
@@ -60,38 +61,46 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
 
     grant!(scope, :viewer, 73, ["people.performance.view"])
     grant!(scope, :other, 74, caps)
-    {:ok, position} = Organisation.create_position(scope, 73, %{code: "position-one"})
+
+    setup_scope =
+      AuthorizationFixtures.sign_in!(scope, 73, @users.manager, ~w(
+        people.organisation.manage
+        people.skills.catalog.manage
+        people.skills.profiles.publish
+      ))
+
+    {:ok, position} = Organisation.create_position(setup_scope, 73, %{code: "position-one"})
 
     {:ok, _} =
-      Organisation.record_version(scope, 73, position.id, %{
+      Organisation.record_version(setup_scope, 73, position.id, %{
         version: 1,
         title: "Position one",
         effective_from: ~D[2026-01-01]
       })
 
     {:ok, _} =
-      Organisation.assign(scope, 73, position.id, %{
+      Organisation.assign(setup_scope, 73, position.id, %{
         employee_id: subject.id,
         kind: "substantive",
         effective_from: ~D[2026-01-01]
       })
 
     {:ok, category} =
-      Skills.create_category(scope, 73, %{code: "category-one", name: "Skill category"})
+      Skills.create_category(setup_scope, 73, %{code: "category-one", name: "Skill category"})
 
     {:ok, skill} =
-      Skills.create_skill(scope, 73, %{
+      Skills.create_skill(setup_scope, 73, %{
         category_id: category.id,
         code: "skill-one",
         name: "Skill one",
         definition: "Governed skill definition"
       })
 
-    {:ok, scale} = Skills.create_scale(scope, 73, %{code: "scale-one", name: "Scale one"})
+    {:ok, scale} = Skills.create_scale(setup_scope, 73, %{code: "scale-one", name: "Scale one"})
 
     for level <- 0..1 do
       {:ok, _} =
-        Skills.put_scale_level(scope, 73, scale.id, %{
+        Skills.put_scale_level(setup_scope, 73, scale.id, %{
           level: level,
           name: "Level #{level}",
           anchor: "Observed evidence",
@@ -99,17 +108,17 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
         })
     end
 
-    {:ok, _} = Skills.publish_scale(scope, 73, scale.id)
+    {:ok, _} = Skills.publish_scale(setup_scope, 73, scale.id)
 
     {:ok, profile} =
-      Skills.create_profile(scope, 73, %{
+      Skills.create_profile(setup_scope, 73, %{
         code: "profile-one",
         name: "Profile one",
         scale_id: scale.id
       })
 
     {:ok, _} =
-      Skills.put_item(scope, 73, profile.id, %{
+      Skills.put_item(setup_scope, 73, profile.id, %{
         skill_id: skill.id,
         required_level: 1,
         criticality: "essential",
@@ -117,14 +126,13 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
         mandatory: true
       })
 
-    {:ok, _} = Skills.add_selector(scope, 73, profile.id, :company)
+    {:ok, _} = Skills.add_selector(setup_scope, 73, profile.id, :company)
     # This fixture publishes Skills through its own capability and public API.
-    grant!(scope, :manager, 73, ["people.skills.profiles.publish"])
     ctx = %{scope: scope, people: people, position: position, profile: profile}
 
     {:ok, _} =
       Skills.publish_profile(
-        elem(Authz.scope_actor(actor(ctx, :manager)), 1),
+        setup_scope,
         73,
         profile.id,
         ~D[2026-01-01]
@@ -149,6 +157,10 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
         %{
           descriptor: %{id: "base/tiling", otp_app: :bilimbi_base_tiling},
           payload: %{domains: %{}, verbs: ["publish"], capabilities: [], roles: %{}}
+        },
+        %{
+          descriptor: %{id: "people/organisation", otp_app: :bilimbi_people_organisation},
+          payload: Bilimbi.People.Organisation.Contributions.contributions().authz
         },
         %{
           descriptor: %{id: "people/skills", otp_app: :bilimbi_people_skills},

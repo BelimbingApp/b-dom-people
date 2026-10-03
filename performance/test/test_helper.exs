@@ -1,3 +1,4 @@
+Code.require_file(Path.expand("../../workforce/test/support/authorization_fixtures.ex", __DIR__))
 workspace_apps = Path.expand("../../../..", __DIR__)
 
 for path <- [
