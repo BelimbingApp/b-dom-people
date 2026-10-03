@@ -162,7 +162,7 @@ defmodule BilimbiWeb.EmployeeWorkspaceLiveTest do
       ]
 
       for {view, {event, params}} <- Enum.zip(views, events) do
-        assert render_hook(view, event, params) =~ "You no longer have permission"
+        assert {:error, {:redirect, %{to: "/dashboard"}}} = render_hook(view, event, params)
       end
 
       assert {:ok, :stored} =
@@ -214,10 +214,8 @@ defmodule BilimbiWeb.EmployeeWorkspaceLiveTest do
       assert {:ok, _} =
                Employee.update_employee(scope, 73, employee.id, %{full_name: "Fresh private fact"})
 
-      html = render_hook(view, "filter", %{"search" => "Fresh", "status" => ""})
-      refute html =~ "Fresh private fact"
-      refute has_element?(view, "table", "Fresh private fact")
-      assert html =~ "This company is unavailable."
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "filter", %{"search" => "Fresh", "status" => ""})
     end
 
     defp actor_scope(scope), do: Bilimbi.Base.Tenancy.Authentication.sign_in(scope, 91, 73)

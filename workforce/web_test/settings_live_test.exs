@@ -81,8 +81,8 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
                false
              )
 
-    assert render_submit(view, "save", %{"statuses" => ["inactive"]}) =~
-             "Working statuses could not be saved."
+    assert {:error, {:redirect, %{to: "/dashboard"}}} =
+             render_submit(view, "save", %{"statuses" => ["inactive"]})
 
     assert {:ok, %ReadResult{value: ["probation", "active"], freshness: :current}} =
              Workforce.working_statuses(scope, 73)

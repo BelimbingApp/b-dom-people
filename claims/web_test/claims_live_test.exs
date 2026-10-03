@@ -368,9 +368,11 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       assert {:error, {_kind, _redirect}} = conn |> log_in_as() |> live("/people/claims/setup")
     end
 
-    # A page proves its route capability at mount. The grant can be revoked,
-    # or the account unlinked from its employee, while the page stays
-    # connected; the next event must then refuse and change nothing.
+    # A page proves its route capability at mount and again before every
+    # event. Revoking that capability, or unlinking the account from its
+    # employee, while the page stays connected must refuse the next event
+    # and change nothing. A revoked route capability sends the page to the
+    # dashboard.
     test "an open setup page stops writing once the manage grant is revoked", %{
       conn: conn,
       scope: scope
@@ -381,14 +383,12 @@ defmodule BilimbiWeb.ClaimsLiveTest do
 
       revoke!(scope, 91, "people.claims.manage")
 
-      html =
-        render_hook(setup, "create_category", %{
-          "category" => %{"code" => "audit", "name" => "After revocation"}
-        })
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(setup, "create_category", %{
+                 "category" => %{"code" => "audit", "name" => "After revocation"}
+               })
 
-      assert html =~ "You no longer have permission to change this company"
       assert {:ok, []} = Claims.categories(scope, 73)
-      refute has_element?(setup, "#claim-category-form")
     end
 
     test "an open My claims page stops withdrawing once the submit grant is revoked", %{
@@ -404,10 +404,8 @@ defmodule BilimbiWeb.ClaimsLiveTest do
 
       revoke!(scope, 91, "people.claims.submit")
 
-      html = render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)})
-      assert html =~ "You no longer have permission to submit claims here."
-      assert has_element?(mine, "#my-claims-unavailable")
-      refute has_element?(mine, "#my-claims-table")
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(mine, "withdraw_claim", %{"id" => to_string(request.id)})
 
       approver = AuthorizationFixtures.sign_in(scope, 91, 73)
       assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(approver, 73, employee.id)
@@ -500,19 +498,26 @@ defmodule BilimbiWeb.ClaimsLiveTest do
           |> log_in_as(%{"user_id" => 92, "company_id" => 73})
           |> live("/people/claims/operations?tab=#{tab}")
 
+        export_view =
+          if batch do
+            {:ok, open, _} =
+              conn
+              |> log_in_as(%{"user_id" => 92, "company_id" => 73})
+              |> live("/people/claims/operations?tab=#{tab}")
+
+            open
+          end
+
         render_hook(view, unquote(action), params)
         assert has_element?(view, "#claim-operations-confirm")
         revoke!(scope, 92, "people.claims.approve")
 
         if batch do
-          assert render_hook(view, "export", %{"id" => to_string(batch.id)}) =~
-                   "cannot be exported"
-
-          refute has_element?(view, "#claim-batch-download-#{batch.id}")
+          assert {:error, {:redirect, %{to: "/dashboard"}}} =
+                   render_hook(export_view, "export", %{"id" => to_string(batch.id)})
         end
 
-        assert render_click(view, "confirm") =~ "not allowed to do that"
-        refute has_element?(view, "#claim-operations-confirm")
+        assert {:error, {:redirect, %{to: "/dashboard"}}} = render_click(view, "confirm")
         reader = AuthorizationFixtures.sign_in(scope, 91, 73)
         assert {:ok, [%{status: "approved"}]} = Claims.employee_requests(reader, 73, employee.id)
         assert {:ok, batches} = Claims.handoff_batches(reader, 73)
@@ -542,9 +547,7 @@ defmodule BilimbiWeb.ClaimsLiveTest do
       assert has_element?(view, "#claim-operations-confirm")
       revoke!(scope, 92, "people.claims.approve")
 
-      html = render_click(view, "confirm")
-      assert html =~ "not allowed to do that" or html =~ "no longer have permission"
-      refute has_element?(view, "#claim-row-#{request.id}")
+      assert {:error, {:redirect, %{to: "/dashboard"}}} = render_click(view, "confirm")
 
       reader = AuthorizationFixtures.sign_in(scope, 91, 73)
       assert {:ok, [%{status: "submitted"}]} = Claims.employee_requests(reader, 73, employee.id)

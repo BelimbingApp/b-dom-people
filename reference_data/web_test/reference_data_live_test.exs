@@ -59,19 +59,17 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
       refute has_element?(view, "form[phx-submit='create_entry']")
     end
 
-    test "revocation empties the chooser and refuses selection", %{conn: conn} do
+    test "revocation sends an open chooser to the dashboard", %{conn: conn} do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/references")
       revoke!("people.references.manage")
 
-      assert render_hook(view, "select_company", %{"company_id" => "73"}) =~
-               "No companies available"
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "select_company", %{"company_id" => "73"})
 
-      refute has_element?(view, "#reference-company-picker")
       assert {:error, _} = conn |> log_in_as() |> live("/people/references")
     end
 
     test "revocation refuses every write on an open page", %{conn: conn} do
-      {:ok, view, _} = conn |> log_in_as() |> live("/people/companies/73/references")
       {:ok, scope} = Bilimbi.Base.Tenancy.scope(41)
 
       # Writes refuse a system scope, so the seed is made as the operator.
@@ -82,17 +80,23 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
           %{kind: "category", code: "existing", label: "Existing value"}
         )
 
+      views =
+        for _ <- 1..3 do
+          {:ok, open, _} = conn |> log_in_as() |> live("/people/companies/73/references")
+          open
+        end
+
       revoke!("people.references.manage")
 
-      for {event, params} <- [
-            {"create_entry",
-             %{"entry" => %{"kind" => "category", "code" => "refused", "label" => "Refused"}}},
-            {"add_alias",
-             %{"alias" => %{"entry_id" => to_string(entry.id), "label" => "Refused"}}},
-            {"create_exception",
-             %{"exception" => %{"on_date" => "2026-10-03", "label" => "Refused"}}}
-          ] do
-        assert render_hook(view, event, params) =~ "cannot change"
+      events = [
+        {"create_entry",
+         %{"entry" => %{"kind" => "category", "code" => "refused", "label" => "Refused"}}},
+        {"add_alias", %{"alias" => %{"entry_id" => to_string(entry.id), "label" => "Refused"}}},
+        {"create_exception", %{"exception" => %{"on_date" => "2026-10-03", "label" => "Refused"}}}
+      ]
+
+      for {open, {event, params}} <- Enum.zip(views, events) do
+        assert {:error, {:redirect, %{to: "/dashboard"}}} = render_hook(open, event, params)
       end
 
       assert {:ok, [%{id: id}]} = Bilimbi.People.ReferenceData.list_entries(scope, 73)
@@ -101,23 +105,23 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
       assert {:ok, []} = Bilimbi.People.ReferenceData.list_calendar_exceptions(scope, 73)
     end
 
-    # The audit's Finding 1 case: the facade, not only the page's access hook,
-    # refuses a write whose grant was revoked after the page connected.
+    # The open page is sent to the dashboard, and the facade still refuses
+    # the same write when the grant was revoked after the page connected.
     test "a revoked grant refuses an entry sent to the open explicit route", %{conn: conn} do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/companies/73/references")
       {:ok, scope} = Bilimbi.Base.Tenancy.scope(41)
       revoke!("people.references.manage")
 
-      refute render_hook(view, "create_entry", %{
-               "entry" => %{
-                 "kind" => "category",
-                 "code" => "audit",
-                 "label" => "After revocation"
-               }
-             }) =~ "Reference added."
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "create_entry", %{
+                 "entry" => %{
+                   "kind" => "category",
+                   "code" => "audit",
+                   "label" => "After revocation"
+                 }
+               })
 
       assert {:ok, []} = Bilimbi.People.ReferenceData.list_entries(scope, 73)
-      refute has_element?(view, "form[phx-submit='create_entry']")
 
       # The grant alone is not enough: the facade also needs the actor's own
       # company reach, so the signed-in scope is refused directly as well.

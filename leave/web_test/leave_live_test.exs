@@ -66,17 +66,18 @@ defmodule BilimbiWeb.LeaveLiveTest do
       {:ok, view, _} = conn |> log_in_as() |> live("/people/leave/policies")
       assert {:ok, %{year_start_month: 1}} = Leave.rules(scope, 73)
 
+      {:ok, type_page, _} = conn |> log_in_as() |> live("/people/leave/policies")
       revoke!(scope, "people.leave.policies.manage")
 
-      # The apostrophe in the message is HTML-escaped in the render.
-      assert render_submit(view, "save_year", %{"year_start_month" => "7"}) =~
-               "You no longer have permission to change this company"
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_submit(view, "save_year", %{"year_start_month" => "7"})
 
       assert {:ok, %{year_start_month: 1}} = Leave.rules(scope, 73)
 
-      view
-      |> form("#leave-type-form", type: %{code: "annual", name: "Annual leave", unit: "day"})
-      |> render_submit()
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               type_page
+               |> form("#leave-type-form", type: %{code: "annual", name: "Annual leave", unit: "day"})
+               |> render_submit()
 
       assert {:ok, []} = Leave.list_types(scope, 73)
     end
@@ -92,14 +93,13 @@ defmodule BilimbiWeb.LeaveLiveTest do
 
       revoke!(scope, "people.leave.self.view")
 
-      my
-      |> form("#leave-request-form",
-        request: %{leave_type_id: type.id, starts_on: Date.to_iso8601(today), day_part: "am"}
-      )
-      |> render_submit()
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               my
+               |> form("#leave-request-form",
+                 request: %{leave_type_id: type.id, starts_on: Date.to_iso8601(today), day_part: "am"}
+               )
+               |> render_submit()
 
-      assert render(my) =~ "You no longer have permission to use leave self-service."
-      assert has_element?(my, "#my-leave-unavailable")
       assert {:ok, []} = Leave.pending_requests(operator(scope), 73)
     end
 
@@ -160,14 +160,11 @@ defmodule BilimbiWeb.LeaveLiveTest do
 
       revoke!(scope, "people.leave.requests.approve", 92)
 
-      queue
-      |> form("#leave-decision-#{pending.id}")
-      |> render_submit(%{"decision" => "approve"})
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               queue
+               |> form("#leave-decision-#{pending.id}")
+               |> render_submit(%{"decision" => "approve"})
 
-      assert render(queue) =~
-               "You no longer have permission to decide leave requests for this company."
-
-      assert has_element?(queue, "#leave-approvals-forbidden")
       assert [%{status: "pending"}] = elem(Leave.pending_requests(operator(scope), 73), 1)
     end
 

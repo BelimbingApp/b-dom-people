@@ -197,10 +197,11 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
                false
              )
 
-    assert render_hook(view, "end_assignment", %{
-             "assignment_id" => Integer.to_string(assignment.id),
-             "effective_to" => "2026-09-30"
-           }) =~ "You no longer have permission to change this company"
+    assert {:error, {:redirect, %{to: "/dashboard"}}} =
+             render_hook(view, "end_assignment", %{
+               "assignment_id" => Integer.to_string(assignment.id),
+               "effective_to" => "2026-09-30"
+             })
 
     assert %PositionAssignment{effective_to: nil} = Repo.get(PositionAssignment, assignment.id)
     assert {:ok, []} = Audit.list_actions(system)

@@ -363,11 +363,10 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
                  false
                )
 
-      assert render_hook(view, "save_policy", %{"policy" => values}) =~
-               "You no longer have permission to change this company"
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "save_policy", %{"policy" => values})
 
       assert {:ok, ^before} = Skills.policy(ctx.scope, 73)
-      refute has_element?(view, "#skills-policy-form button", "Save policy")
     end
 
     test "policy route revocation refuses action types and reminders with operation grants retained",
@@ -404,8 +403,7 @@ defmodule Bilimbi.People.Skills.Web.AssessmentLiveTest do
       ]
 
       for {view, {event, params}} <- Enum.zip(views, events) do
-        html = render_hook(view, event, params)
-        assert html =~ "You no longer have permission" or html =~ "You cannot change this company"
+        assert {:error, {:redirect, %{to: "/dashboard"}}} = render_hook(view, event, params)
       end
 
       assert {:ok, [%{id: id, active: true}]} = Skills.list_action_types(ctx.scope, 73)
