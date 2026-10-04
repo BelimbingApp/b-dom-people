@@ -16,7 +16,7 @@ defmodule Bilimbi.People.Attendance.Web.ApprovalsLive do
      |> assign(:active_nav, "people.attendance.approvals")
      |> assign(
        :companies,
-       AttendanceComponents.companies(socket.assigns.current_scope.actor, @capability)
+       AttendanceComponents.companies(socket.assigns.current_scope.scope, @capability)
      )}
   end
 

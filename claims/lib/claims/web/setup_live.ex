@@ -16,7 +16,7 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @capability) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, companies} -> companies
         {:error, :unauthorized} -> []
       end

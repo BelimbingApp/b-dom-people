@@ -32,7 +32,7 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
     company_id = positive_id(raw_id)
 
     case Company.authorize_company_target(
-           socket.assigns.current_scope.actor,
+           socket.assigns.current_scope.scope,
            company_id,
            @manage_capability
          ) do
@@ -101,16 +101,16 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
   # The hook refreshes both capability and company reach before every event,
   # including events sent from controls rendered before access was revoked.
   defp refresh_access(socket) do
-    actor = socket.assigns.current_scope.actor
+    scope = socket.assigns.current_scope.scope
 
     companies =
-      case Company.list_selectable_companies(actor, @manage_capability) do
+      case Company.list_selectable_companies(scope, @manage_capability) do
         {:ok, companies} -> companies
         _ -> []
       end
 
     company =
-      case Company.authorize_company_target(actor, socket.assigns.company_id, @manage_capability) do
+      case Company.authorize_company_target(scope, socket.assigns.company_id, @manage_capability) do
         {:ok, company} -> company
         _ -> nil
       end

@@ -338,8 +338,13 @@ defmodule BilimbiWeb.AttendanceLiveTest do
                  false
                )
 
-      render_click(view, "clock", %{"type" => "in", "latitude" => 1.5, "longitude" => 103.7})
-      assert render(view) =~ "Self clocking is unavailable"
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_click(view, "clock", %{
+                 "type" => "in",
+                 "latitude" => 1.5,
+                 "longitude" => 103.7
+               })
+
       assert {:ok, []} = Attendance.list_days(scope, 73, employee.id)
     end
 
@@ -358,13 +363,14 @@ defmodule BilimbiWeb.AttendanceLiveTest do
                  false
                )
 
-      render_hook(view, "save", %{
-        "timezone" => "Etc/UTC",
-        "enabled" => "true",
-        "max_shift_hours" => "23",
-        "location_required" => "false",
-        "adjustment_window_days" => "30"
-      })
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "save", %{
+                 "timezone" => "Etc/UTC",
+                 "enabled" => "true",
+                 "max_shift_hours" => "23",
+                 "location_required" => "false",
+                 "adjustment_window_days" => "30"
+               })
 
       assert {:ok, ^before} = Attendance.rules(scope, 73)
     end
@@ -385,13 +391,15 @@ defmodule BilimbiWeb.AttendanceLiveTest do
                  false
                )
 
-      html =
-        render_hook(view, "request_adjustment", %{
-          "adjustment" => %{"event_type" => "in", "local_at" => local_at(), "reason" => "Forgot"}
-        })
+      assert {:error, {:redirect, %{to: "/dashboard"}}} =
+               render_hook(view, "request_adjustment", %{
+                 "adjustment" => %{
+                   "event_type" => "in",
+                   "local_at" => local_at(),
+                   "reason" => "Forgot"
+                 }
+               })
 
-      assert html =~ "You no longer have permission to use attendance self-service here."
-      assert has_element?(view, "#my-attendance-unavailable")
       assert [] = Bilimbi.Base.Repo.all(Bilimbi.People.Attendance.AdjustmentRequest)
     end
 

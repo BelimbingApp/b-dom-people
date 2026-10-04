@@ -20,7 +20,7 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @approve) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @approve) do
         {:ok, companies} -> companies
         {:error, :unauthorized} -> []
       end
@@ -199,7 +199,7 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
       match?(
         {:ok, _company},
         Company.authorize_company_target(
-          socket.assigns.current_scope.actor,
+          socket.assigns.current_scope.scope,
           company_id(socket),
           required
         )

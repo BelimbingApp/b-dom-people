@@ -8,7 +8,6 @@ defmodule Bilimbi.People.Leave.CarryForwardWorker do
   """
   use Bilimbi.Base.Queue.Worker, id: "people-leave/carry-forward", max_attempts: 5
 
-  alias Bilimbi.Base.Authz
   alias Bilimbi.Core.Company
   alias Bilimbi.People.Leave
 
@@ -25,8 +24,7 @@ defmodule Bilimbi.People.Leave.CarryForwardWorker do
   @impl true
   def handle_job(%{"company_id" => company_id, "from_year" => year}, %{scope: scope})
       when not is_nil(scope) do
-    with {:ok, actor} <- Authz.scope_actor(scope),
-         {:ok, companies} <- Company.list_selectable_companies(actor, @capability),
+    with {:ok, companies} <- Company.list_selectable_companies(scope, @capability),
          true <- Enum.any?(companies, &(&1.id == company_id and &1.status == "active")) do
       case Leave.carry_forward(scope, company_id, year) do
         {:ok, _counts} -> :ok

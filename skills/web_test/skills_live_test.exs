@@ -230,9 +230,10 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     # The page stays open while an administrator revokes the grant.
     assert {:ok, :stored} = Authz.put_principal_capability(scope, 73, :user, 91, @view, false)
 
-    assert render_hook(view, "create_category", %{
-             "category" => %{"code" => "after", "name" => "After revocation"}
-           }) =~ "You cannot change this company&#39;s skills."
+    assert {:error, {:redirect, %{to: "/dashboard"}}} =
+             render_hook(view, "create_category", %{
+               "category" => %{"code" => "after", "name" => "After revocation"}
+             })
 
     assert {:ok, []} = Skills.list_categories(scope, 73)
   end
@@ -250,19 +251,22 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
     {:ok, draft_page, _} =
       conn |> log_in_as() |> live("/people/skills/profiles/#{draft.id}?company_id=73")
 
+    {:ok, publish_page, _} =
+      conn |> log_in_as() |> live("/people/skills/profiles/#{draft.id}?company_id=73")
+
     {:ok, published_page, _} =
       conn |> log_in_as() |> live("/people/skills/profiles/#{published.id}?company_id=73")
 
     {:ok, before} = Skills.get_profile(scope, 73, draft.id)
     assert {:ok, :stored} = Authz.put_principal_capability(scope, 73, :user, 91, @view, false)
 
-    assert render_hook(draft_page, "discard", %{}) =~ "You cannot change this company"
+    assert {:error, {:redirect, %{to: "/dashboard"}}} = render_hook(draft_page, "discard", %{})
 
-    assert render_hook(draft_page, "publish", %{"effective_from" => "2027-01-01"}) =~
-             "You cannot publish"
+    assert {:error, {:redirect, %{to: "/dashboard"}}} =
+             render_hook(publish_page, "publish", %{"effective_from" => "2027-01-01"})
 
-    assert render_hook(published_page, "retire", %{"effective_to" => "2026-12-31"}) =~
-             "You cannot publish"
+    assert {:error, {:redirect, %{to: "/dashboard"}}} =
+             render_hook(published_page, "retire", %{"effective_to" => "2026-12-31"})
 
     assert {:ok, ^before} = Skills.get_profile(scope, 73, draft.id)
     assert {:ok, %{status: "published"}} = Skills.get_profile(scope, 73, published.id)

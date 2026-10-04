@@ -6,7 +6,7 @@ defmodule Bilimbi.People.Payroll do
   decisions release private Base Artifacts documents.
   """
   import Ecto.Query
-  alias Bilimbi.Base.{Authz, Repo, Settings, Tenancy}
+  alias Bilimbi.Base.{Repo, Settings, Tenancy}
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Core.{Company, Employee}
@@ -809,8 +809,7 @@ defmodule Bilimbi.People.Payroll do
 
   defp authorize(scope, company_id, capability) do
     with %{type: :user, impersonator_id: nil} <- Scope.actor(scope),
-         {:ok, actor} <- Authz.scope_actor(scope),
-         {:ok, company} <- Company.authorize_company_target(actor, company_id, capability),
+         {:ok, company} <- Company.authorize_company_target(scope, company_id, capability),
          true <- company.status == "active" do
       {:ok, company}
     else

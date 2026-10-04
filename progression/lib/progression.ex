@@ -15,9 +15,9 @@ defmodule Bilimbi.People.Progression do
   alias Bilimbi.People.Progression.Policy
 
   def allowed?(%Scope{} = scope, company_id, capability) do
-    with {:ok, actor} <- Authz.scope_actor(scope),
+    with {:ok, _actor} <- Authz.scope_actor(scope),
          %{allowed: true} <- Authz.can(scope, capability),
-         {:ok, _} <- Company.authorize_company_target(actor, company_id, capability),
+         {:ok, _} <- Company.authorize_company_target(scope, company_id, capability),
          do: true,
          else: (_ -> false)
   end

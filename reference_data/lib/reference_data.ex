@@ -6,8 +6,8 @@ defmodule Bilimbi.People.ReferenceData do
   configuration, so Leave and the operator page share them without a grant.
   Every write authorizes `people.references.manage` for the scope's actor
   and the target company at the moment it runs, through
-  `Bilimbi.People.Workforce.Authorization`, so a grant revoked while an
-  operator page stays open refuses the next write with `:unauthorized`.
+  `Bilimbi.People.Workforce.Authorization`, and a revoked grant returns
+  `{:error, :unauthorized}`.
   """
 
   import Ecto.Query

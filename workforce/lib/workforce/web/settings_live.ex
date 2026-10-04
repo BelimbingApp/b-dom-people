@@ -17,7 +17,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @capability) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, companies} -> Enum.filter(companies, &(&1.status == "active"))
         {:error, :unauthorized} -> []
       end

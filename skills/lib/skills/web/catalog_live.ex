@@ -14,7 +14,7 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.actor, @capability) do
+      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         _ -> []
       end
@@ -131,12 +131,12 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
   end
 
   defp manage(socket, success, failure, fun) do
-    actor = socket.assigns.current_scope.actor
+    scope = socket.assigns.current_scope.scope
 
     with %{id: company_id} <- socket.assigns.company,
-         {:ok, _} <- Company.authorize_company_target(actor, company_id, @capability),
-         {:ok, _} <- Company.authorize_company_target(actor, company_id, @manage_capability) do
-      case fun.(socket.assigns.current_scope.scope, company_id) do
+         {:ok, _} <- Company.authorize_company_target(scope, company_id, @capability),
+         {:ok, _} <- Company.authorize_company_target(scope, company_id, @manage_capability) do
+      case fun.(scope, company_id) do
         {:ok, _} ->
           {:noreply, socket |> load() |> put_flash(:success, success)}
 
@@ -179,7 +179,7 @@ defmodule Bilimbi.People.Skills.Web.CatalogLive do
           match?(
             {:ok, _},
             Company.authorize_company_target(
-              socket.assigns.current_scope.actor,
+              socket.assigns.current_scope.scope,
               company_id,
               @manage_capability
             )
