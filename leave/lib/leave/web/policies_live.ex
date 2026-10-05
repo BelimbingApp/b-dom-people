@@ -1,7 +1,7 @@
 defmodule Bilimbi.People.Leave.Web.PoliciesLive do
   @moduledoc "Operator-managed company leave year, request rules, types, policy versions, grants and carry-forward."
   use Bilimbi.Base.UI, :live_view
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Leave
   @capability "people.leave.policies.manage"
   @months ~w(January February March April May June July August September October November December)
@@ -10,7 +10,7 @@ defmodule Bilimbi.People.Leave.Web.PoliciesLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         _ -> []
       end

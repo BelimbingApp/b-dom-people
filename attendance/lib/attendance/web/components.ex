@@ -5,7 +5,7 @@ defmodule Bilimbi.People.Attendance.Web.Components do
 
   alias Bilimbi.Base.Authz
   alias Bilimbi.Base.DateTime, as: BaseDateTime
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Attendance.ShiftTemplate
 
   @input "rounded-md border border-line bg-surface px-3 py-1.5 text-sm"
@@ -13,7 +13,7 @@ defmodule Bilimbi.People.Attendance.Web.Components do
 
   @doc "Active companies the signed-in scope may act on under `capability`."
   def companies(scope, capability) do
-    case Company.list_selectable_companies(scope, capability) do
+    case Authorization.selectable_companies(scope, capability) do
       {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
       _ -> []
     end

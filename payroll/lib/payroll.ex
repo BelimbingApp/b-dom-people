@@ -11,6 +11,7 @@ defmodule Bilimbi.People.Payroll do
   alias Bilimbi.Base.Settings.Scope, as: SettingsScope
   alias Bilimbi.Core.{Company, Employee}
   alias Bilimbi.People.{Attendance, Claims, Leave, Workforce}
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Workforce.ReadResult
 
   alias Bilimbi.People.Payroll.{
@@ -809,7 +810,7 @@ defmodule Bilimbi.People.Payroll do
 
   defp authorize(scope, company_id, capability) do
     with %{type: :user, impersonator_id: nil} <- Scope.actor(scope),
-         {:ok, company} <- Company.authorize_company_target(scope, company_id, capability),
+         {:ok, company} <- Authorization.authorize_company(scope, company_id, capability),
          true <- company.status == "active" do
       {:ok, company}
     else

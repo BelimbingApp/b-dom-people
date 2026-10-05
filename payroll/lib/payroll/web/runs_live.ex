@@ -1,14 +1,14 @@
 defmodule Bilimbi.People.Payroll.Web.RunsLive do
   @moduledoc "Review frozen payroll, attest contributions, calculate and independently decide."
   use Bilimbi.Base.UI, :live_view
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Payroll
   @manage_events ~w(intake calculate generate_report generate_payslip)
 
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(
+      case Authorization.selectable_companies(
              socket.assigns.current_scope.scope,
              "people.payroll.view"
            ) do

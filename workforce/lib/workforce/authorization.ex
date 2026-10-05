@@ -60,6 +60,44 @@ defmodule Bilimbi.People.Workforce.Authorization do
   end
 
   @doc """
+  Authorizes the scope's signed-in actor for one capability in one company and
+  returns the company summary.
+
+  For a caller that needs the company itself, such as a page that renders it.
+  A scope with no authenticated actor is refused as `:unauthorized` for a
+  positive integer company id and `:not_found` otherwise.
+  """
+  @spec authorize_company(Scope.t(), term(), String.t()) ::
+          {:ok, Company.Summary.t()} | {:error, refusal()}
+  def authorize_company(%Scope{} = scope, company_id, capability) when is_binary(capability) do
+    case Authz.scope_actor(scope) do
+      {:ok, actor} -> Company.authorize_company_target(actor, company_id, capability)
+      {:error, :no_authenticated_actor} -> unauthorized_without_actor(company_id)
+    end
+  end
+
+  @doc """
+  Lists the live companies the scope's signed-in actor may target for one
+  capability.
+
+  A scope with no authenticated actor is `{:error, :unauthorized}`, as is an
+  actor without the capability.
+  """
+  @spec selectable_companies(Scope.t(), String.t()) ::
+          {:ok, [Company.Summary.t()]} | {:error, :unauthorized}
+  def selectable_companies(%Scope{} = scope, capability) when is_binary(capability) do
+    case Authz.scope_actor(scope) do
+      {:ok, actor} -> Company.list_selectable_companies(actor, capability)
+      {:error, :no_authenticated_actor} -> {:error, :unauthorized}
+    end
+  end
+
+  defp unauthorized_without_actor(company_id) when is_integer(company_id) and company_id > 0,
+    do: {:error, :unauthorized}
+
+  defp unauthorized_without_actor(_company_id), do: {:error, :not_found}
+
+  @doc """
   Whether the actor currently holds the capability for the company.
 
   For deciding which controls to render. It is not authority for an

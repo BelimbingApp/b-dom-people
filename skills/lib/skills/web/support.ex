@@ -1,10 +1,10 @@
 defmodule Bilimbi.People.Skills.Web.Support do
   @moduledoc false
   # Shared LiveView helpers: company choice, form coercion and refusal wording.
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
 
   def companies(scope, capability) do
-    case Company.list_selectable_companies(scope, capability) do
+    case Authorization.selectable_companies(scope, capability) do
       {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
       _ -> []
     end

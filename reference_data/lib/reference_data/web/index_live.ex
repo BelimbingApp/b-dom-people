@@ -2,7 +2,7 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
   @moduledoc "Operator page for one validated company's references."
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.ReferenceData
 
   @manage_capability "people.references.manage"
@@ -31,7 +31,7 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
   def handle_event("select_company", %{"company_id" => raw_id}, socket) do
     company_id = positive_id(raw_id)
 
-    case Company.authorize_company_target(
+    case Authorization.authorize_company(
            socket.assigns.current_scope.scope,
            company_id,
            @manage_capability
@@ -104,13 +104,13 @@ defmodule Bilimbi.People.ReferenceData.Web.IndexLive do
     scope = socket.assigns.current_scope.scope
 
     companies =
-      case Company.list_selectable_companies(scope, @manage_capability) do
+      case Authorization.selectable_companies(scope, @manage_capability) do
         {:ok, companies} -> companies
         _ -> []
       end
 
     company =
-      case Company.authorize_company_target(scope, socket.assigns.company_id, @manage_capability) do
+      case Authorization.authorize_company(scope, socket.assigns.company_id, @manage_capability) do
         {:ok, company} -> company
         _ -> nil
       end

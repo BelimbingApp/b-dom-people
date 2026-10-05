@@ -55,3 +55,8 @@ composition-lock commands.
   Do not take an actor or actor ID as a facade argument, and do
   not resolve the signed-in employee once at mount and keep acting on it.
   Tests sign in through `workforce/test/support/authorization_fixtures.ex`.
+- Pass a `Scope` to `Authorization.authorize_company/3` and
+  `Authorization.selectable_companies/2`, not to `Bilimbi.Core.Company`'s
+  `authorize_company_target/3` or `list_selectable_companies/2`: Bilimbi's
+  Company takes only an `Actor`, and the mismatch is a type warning that the
+  connector's strict compile fails on.

@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   @moduledoc "One requirement profile version: draft editing, publication and retirement."
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Skills
   alias Bilimbi.People.Skills.ProfileItem
 
@@ -27,7 +27,7 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
 
     with {company_id, ""} <- Integer.parse(Map.get(params, "company_id", "")),
          {profile_id, ""} <- Integer.parse(Map.get(params, "id", "")),
-         {:ok, company} <- Company.authorize_company_target(scope, company_id, @capability) do
+         {:ok, company} <- Authorization.authorize_company(scope, company_id, @capability) do
       {:noreply,
        socket
        |> assign(:company, company)
@@ -246,7 +246,7 @@ defmodule Bilimbi.People.Skills.Web.ProfileLive do
   end
 
   defp allowed?(scope, company_id, capability),
-    do: match?({:ok, _}, Company.authorize_company_target(scope, company_id, capability))
+    do: match?({:ok, _}, Authorization.authorize_company(scope, company_id, capability))
 
   defp to_integer(value) when is_binary(value) do
     case Integer.parse(String.trim(value)) do

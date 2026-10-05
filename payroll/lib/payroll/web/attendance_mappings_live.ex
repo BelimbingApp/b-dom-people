@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
   @moduledoc "Company-scoped, effective-dated mapping from Attendance rules to pay items."
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Payroll
 
   @capability "people.payroll.attendance-mappings.manage"
@@ -10,7 +10,7 @@ defmodule Bilimbi.People.Payroll.Web.AttendanceMappingsLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         _ -> []
       end
