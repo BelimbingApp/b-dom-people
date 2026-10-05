@@ -68,8 +68,8 @@ indistinguishable.
 facade authorizes through, at the public API so LiveViews, jobs and other
 adapters share it. `authorize/3` evaluates a capability now for the scope's
 sealed actor and the explicit company, through `Bilimbi.Base.Authz` and
-`Bilimbi.Core.Company.authorize_company_target/3` with the scope, not an
-actor taken from it; a system scope is refused.
+`Bilimbi.Core.Company.authorize_company_target/3` with that same resolved
+actor, never an actor argument from the caller; a system scope is refused.
 `self_employee/2` resolves the login account's current link to a working
 employee on every call, `authorize_self/3` combines both, and
 `with_self_employee_lock/4` runs a self-service write inside a transaction
