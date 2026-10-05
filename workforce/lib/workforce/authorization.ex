@@ -16,8 +16,8 @@ defmodule Bilimbi.People.Workforce.Authorization do
   `Bilimbi.Base.Tenancy.Scope.actor/1`, which verifies the seal the
   authentication edge gave it, and a system scope names nobody, so it is
   refused. The capability is evaluated now, by `Bilimbi.Base.Authz`, and the
-  company axis by `Bilimbi.Core.Company.authorize_company_target/3` with this
-  scope, not the actor taken from it.
+  company axis by `Bilimbi.Core.Company.authorize_company_target/3` with that
+  same resolved actor, not the scope.
 
   Self-service operations act on the employee the login account is linked to
   *now*. `self_employee/2` resolves that link on every call, and

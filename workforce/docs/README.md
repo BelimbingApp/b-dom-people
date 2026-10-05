@@ -70,6 +70,8 @@ adapters share it. `authorize/3` evaluates a capability now for the scope's
 sealed actor and the explicit company, through `Bilimbi.Base.Authz` and
 `Bilimbi.Core.Company.authorize_company_target/3` with that same resolved
 actor, never an actor argument from the caller; a system scope is refused.
+`authorize_company/3` and `selectable_companies/2` do the same for a page
+that needs the company summary or the companies an operator may pick.
 `self_employee/2` resolves the login account's current link to a working
 employee on every call, `authorize_self/3` combines both, and
 `with_self_employee_lock/4` runs a self-service write inside a transaction
