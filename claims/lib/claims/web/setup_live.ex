@@ -2,12 +2,12 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
   @moduledoc """
   Operator setup for one company's claim currencies, catalog, and policies.
 
-  The company list comes from `Company.list_selectable_companies/2` under the
+  The company list comes from `Authorization.selectable_companies/2` under the
   route capability, so an operator only reaches companies they may manage.
   """
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Claims
   alias Bilimbi.People.Claims.ClaimType
 
@@ -16,7 +16,7 @@ defmodule Bilimbi.People.Claims.Web.SetupLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, companies} -> companies
         {:error, :unauthorized} -> []
       end

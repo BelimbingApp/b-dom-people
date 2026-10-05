@@ -3,7 +3,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
 
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Organisation
 
   @capability "people.organisation.view"
@@ -14,7 +14,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         {:error, :unauthorized} -> []
       end
@@ -71,7 +71,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
       company != nil and
         match?(
           {:ok, _},
-          Company.authorize_company_target(
+          Authorization.authorize_company(
             socket.assigns.current_scope.scope,
             company.id,
             @manage_capability
@@ -124,13 +124,13 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLive do
       when not is_nil(company) do
     result =
       with {:ok, _} <-
-             Company.authorize_company_target(
+             Authorization.authorize_company(
                socket.assigns.current_scope.scope,
                company.id,
                @capability
              ),
            {:ok, _} <-
-             Company.authorize_company_target(
+             Authorization.authorize_company(
                socket.assigns.current_scope.scope,
                company.id,
                @manage_capability

@@ -1,9 +1,9 @@
 defmodule Bilimbi.People.Training.Web.Support do
   @moduledoc false
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
 
   def companies(current_scope, capability) do
-    case Company.list_selectable_companies(current_scope.scope, capability) do
+    case Authorization.selectable_companies(current_scope.scope, capability) do
       {:ok, companies} -> Enum.filter(companies, &(&1.status == "active"))
       _ -> []
     end

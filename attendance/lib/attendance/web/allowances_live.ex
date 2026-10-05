@@ -2,7 +2,7 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
   @moduledoc "Operator-managed effective-dated allowance rules."
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Attendance
   alias Bilimbi.People.Attendance.Web.Components, as: AttendanceComponents
 
@@ -11,7 +11,7 @@ defmodule Bilimbi.People.Attendance.Web.AllowancesLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @capability) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @capability) do
         {:ok, values} -> Enum.filter(values, &(&1.status == "active"))
         _ -> []
       end

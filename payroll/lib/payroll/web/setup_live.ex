@@ -1,7 +1,7 @@
 defmodule Bilimbi.People.Payroll.Web.SetupLive do
   @moduledoc "Company payroll foundation editor."
   use Bilimbi.Base.UI, :live_view
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Payroll
 
   @write_events ~w(save_settings create_classification create_item create_period create_mapping create_run prepare_lock lock_run)
@@ -9,7 +9,7 @@ defmodule Bilimbi.People.Payroll.Web.SetupLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(
+      case Authorization.selectable_companies(
              socket.assigns.current_scope.scope,
              "people.payroll.view"
            ) do

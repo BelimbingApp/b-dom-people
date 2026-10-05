@@ -3,14 +3,14 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   Operator queue for one company's claims: decisions, reimbursement, and
   hand-off batches.
 
-  The company list comes from `Company.list_selectable_companies/2` under the
+  The company list comes from `Authorization.selectable_companies/2` under the
   route capability `people.claims.approve`. Paying and handing off need
   `people.claims.reimburse`, rechecked for the selected company on every such
   action. Each irreversible action is held until the operator confirms it.
   """
   use Bilimbi.Base.UI, :live_view
 
-  alias Bilimbi.Core.Company
+  alias Bilimbi.People.Workforce.Authorization
   alias Bilimbi.People.Claims
 
   @approve "people.claims.approve"
@@ -20,7 +20,7 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
   @impl true
   def mount(_params, _session, socket) do
     companies =
-      case Company.list_selectable_companies(socket.assigns.current_scope.scope, @approve) do
+      case Authorization.selectable_companies(socket.assigns.current_scope.scope, @approve) do
         {:ok, companies} -> companies
         {:error, :unauthorized} -> []
       end
@@ -198,7 +198,7 @@ defmodule Bilimbi.People.Claims.Web.OperationsLive do
     Enum.all?([@approve, capability], fn required ->
       match?(
         {:ok, _company},
-        Company.authorize_company_target(
+        Authorization.authorize_company(
           socket.assigns.current_scope.scope,
           company_id(socket),
           required
