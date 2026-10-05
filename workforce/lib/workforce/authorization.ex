@@ -51,7 +51,7 @@ defmodule Bilimbi.People.Workforce.Authorization do
   @spec authorize(Scope.t(), term(), String.t()) :: {:ok, Actor.t()} | {:error, refusal()}
   def authorize(%Scope{} = scope, company_id, capability) when is_binary(capability) do
     with {:ok, actor} <- Authz.scope_actor(scope),
-         {:ok, _company} <- Company.authorize_company_target(scope, company_id, capability) do
+         {:ok, _company} <- Company.authorize_company_target(actor, company_id, capability) do
       {:ok, actor}
     else
       {:error, :not_found} -> {:error, :not_found}
