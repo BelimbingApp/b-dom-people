@@ -115,7 +115,12 @@ defmodule Bilimbi.People.SkillsAccessTest do
     })
 
     :ok =
-      AuthorizationFixtures.grant!(scope, 73, id, Enum.map(capabilities, &("people.skills." <> &1)))
+      AuthorizationFixtures.grant!(
+        scope,
+        73,
+        id,
+        Enum.map(capabilities, &("people.skills." <> &1))
+      )
 
     Authz.actor(:user, id, scope, 73)
   end
