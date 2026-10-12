@@ -553,7 +553,9 @@ defmodule Bilimbi.People.Skills.Assessments do
           [a],
           a.status == "returned" and a.assessor_user_id == ^actor.id and
             not exists(
-              from(s in Assessment, where: s.supersedes_assessment_id == parent_as(:scoped).id)
+              from(s in Tenancy.scope_query(Assessment, scope),
+                where: s.supersedes_assessment_id == parent_as(:scoped).id
+              )
             )
         )
         |> order_by([a], asc: a.id)

@@ -667,7 +667,7 @@ defmodule Bilimbi.People.Performance do
 
       try do
         Repo.transaction(fn ->
-          unwrap!(Company.lock_live_company(scope, company_id))
+          unwrap!(Company.lock_writable_company(scope, company_id))
           unwrap!(authorize(scope, company_id, capability))
           fun.(actor)
         end)
@@ -794,7 +794,7 @@ defmodule Bilimbi.People.Performance do
   defp review_view(scope, company_id, row) do
     observations =
       from(o in scoped(Observation, scope, company_id),
-        join: p in ReviewObservation,
+        join: p in ^Tenancy.scope_query(ReviewObservation, scope),
         on: p.observation_id == o.id,
         where: p.review_id == ^row.id,
         order_by: [asc: o.id]
@@ -804,7 +804,7 @@ defmodule Bilimbi.People.Performance do
 
     targets =
       from(t in scoped(Target, scope, company_id),
-        join: p in ReviewTarget,
+        join: p in ^Tenancy.scope_query(ReviewTarget, scope),
         on: p.target_id == t.id,
         where: p.review_id == ^row.id,
         order_by: [asc: t.id]

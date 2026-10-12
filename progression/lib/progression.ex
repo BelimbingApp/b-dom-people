@@ -83,7 +83,7 @@ defmodule Bilimbi.People.Progression do
     end)
   end
 
-  @doc "Publish once, serialized by the live company lock; past publications remain intact."
+  @doc "Publish once, serialized by the writable company lock; past publications remain intact."
   def publish(%Scope{} = scope, company_id, id) do
     write(scope, company_id, fn actor ->
       row =
@@ -375,7 +375,7 @@ defmodule Bilimbi.People.Progression do
 
       try do
         Repo.transaction(fn ->
-          unwrap!(Company.lock_live_company(scope, company_id))
+          unwrap!(Company.lock_writable_company(scope, company_id))
           unwrap!(authorize(scope, company_id, "people.progression.policy.manage"))
           fun.(actor)
         end)

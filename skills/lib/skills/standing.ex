@@ -206,7 +206,7 @@ defmodule Bilimbi.People.Skills.Standing do
 
     provenance =
       from(a in Tenancy.scope_query(Bilimbi.People.Skills.Assessment, scope),
-        join: p in Bilimbi.People.Skills.Profile,
+        join: p in ^Tenancy.scope_query(Bilimbi.People.Skills.Profile, scope),
         on: p.id == a.profile_id and p.tenant_id == a.tenant_id and p.company_id == a.company_id,
         where: a.company_id == ^company_id and a.id in ^assessment_ids,
         select:

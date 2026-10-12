@@ -154,7 +154,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
       skips =
         Repo.all(
           from(s in rows,
-            join: t in LeaveType,
+            join: t in ^Tenancy.scope_query(LeaveType, scope),
             on: t.id == s.leave_type_id,
             order_by: [asc: s.from_year, asc: s.employee_label, asc: t.name],
             limit: @skip_limit,
@@ -296,7 +296,7 @@ defmodule Bilimbi.People.Leave.CarryForward do
   defp carrying_types(scope, company_id, last_day) do
     Repo.all(
       from(t in Tenancy.scope_query(LeaveType, scope),
-        join: p in Policy,
+        join: p in ^Tenancy.scope_query(Policy, scope),
         on: p.leave_type_id == t.id,
         where: t.company_id == ^company_id and t.status == "active",
         where: p.effective_from <= ^last_day,

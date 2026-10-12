@@ -32,7 +32,7 @@ defmodule Bilimbi.People.Training.Contributions do
     Enum.map(
       [
         {"people.my_work.my_learning", "My learning", "people.my_work", "/people/training/my",
-         "people.training.learning.view", "user-circle", 40},
+         "people.training.learning.view", "users", 40},
         {"people.development.courses", "Courses", "people.development",
          "/people/training/courses", "people.training.courses.view", "building-library", 60},
         {"people.development.sessions", "Sessions & calendar", "people.development",

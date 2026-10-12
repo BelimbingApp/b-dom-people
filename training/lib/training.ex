@@ -142,7 +142,7 @@ defmodule Bilimbi.People.Training do
       records =
         Repo.all(
           from(e in scoped(Event, scope, company_id),
-            join: course in Course,
+            join: course in ^Tenancy.scope_query(Course, scope),
             on: course.id == e.course_id,
             order_by: [asc: e.name, asc: e.id],
             select: {e, course.name}

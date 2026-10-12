@@ -173,11 +173,11 @@ defmodule Bilimbi.People.Training.Insights do
       )
 
     from(f in subquery(latest),
-      join: s in Session,
+      join: s in ^Tenancy.scope_query(Session, scope),
       on: s.id == f.session_id,
-      join: e in Event,
+      join: e in ^Tenancy.scope_query(Event, scope),
       on: e.id == s.event_id,
-      join: c in Course,
+      join: c in ^Tenancy.scope_query(Course, scope),
       on: c.id == e.course_id,
       where: s.ends_at >= ^first and s.ends_at < ^last,
       select: %{

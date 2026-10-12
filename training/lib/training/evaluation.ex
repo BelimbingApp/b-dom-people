@@ -183,7 +183,7 @@ defmodule Bilimbi.People.Training.Evaluation do
             existing =
               Repo.one(
                 from(r in scoped(EvaluationReview, scope, company),
-                  join: f in ParticipationFact,
+                  join: f in ^Tenancy.scope_query(ParticipationFact, scope),
                   on: f.id == r.fact_id,
                   where:
                     f.session_id == ^session.id and f.employee_id == ^fact.employee_id and
@@ -289,11 +289,11 @@ defmodule Bilimbi.People.Training.Evaluation do
         reviews =
           Repo.all(
             from(r in scoped(EvaluationReview, scope, company),
-              join: p in EvaluationPolicy,
+              join: p in ^Tenancy.scope_query(EvaluationPolicy, scope),
               on: p.id == r.policy_id,
-              left_join: a in EvaluationAnswer,
+              left_join: a in ^Tenancy.scope_query(EvaluationAnswer, scope),
               on: a.review_id == r.id,
-              left_join: m in EvaluationReminder,
+              left_join: m in ^Tenancy.scope_query(EvaluationReminder, scope),
               on: m.review_id == r.id,
               where: is_nil(a.id) and is_nil(m.id),
               select: {r, p.reminder_days}
@@ -428,11 +428,11 @@ defmodule Bilimbi.People.Training.Evaluation do
     rows =
       Repo.all(
         from(r in scoped(EvaluationReview, scope, company),
-          join: f in ParticipationFact,
+          join: f in ^Tenancy.scope_query(ParticipationFact, scope),
           on: f.id == r.fact_id,
-          join: p in EvaluationPolicy,
+          join: p in ^Tenancy.scope_query(EvaluationPolicy, scope),
           on: p.id == r.policy_id,
-          left_join: a in EvaluationAnswer,
+          left_join: a in ^Tenancy.scope_query(EvaluationAnswer, scope),
           on: a.review_id == r.id,
           where:
             r.kind == "effectiveness" and r.due_on >= ^first and r.due_on <= ^last and
@@ -502,13 +502,13 @@ defmodule Bilimbi.People.Training.Evaluation do
     rows =
       Repo.all(
         from(r in scoped(EvaluationReview, scope, company),
-          join: f in ParticipationFact,
+          join: f in ^Tenancy.scope_query(ParticipationFact, scope),
           on: f.id == r.fact_id,
-          join: p in EvaluationPolicy,
+          join: p in ^Tenancy.scope_query(EvaluationPolicy, scope),
           on: p.id == r.policy_id,
-          left_join: a in EvaluationAnswer,
+          left_join: a in ^Tenancy.scope_query(EvaluationAnswer, scope),
           on: a.review_id == r.id,
-          left_join: m in EvaluationReminder,
+          left_join: m in ^Tenancy.scope_query(EvaluationReminder, scope),
           on: m.review_id == r.id,
           where: r.kind == ^kind and f.employee_id in ^ids,
           order_by: [asc: r.due_on, asc: r.id],

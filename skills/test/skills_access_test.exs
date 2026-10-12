@@ -114,8 +114,13 @@ defmodule Bilimbi.People.SkillsAccessTest do
       email: "user#{id}@example.com"
     })
 
-    for capability <- capabilities,
-        do: UserFixtures.grant_capability!(73, id, "people.skills." <> capability)
+    :ok =
+      AuthorizationFixtures.grant!(
+        scope,
+        73,
+        id,
+        Enum.map(capabilities, &("people.skills." <> &1))
+      )
 
     Authz.actor(:user, id, scope, 73)
   end
