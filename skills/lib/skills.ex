@@ -551,7 +551,7 @@ defmodule Bilimbi.People.Skills do
         {removed, kept} = Enum.split_with(items(scope, profile.id), &(&1.id == item_id))
         if removed == [], do: Repo.rollback(:not_found)
         Repo.delete!(hd(removed))
-        resequence(kept)
+        resequence(scope, kept)
         :ok
       end)
     end
@@ -572,7 +572,7 @@ defmodule Bilimbi.People.Skills do
           current
           |> List.replace_at(index, Enum.at(current, target))
           |> List.replace_at(target, Enum.at(current, index))
-          |> resequence()
+          |> then(&resequence(scope, &1))
         end
 
         :ok
@@ -758,7 +758,7 @@ defmodule Bilimbi.People.Skills do
       matches =
         Repo.all(
           from(p in Tenancy.scope_query(Profile, scope),
-            join: s in ProfileSelector,
+            join: s in ^Tenancy.scope_query(ProfileSelector, scope),
             on: s.profile_id == p.id,
             where:
               p.company_id == ^company_id and p.status in ["published", "retired"] and
@@ -1139,15 +1139,16 @@ defmodule Bilimbi.People.Skills do
       )
 
   # Two passes keep the unique sequence index satisfied while items swap places.
-  defp resequence(items) do
+  defp resequence(scope, items) do
     items = Enum.with_index(items, 1)
-    for {item, index} <- items, do: set_sequence(item, -index)
-    for {item, index} <- items, do: set_sequence(item, index)
+    for {item, index} <- items, do: set_sequence(scope, item, -index)
+    for {item, index} <- items, do: set_sequence(scope, item, index)
   end
 
-  defp set_sequence(item, sequence),
-    do:
-      Repo.update_all(from(i in ProfileItem, where: i.id == ^item.id), set: [sequence: sequence])
+  defp set_sequence(scope, item, sequence) do
+    from(i in Tenancy.scope_query(ProfileItem, scope), where: i.id == ^item.id)
+    |> Repo.update_all(set: [sequence: sequence])
+  end
 
   defp validate_publishable(scope, company_id, profile, items, selectors) do
     scale = get(Scale, scope, company_id, profile.scale_id)
@@ -1235,7 +1236,7 @@ defmodule Bilimbi.People.Skills do
     others =
       Repo.all(
         from(p in Tenancy.scope_query(Profile, scope),
-          join: s in ProfileSelector,
+          join: s in ^Tenancy.scope_query(ProfileSelector, scope),
           on: s.profile_id == p.id,
           where:
             p.company_id == ^company_id and p.code != ^profile.code and

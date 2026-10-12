@@ -848,7 +848,7 @@ defmodule Bilimbi.People.Skills.WorkflowTest do
       assert Enum.all?(inbox, &(&1.rule == "overdue_reassessment"))
       assert {:ok, []} = Skills.reminder_inbox(actor(ctx, :one), 73)
 
-      {:ok, notifications} = User.list_notifications(ctx.scope, Fixtures.users().lead)
+      {:ok, notifications} = User.list_notifications(actor(ctx, :lead))
       assert length(notifications) == 2
     end
 

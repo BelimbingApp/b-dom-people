@@ -767,11 +767,11 @@ defmodule Bilimbi.People.Payroll do
     query =
       case row do
         %Mapping{} ->
-          same_currency(query, row)
+          same_currency(query, scope, row)
           |> where([r], r.source_kind == ^row.source_kind and r.source_key == ^row.source_key)
 
         %AttendanceAllowanceMapping{} ->
-          same_currency(query, row)
+          same_currency(query, scope, row)
           |> where([r], r.attendance_rule_code == ^row.attendance_rule_code)
 
         _ ->
@@ -781,12 +781,12 @@ defmodule Bilimbi.People.Payroll do
     if Repo.exists?(query), do: {:error, :overlapping_version}, else: :ok
   end
 
-  defp same_currency(query, row),
+  defp same_currency(query, scope, row),
     do:
       from(r in query,
-        join: i in Item,
+        join: i in ^Tenancy.scope_query(Item, scope),
         on: i.id == r.item_id,
-        join: n in Item,
+        join: n in ^Tenancy.scope_query(Item, scope),
         on: n.id == ^row.item_id and n.currency == i.currency
       )
 

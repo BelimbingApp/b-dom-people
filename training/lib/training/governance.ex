@@ -549,7 +549,7 @@ defmodule Bilimbi.People.Training.Governance do
       from(p in scoped(BudgetPolicy, scope, company_id),
         where:
           p.id not in subquery(
-            from(s in BudgetPolicy,
+            from(s in Tenancy.scope_query(BudgetPolicy, scope),
               where: not is_nil(s.supersedes_id),
               select: s.supersedes_id
             )

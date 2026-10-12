@@ -359,9 +359,9 @@ defmodule Bilimbi.People.Claims do
 
       query =
         from(t in Tenancy.scope_query(ClaimType, scope),
-          join: c in Category,
+          join: c in ^Tenancy.scope_query(Category, scope),
           on: c.id == t.category_id,
-          join: p in Policy,
+          join: p in ^Tenancy.scope_query(Policy, scope),
           on: p.claim_type_id == t.id,
           where: t.company_id == ^company_id and t.active and c.active,
           where: p.effective_from <= ^on_date,
@@ -863,9 +863,9 @@ defmodule Bilimbi.People.Claims do
 
   defp assigned_type_ids(scope, company_id, employee_id, on_date) do
     from(a in Tenancy.scope_query(Assignment, scope),
-      join: at in AssignmentType,
+      join: at in ^Tenancy.scope_query(AssignmentType, scope),
       on: at.assignment_id == a.id,
-      join: ae in AssignmentEmployee,
+      join: ae in ^Tenancy.scope_query(AssignmentEmployee, scope),
       on: ae.assignment_id == a.id,
       where: a.company_id == ^company_id and ae.employee_id == ^employee_id,
       where: a.effective_from <= ^on_date,
@@ -878,7 +878,7 @@ defmodule Bilimbi.People.Claims do
 
   defp open_claim_type(scope, company_id, claim_type_id) do
     from(t in Tenancy.scope_query(ClaimType, scope),
-      join: c in Category,
+      join: c in ^Tenancy.scope_query(Category, scope),
       on: c.id == t.category_id,
       where: t.company_id == ^company_id and t.id == ^claim_type_id and t.active and c.active
     )
@@ -1171,7 +1171,7 @@ defmodule Bilimbi.People.Claims do
 
   defp catalog_index(scope, company_id) do
     from(t in Tenancy.scope_query(ClaimType, scope),
-      join: c in Category,
+      join: c in ^Tenancy.scope_query(Category, scope),
       on: c.id == t.category_id,
       where: t.company_id == ^company_id,
       select: {t.id, %{claim_type_code: t.code, claim_type_name: t.name, category_name: c.name}}

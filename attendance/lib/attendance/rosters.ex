@@ -220,7 +220,7 @@ defmodule Bilimbi.People.Attendance.Rosters do
       {:ok,
        Repo.all(
          from(e in Tenancy.scope_query(RosterEntry, scope),
-           left_join: t in ShiftTemplate,
+           left_join: t in ^Tenancy.scope_query(ShiftTemplate, scope),
            on: t.id == e.published_shift_template_id and t.company_id == e.company_id,
            where:
              e.company_id == ^company_id and e.employee_id == ^employee_id and
