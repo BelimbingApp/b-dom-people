@@ -375,7 +375,7 @@ defmodule Bilimbi.People.Progression do
 
       try do
         Repo.transaction(fn ->
-          unwrap!(Company.lock_live_company(scope, company_id))
+          unwrap!(Company.lock_writable_company(scope, company_id))
           unwrap!(authorize(scope, company_id, "people.progression.policy.manage"))
           fun.(actor)
         end)

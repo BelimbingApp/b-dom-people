@@ -667,7 +667,7 @@ defmodule Bilimbi.People.Performance do
 
       try do
         Repo.transaction(fn ->
-          unwrap!(Company.lock_live_company(scope, company_id))
+          unwrap!(Company.lock_writable_company(scope, company_id))
           unwrap!(authorize(scope, company_id, capability))
           fun.(actor)
         end)

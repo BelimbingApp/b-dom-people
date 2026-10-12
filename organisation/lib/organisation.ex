@@ -47,7 +47,7 @@ defmodule Bilimbi.People.Organisation do
     with {:ok, _actor} <- manage(scope, company_id),
          {:ok, _company} <- Workforce.company(scope, company_id) do
       case Repo.transaction(fn ->
-             with {:ok, _locked} <- Company.lock_live_company(scope, company_id),
+             with {:ok, _locked} <- Company.lock_writable_company(scope, company_id),
                   {:ok, position} <- get_position(company_id, position_id),
                   {:ok, parent_id} <- parent_id(company_id, new_parent_id),
                   :ok <- reject_cycle(company_id, position.id, parent_id) do
@@ -93,7 +93,7 @@ defmodule Bilimbi.People.Organisation do
         )
 
       transact(fn ->
-        with {:ok, _locked} <- Company.lock_live_company(scope, company_id),
+        with {:ok, _locked} <- Company.lock_writable_company(scope, company_id),
              :ok <- release_seat(scope, company_id, changeset) do
           Repo.insert(changeset)
         end
@@ -109,7 +109,7 @@ defmodule Bilimbi.People.Organisation do
     with {:ok, actor} <- manage(scope, company_id),
          {:ok, _company} <- Workforce.company(scope, company_id) do
       transact(fn ->
-        with {:ok, _locked} <- Company.lock_live_company(scope, company_id),
+        with {:ok, _locked} <- Company.lock_writable_company(scope, company_id),
              {:ok, assignment} <- get_assignment(company_id, assignment_id) do
           end_placement(
             scope,

@@ -975,7 +975,7 @@ defmodule Bilimbi.People.Skills do
   end
 
   defp lock_company(scope, company_id) do
-    case Company.lock_live_company(scope, company_id) do
+    case Company.lock_writable_company(scope, company_id) do
       {:ok, _} -> :ok
       {:error, reason} -> Repo.rollback(reason)
     end
