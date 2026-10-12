@@ -18,7 +18,7 @@ defmodule Bilimbi.People.Settings.Contributions do
         %{
           id: "people.my_work",
           label: "My work",
-          icon: "user-circle",
+          icon: "users",
           parent: "people",
           route: nil,
           capability: nil,
