@@ -83,7 +83,7 @@ defmodule Bilimbi.People.Progression do
     end)
   end
 
-  @doc "Publish once, serialized by the live company lock; past publications remain intact."
+  @doc "Publish once, serialized by the writable company lock; past publications remain intact."
   def publish(%Scope{} = scope, company_id, id) do
     write(scope, company_id, fn actor ->
       row =
