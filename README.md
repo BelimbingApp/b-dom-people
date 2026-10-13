@@ -71,8 +71,8 @@ composition lock and manifest live in Bilimbi's ignored
 `.scratchpad/composition-lock/` overlay; never commit a lock file here. Removing
 the mount removes People code from the next build without deleting durable
 data. CI uses the exact Bilimbi revision in
-[`.github/bilimbi-revision`](.github/bilimbi-revision) and tests both mounted
-and absent compositions.
+[`.github/bilimbi-revision`](.github/bilimbi-revision) and tests the mounted
+composition.
 
 This is fresh Bilimbi schema work. Future module migrations must have globally
 unique versions and declare `:bilimbi_only`; no source People tables or data are
