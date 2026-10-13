@@ -300,6 +300,173 @@ defmodule Bilimbi.People.AttendanceTest do
             ]} = Attendance.list_days(scope, 73, employee.id)
   end
 
+  test "a same-day shift is complete at exactly the maximum length and not one second past", %{
+    scope: scope,
+    operator: operator,
+    employee: employee
+  } do
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Etc/UTC", false, 8)
+
+    shift = %{
+      source: "provider",
+      event_key: "edge-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-01 08:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, shift)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               shift
+               | event_key: "edge-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-01 16:00:00Z]
+             })
+
+    assert {:ok, [%{status: "ready_for_review", worked_minutes: 480}]} =
+             Attendance.list_days(scope, 73, employee.id)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               shift
+               | event_key: "late-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-01 16:00:01Z]
+             })
+
+    assert {:ok, [%{status: "exception_pending", worked_minutes: 0}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a clock-out at exactly the maximum length after midnight closes the previous day", %{
+    scope: scope,
+    operator: operator,
+    employee: employee
+  } do
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Etc/UTC", false, 8)
+
+    night = %{
+      source: "provider",
+      event_key: "carry-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-01 20:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, night)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               night
+               | event_key: "carry-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-02 04:00:00Z]
+             })
+
+    assert {:ok, [%{on_date: ~D[2026-09-01], status: "ready_for_review", worked_minutes: 480}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a clock-out one second past the maximum length after midnight does not close the previous day",
+       %{scope: scope, operator: operator, employee: employee} do
+    assert {:ok, _} = Attendance.put_rules(operator, 73, "Etc/UTC", false, 8)
+
+    night = %{
+      source: "provider",
+      event_key: "carry-in",
+      event_type: "in",
+      occurred_at: ~U[2026-09-01 20:00:00Z]
+    }
+
+    assert {:ok, _} = Attendance.record_clock(scope, 73, employee.id, night)
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               night
+               | event_key: "carry-out",
+                 event_type: "out",
+                 occurred_at: ~U[2026-09-02 04:00:01Z]
+             })
+
+    assert {:ok,
+            [
+              %{on_date: ~D[2026-09-02], status: "exception_pending"},
+              %{on_date: ~D[2026-09-01], status: "exception_pending", worked_minutes: 0}
+            ]} = Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "a clock-out at the same instant as the clock-in is not a complete shift", %{
+    scope: scope,
+    employee: employee
+  } do
+    instant = ~U[2026-09-30 09:00:00Z]
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               source: "provider",
+               event_key: "zero-in",
+               event_type: "in",
+               occurred_at: instant
+             })
+
+    assert {:ok, _} =
+             Attendance.record_clock(scope, 73, employee.id, %{
+               source: "provider",
+               event_key: "zero-out",
+               event_type: "out",
+               occurred_at: instant
+             })
+
+    assert {:ok, [%{status: "exception_pending", worked_minutes: 0}]} =
+             Attendance.list_days(scope, 73, employee.id)
+  end
+
+  test "clock event keys are unique per company, not per tenant", %{
+    scope: scope,
+    employee: employee
+  } do
+    {:ok, other} =
+      Employee.create_employee(scope, 74, %{employee_number: "E-9", full_name: "Other Company"})
+
+    attrs = %{
+      source: "provider",
+      event_key: "shared-key",
+      event_type: "in",
+      occurred_at: ~U[2026-09-30 09:00:00Z]
+    }
+
+    assert {:ok, first} = Attendance.record_clock(scope, 73, employee.id, attrs)
+    assert {:ok, second} = Attendance.record_clock(scope, 74, other.id, attrs)
+    assert second.id != first.id
+    assert {:ok, ^first} = Attendance.record_clock(scope, 73, employee.id, attrs)
+    assert {:ok, [%{worked_minutes: 0}]} = Attendance.list_days(scope, 74, other.id)
+  end
+
+  test "rule values are accepted at their bounds and refused just outside them", %{
+    operator: operator
+  } do
+    assert {:error, :invalid_rules} = Attendance.put_rules(operator, 73, %{max_shift_hours: 0})
+    assert {:error, :invalid_rules} = Attendance.put_rules(operator, 73, %{max_shift_hours: 25})
+
+    assert {:ok, %{max_shift_hours: 1}} =
+             Attendance.put_rules(operator, 73, %{max_shift_hours: 1})
+
+    assert {:ok, %{max_shift_hours: 24}} =
+             Attendance.put_rules(operator, 73, %{max_shift_hours: 24})
+
+    assert {:error, :invalid_rules} =
+             Attendance.put_rules(operator, 73, %{adjustment_window_days: 0})
+
+    assert {:error, :invalid_rules} =
+             Attendance.put_rules(operator, 73, %{adjustment_window_days: 367})
+
+    assert {:ok, %{adjustment_window_days: 1}} =
+             Attendance.put_rules(operator, 73, %{adjustment_window_days: 1})
+
+    assert {:ok, %{adjustment_window_days: 366}} =
+             Attendance.put_rules(operator, 73, %{adjustment_window_days: 366})
+  end
+
   test "a same-day clock-out past the maximum shift length stays in exception", %{
     scope: scope,
     operator: operator,
