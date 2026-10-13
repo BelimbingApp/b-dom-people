@@ -159,6 +159,39 @@ defmodule Bilimbi.People.Attendance.RostersTest do
       assert {:error, :unauthorized} =
                Attendance.create_shift_template(scope, 73, %{"code" => "x", "name" => "X"})
     end
+
+    test "a break runs from zero up to one minute short of the span, not below zero", %{
+      operator: operator
+    } do
+      assert {:ok, %{break_minutes: 0}} =
+               Attendance.create_shift_template(operator, 73, %{
+                 "code" => "no-break",
+                 "name" => "No break",
+                 "starts_at" => "08:00",
+                 "ends_at" => "09:00",
+                 "break_minutes" => "0"
+               })
+
+      assert {:ok, %{break_minutes: 59}} =
+               Attendance.create_shift_template(operator, 73, %{
+                 "code" => "nearly-all-break",
+                 "name" => "Nearly all break",
+                 "starts_at" => "08:00",
+                 "ends_at" => "09:00",
+                 "break_minutes" => "59"
+               })
+
+      assert {:error, %Ecto.Changeset{} = negative} =
+               Attendance.create_shift_template(operator, 73, %{
+                 "code" => "negative-break",
+                 "name" => "Negative break",
+                 "starts_at" => "08:00",
+                 "ends_at" => "09:00",
+                 "break_minutes" => "-1"
+               })
+
+      assert Keyword.has_key?(negative.errors, :break_minutes)
+    end
   end
 
   describe "roster" do
