@@ -170,11 +170,15 @@ Employee. `Bilimbi.People.Workforce.Application` registers
 `Bilimbi.People.Workforce.EmploymentOwner` at startup, but only when the Core
 in use exports `register_employment_owner/1`; it is looked up by name at
 runtime, so People compiles and runs against a Core without it. Core calls
-`EmploymentOwner.legacy_employee_written(scope, employee_id)` inside the
-transaction of each HR write, after its own locks, and People adopts the
-written values, or claims the row (mapping read as the system, since Core
-already authorized the write). That callback never refuses: a row it cannot
-claim is recorded as an exception.
+`EmploymentOwner.legacy_employee_written(scope, %{employee_id: _, person_id: _,
+affiliation_id: _})` inside the transaction of each HR write, after its
+company, person and employee locks, with the person and affiliation read in
+that transaction. People adopts the written values, or claims the row with
+those IDs; it does not authorize again and reads no mapping or
+capability-gated list there, because Core already authorized the write.
+Unknown map keys are ignored. That callback never refuses: a row it cannot
+claim, including one Core passes without a person mapping, is recorded as an
+exception. `EmploymentOwner.name/0` is the owner name Core's pages show.
 
 While no owner is registered, Core's deprecated path can write after the
 claim. Reads then resolve to Core's newer values as `:legacy_drift` and the
@@ -183,8 +187,12 @@ the Core value is the later write. Once the owner is registered the fallback
 is off: a claimed row is always read from People, and `:legacy_drift` no
 longer occurs. Registration first runs the same idempotent claim as the seed
 for every company, adopting Core's values for rows that drifted (and logging
-what it claimed and adopted), so the transition never reverts a Core edit. It
-does so on every start and adopts nothing when nothing drifted. If that pass
+what it claimed and adopted), so the transition never reverts a Core edit.
+After Core accepts the registration and before reads stop falling back, it
+adopts any row Core wrote from just before that pass began, comparing Core's
+`updated_at` with People's record so a People write made meanwhile is never
+reverted; a failure there undoes Core's registration. It does all this on
+every start and adopts nothing when nothing drifted. If that pass
 fails, for example before the migrations have run, People stays unregistered,
 keeps reading drift from Core, and retries on the next start. Unmounting People
 leaves Core's columns complete, and People's tables keep their rows and

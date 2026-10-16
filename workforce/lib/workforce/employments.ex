@@ -197,6 +197,61 @@ defmodule Bilimbi.People.Workforce.Employments do
 
   defp sum(reports, key), do: reports |> Enum.map(&Map.fetch!(&1, key)) |> Enum.sum()
 
+  @doc """
+  Adopts Core's values for claimed rows Core wrote at or after `since`, as
+  the owner registers. Closes the window between the registration-time
+  backfill and Core routing its writes to the owner. A row is adopted only
+  when Core's write is not older than People's record (`updated_at`), so a
+  People write made meanwhile is never reverted. Returns the number adopted.
+  """
+  def adopt_written_since(%NaiveDateTime{} = since) do
+    results =
+      for tenant <- Tenancy.list_tenants(),
+          {:ok, scope} <- [Tenancy.scope(tenant.id)],
+          {:ok, companies} <- [Company.list_companies(scope)],
+          company <- companies do
+        adopt_company_since(scope, company.id, since)
+      end
+
+    case for({:error, reason} <- results, do: reason) do
+      [] -> {:ok, results |> Enum.map(fn {:ok, count} -> count end) |> Enum.sum()}
+      failures -> {:error, failures}
+    end
+  end
+
+  defp adopt_company_since(scope, company_id, since) do
+    Repo.transaction(fn ->
+      with {:ok, _proof} <- Company.lock_writable_company(scope, company_id),
+           {:ok, employees} <- Employee.list_employees(scope, company_id) do
+        written =
+          Enum.filter(employees, fn core ->
+            core.updated_at != nil and NaiveDateTime.compare(core.updated_at, since) != :lt
+          end)
+
+        records = records(scope, Enum.map(written, & &1.id), lock: true)
+
+        Enum.count(written, fn core ->
+          case Map.get(records, core.id) do
+            %EmploymentRecord{} = record ->
+              if not in_step?(record, core) and
+                   NaiveDateTime.compare(core.updated_at, record.updated_at) != :lt do
+                record |> Changeset.change(legacy_facts(core)) |> Repo.update!()
+                true
+              else
+                false
+              end
+
+            nil ->
+              false
+          end
+        end)
+      else
+        {:error, :company_archived} -> 0
+        {:error, reason} -> Repo.rollback(refusal(reason))
+      end
+    end)
+  end
+
   @doc "The company's legacy rows People could not claim, with the reason."
   def exceptions(%Scope{} = scope, company_id) do
     rows =
@@ -266,9 +321,12 @@ defmodule Bilimbi.People.Workforce.Employments do
 
   @doc """
   Core's deprecated HR path wrote the row in the caller's transaction: adopt
-  its values, or claim the row. Never refuses, so Core's write stands.
+  its values, or claim the row with the person and affiliation Core read in
+  that transaction. Never refuses, so Core's write stands; a row People
+  cannot claim is recorded as an exception. Core already authorized the
+  write, so this reads no mapping and no capability-gated list.
   """
-  def legacy_written(%Scope{} = scope, employee_id) do
+  def legacy_written(%Scope{} = scope, employee_id, person_id, affiliation_id) do
     with {:ok, core} <- Employee.get_employee(scope, employee_id) do
       case records(scope, [employee_id], lock: true) do
         %{^employee_id => record} ->
@@ -276,30 +334,31 @@ defmodule Bilimbi.People.Workforce.Employments do
           :ok
 
         _unclaimed ->
-          claim_written(scope, core)
+          claim_written(scope, core, person_id, affiliation_id)
       end
     else
       _gone -> :ok
     end
   end
 
-  defp claim_written(scope, core) do
+  defp claim_written(scope, core, person_id, affiliation_id)
+       when is_integer(person_id) and is_integer(affiliation_id) do
     now = now()
 
-    # Core already authorized the write. The mapping holds IDs only, so the
-    # read needs no contact grant from the actor who edited the HR fields.
-    with {:ok, system} <- Tenancy.scope(Scope.tenant_id(scope)),
-         {:ok, identity} <- identity(system, core),
-         {:ok, _record} <- insert(scope, core, identity, legacy_facts(core), now) do
-      :ok
-    else
-      {:error, reason} when reason in [:invalid_facts, :duplicate_affiliation] ->
-        record_exception(scope, core, reason, now)
+    identity = %{
+      company_id: core.company_id,
+      person_id: person_id,
+      affiliation_id: affiliation_id
+    }
 
-      _no_mapping ->
-        record_exception(scope, core, :no_person_mapping, now)
+    case insert(scope, core, identity, legacy_facts(core), now) do
+      {:ok, _record} -> :ok
+      {:error, reason} -> record_exception(scope, core, reason, now)
     end
   end
+
+  defp claim_written(scope, core, _person_id, _affiliation_id),
+    do: record_exception(scope, core, :no_person_mapping, now())
 
   defp reconcile_one(scope, core, nil, now) do
     case identity(scope, core) do

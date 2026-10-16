@@ -288,7 +288,7 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
     assert {:ok, %ReadResult{value: %Employment{source: :people, status: "probation"}}} =
              Workforce.employment(ctx.viewer, 73, ctx.human.id)
 
-    assert :ok = EmploymentOwner.legacy_employee_written(ctx.scope, ctx.human.id)
+    assert :ok = EmploymentOwner.legacy_employee_written(ctx.scope, written(ctx, ctx.human))
 
     assert {:ok, %ReadResult{value: %Employment{source: :people, status: "inactive"}}} =
              Workforce.employment(ctx.viewer, 73, ctx.human.id)
@@ -318,7 +318,11 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
   end
 
   test "Core's write claims an unclaimed row without a contact grant on its actor", ctx do
-    assert :ok = EmploymentOwner.legacy_employee_written(ctx.hr_only, ctx.human.id)
+    assert :ok =
+             EmploymentOwner.legacy_employee_written(
+               ctx.hr_only,
+               Map.put(written(ctx, ctx.human), :added_later, true)
+             )
 
     assert {:ok, %ReadResult{value: %Employment{source: :people, status: "probation"}}} =
              Workforce.employment(ctx.hr_only, 73, ctx.human.id)
@@ -433,6 +437,61 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
         )
       )
     )
+  end
+
+  test "Core's write of a row it cannot map is recorded, and Core's write stands", ctx do
+    assert :ok =
+             EmploymentOwner.legacy_employee_written(ctx.scope, %{
+               employee_id: ctx.human.id,
+               person_id: nil,
+               affiliation_id: nil
+             })
+
+    assert {:ok, %ReadResult{value: %Employment{source: :core_legacy}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: [%{employee_id: id, reason: :no_person_mapping}]}} =
+             Workforce.employment_exceptions(ctx.viewer, 73)
+
+    assert id == ctx.human.id
+  end
+
+  test "registering adopts a Core write made while Core was being registered", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+
+    Process.put(:during_registration, fn ->
+      {:ok, _core} =
+        Employee.update_employee(ctx.scope, 73, ctx.human.id, %{status: "terminated"})
+    end)
+
+    assert :ok = EmploymentOwner.register(__MODULE__.WritingSeamCore)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "terminated"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: []}} = Workforce.employees(ctx.scope, 73)
+  end
+
+  defmodule WritingSeamCore do
+    @moduledoc false
+    # A Core with the seam that sees a deprecated HR write land while it
+    # registers the owner, after People's registration-time backfill.
+    def register_employment_owner(_owner) do
+      Process.get(:during_registration).()
+      :ok
+    end
+
+    def unregister_employment_owner(_owner), do: :ok
+  end
+
+  defp written(ctx, core) do
+    {:ok, identity} = Employee.person_identity(ctx.scope, core.id)
+
+    %{
+      employee_id: core.id,
+      person_id: identity.person_id,
+      affiliation_id: identity.affiliation_id
+    }
   end
 
   defp errors(changeset) do

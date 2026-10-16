@@ -11,8 +11,15 @@ defmodule Bilimbi.People.Workforce.TestFixtures do
   defmodule SeamCore do
     @moduledoc false
     # A Core that offers the employment-owner seam; the pinned Core does not.
-    def register_employment_owner(owner), do: send(self(), {:registered, owner})
-    def unregister_employment_owner(owner), do: send(self(), {:unregistered, owner})
+    def register_employment_owner(owner) do
+      send(self(), {:registered, owner})
+      :ok
+    end
+
+    def unregister_employment_owner(owner) do
+      send(self(), {:unregistered, owner})
+      :ok
+    end
   end
 
   def create_workforce_tables! do

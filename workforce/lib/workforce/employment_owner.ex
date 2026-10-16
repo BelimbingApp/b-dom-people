@@ -4,9 +4,10 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
 
   Core still accepts HR writes on its deprecated path. When the Core in use
   exposes `register_employment_owner/1`, People registers this module at
-  startup and Core calls `legacy_employee_written/2` inside the transaction of
-  each such write, after its own locks, so People's record never trails Core's
-  compatibility columns. Core's `unregister_employment_owner/1` undoes it at
+  startup and Core calls `legacy_employee_written/2` with
+  `%{employee_id: _, person_id: _, affiliation_id: _}` inside the transaction
+  of each such write, after its own locks, so People's record never trails
+  Core's compatibility columns. Core's `unregister_employment_owner/1` undoes it at
   shutdown. A Core without the seam is left alone: nothing is registered, and
   `registered?/0` stays false, which keeps the `:legacy_drift` reads.
 
@@ -33,17 +34,17 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   @spec register(module()) :: :ok | {:error, :unavailable | :not_adopted}
   def register(core \\ Employee) when is_atom(core) do
     if Code.ensure_loaded?(core) and function_exported?(core, :register_employment_owner, 1) do
-      case adopt_drift() do
-        :ok ->
-          apply(core, :register_employment_owner, [__MODULE__])
-          :persistent_term.put(@key, core)
-          :ok
+      # Core's timestamps have second precision, so the sweep starts a second early.
+      since = NaiveDateTime.utc_now() |> NaiveDateTime.add(-1) |> NaiveDateTime.truncate(:second)
 
+      with :ok <- adopt_drift(),
+           :ok <- apply(core, :register_employment_owner, [__MODULE__]),
+           :ok <- adopt_written_since(core, since) do
+        :persistent_term.put(@key, core)
+        :ok
+      else
         {:error, reason} ->
-          Logger.warning(
-            "People employment owner not registered; drift was not adopted: #{inspect(reason)}"
-          )
-
+          Logger.warning("People employment owner not registered: #{inspect(reason)}")
           {:error, :not_adopted}
       end
     else
@@ -56,6 +57,34 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   rescue
     error -> {:error, Exception.message(error)}
   end
+
+  # A row Core wrote after the backfill read it but before Core routed its
+  # writes here is adopted now, before reads stop falling back to Core. On
+  # failure Core's registration is undone so reads keep the fallback.
+  defp adopt_written_since(core, since) do
+    case Employments.adopt_written_since(since) do
+      {:ok, adopted} ->
+        if adopted > 0,
+          do:
+            Logger.info(
+              "People employment owner adopted #{adopted} rows Core wrote while registering"
+            )
+
+        :ok
+
+      {:error, reason} ->
+        apply(core, :unregister_employment_owner, [__MODULE__])
+        {:error, reason}
+    end
+  rescue
+    error ->
+      apply(core, :unregister_employment_owner, [__MODULE__])
+      {:error, Exception.message(error)}
+  end
+
+  @doc "The owner's name, as Core's employee pages say who owns the HR facts."
+  @spec name() :: String.t()
+  def name, do: "People"
 
   @doc "Removes the registration this module made, if any."
   @spec unregister() :: :ok
@@ -80,11 +109,19 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
 
   @doc """
   Core's callback: the legacy employee row was just written in this
-  transaction. People adopts the written values, or claims the row when it
-  holds none yet. A row People cannot claim is recorded as an exception and
-  never blocks Core's write.
+  transaction, after Core's company, person and employee locks. People adopts
+  the written values, or claims the row with the `person_id` and
+  `affiliation_id` Core read there; unknown keys are ignored. A row People
+  cannot claim is recorded as an exception and never blocks Core's write.
   """
-  @spec legacy_employee_written(Scope.t(), pos_integer()) :: :ok
-  def legacy_employee_written(%Scope{} = scope, employee_id),
-    do: Employments.legacy_written(scope, employee_id)
+  @spec legacy_employee_written(Scope.t(), map()) :: :ok
+  def legacy_employee_written(%Scope{} = scope, %{employee_id: employee_id} = written)
+      when is_integer(employee_id) do
+    Employments.legacy_written(
+      scope,
+      employee_id,
+      Map.get(written, :person_id),
+      Map.get(written, :affiliation_id)
+    )
+  end
 end
