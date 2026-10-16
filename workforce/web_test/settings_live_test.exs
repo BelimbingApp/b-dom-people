@@ -10,10 +10,15 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
   alias Bilimbi.Core.Employee
   alias Bilimbi.Core.User.TestFixtures, as: UserFixtures
   alias Bilimbi.People.Workforce
+  alias Bilimbi.People.Workforce.EmploymentOwner
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.Web.SettingsLive
 
   setup do
+    # Against a Core with the seam, the application registered at boot and
+    # Core would claim each new employee at once. These tests start from
+    # employees that are still Core-only.
+    :ok = EmploymentOwner.unregister()
     UserFixtures.create_user_tables!()
     SettingsFixtures.create_settings_table!()
     Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()

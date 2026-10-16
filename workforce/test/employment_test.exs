@@ -25,6 +25,10 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
   @person_view "admin.person.view"
 
   setup do
+    # Against a Core with the seam, the application registered at boot. Undo
+    # that first, so a test that registers a stand-in Core cannot leave the
+    # real registration behind and Core routing writes to People unasked.
+    :ok = EmploymentOwner.unregister()
     on_exit(&EmploymentOwner.unregister/0)
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)

@@ -72,6 +72,9 @@ defmodule Bilimbi.People.Workforce.TestFixtures do
   from Core's, and registers People as the employment owner for the test.
   """
   def hold_in_people!(%{id: employee_id}, facts) do
+    # Drop the registration the application made at boot, if any, so the
+    # stand-in below replaces it instead of orphaning it in Core.
+    :ok = EmploymentOwner.unregister()
     :ok = EmploymentOwner.register(SeamCore)
     ExUnit.Callbacks.on_exit(&EmploymentOwner.unregister/0)
 
