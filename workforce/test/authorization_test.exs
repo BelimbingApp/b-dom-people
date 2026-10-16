@@ -36,6 +36,7 @@ defmodule Bilimbi.People.Workforce.AuthorizationTest do
     UserFixtures.create_user_tables!()
     AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "Tenant A"})
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Tenant B", is_platform_operator: false})
     CompanyFixtures.insert_company!(%{id: 73, tenant_id: 41, name: "Company A", code: "a"})

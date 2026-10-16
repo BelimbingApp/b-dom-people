@@ -20,6 +20,7 @@ defmodule Bilimbi.People.Skills.Web.SkillsLiveTest do
 
   setup do
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     SettingsFixtures.create_settings_table!()
     OrganisationFixtures.create_position_tables!()
     TestFixtures.create_skill_tables!()

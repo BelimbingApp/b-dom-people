@@ -29,6 +29,7 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     on_exit(&ContributionRegistry.clear_for_test!/0)
 
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     :ok = Employee.ensure_system_types()
     WorkspaceFixtures.create_workspace_tables!()
@@ -101,6 +102,26 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     assert {:ok, core} = Employee.get_employee(first, 73, employee.id)
     assert core.full_name == "First Employee"
     assert {:error, :unauthorized} = EmployeeWorkspace.employees(operator, 74)
+  end
+
+  test "shows the employment facts People holds, not Core's mirror", %{
+    first: first,
+    operator: operator,
+    employee: employee
+  } do
+    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(employee,
+      employee_number: "PEO-01",
+      status: "inactive"
+    )
+
+    assert {:ok, [%{employee_number: "PEO-01", status: "inactive"}]} =
+             EmployeeWorkspace.employees(operator, 73)
+
+    assert {:ok, %{employee_number: "PEO-01", status: "inactive"}} =
+             EmployeeWorkspace.employee(operator, 73, employee.id)
+
+    assert {:ok, %{employee_number: "EMP-01", status: "active"}} =
+             Employee.get_employee(first, 73, employee.id)
   end
 
   test "every operation needs its own capability now, not the one proven earlier", %{

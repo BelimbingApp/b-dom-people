@@ -46,6 +46,7 @@ defmodule Bilimbi.People.ClaimsTest do
     on_exit(&ContributionRegistry.clear_for_test!/0)
 
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     ClaimFixtures.create_claim_tables!()
@@ -546,6 +547,17 @@ defmodule Bilimbi.People.ClaimsTest do
     # Linked back: the claim can be withdrawn by its employee's login again.
     assert {:ok, _} = User.update_user(scope, 73, 91, %{employee_id: employee.id})
     assert {:ok, %{status: "withdrawn"}} = Claims.withdraw_request(claimant, 73, request.id)
+  end
+
+  test "assignable employees carry the employee number People holds", %{
+    employee: employee,
+    manager: manager
+  } do
+    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(employee,
+      employee_number: "PEO-1"
+    )
+
+    assert {:ok, [%{employee_number: "PEO-1"}]} = Claims.assignable_employees(manager, 73)
   end
 
   test "operator writes and private reads refuse a system scope and a revoked grant", %{

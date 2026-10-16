@@ -9,6 +9,7 @@ defmodule Bilimbi.People.Training.Web.ParticipationLiveTest do
   @capabilities ~w(people.training.records.workspace.view people.training.courses.view people.training.courses.manage people.training.sessions.manage people.training.records.view people.training.records.manage people.training.evidence.manage people.training.retention.manage admin.employee.create)
   setup %{conn: conn} do
     User.TestFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     TestFixtures.create_tables!()
     TestFixtures.create_participation_tables!()
     Bilimbi.Base.Artifacts.TestFixtures.create_artifacts_table!()

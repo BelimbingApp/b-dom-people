@@ -3,6 +3,7 @@ workspace_apps = Path.expand("../../../..", __DIR__)
 for path <- [
       "base/tenancy/test/support/test_fixtures.ex",
       "base/settings/test/support/test_fixtures.ex",
+      "base/audit/test/support/test_fixtures.ex",
       "core/geonames/test/support/test_fixtures.ex",
       "core/company/test/support/test_fixtures.ex",
       "core/employee/test/support/test_fixtures.ex",
@@ -16,6 +17,7 @@ end
 # Facade writes authorize the signed-in actor; tests sign one in through the
 # shared People fixture.
 Code.require_file(Path.expand("../../workforce/test/support/authorization_fixtures.ex", __DIR__))
+Code.require_file(Path.expand("../../workforce/test/support/test_fixtures.ex", __DIR__))
 
 # Requests count leave days around the public calendar exceptions of
 # people/reference_data, so tests create that module's table through its own

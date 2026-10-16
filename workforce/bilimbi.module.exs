@@ -16,8 +16,14 @@
     "core/employee",
     "core/user"
   ],
-  migrations: nil,
+  migrations: "priv/repo/migrations",
+  migration_dispositions: %{
+    20_261_016_090_000 => :bilimbi_only,
+    20_261_016_093_000 => :bilimbi_only
+  },
   web: "priv/web_routes.exs",
+  # Compatibility verification precedes pending Bilimbi-only migrations.
+  # Registering the fresh table here would require it before migration runs.
   schema_contract: nil,
   contribution_provider: Bilimbi.People.Workforce.Contributions,
   dev_seed: nil

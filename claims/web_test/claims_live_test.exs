@@ -21,6 +21,7 @@ defmodule BilimbiWeb.ClaimsLiveTest do
   describe "signed-in actor" do
     setup do
       UserFixtures.create_user_tables!()
+      Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
       ClaimFixtures.create_claim_tables!()
       :ok = Employee.ensure_system_types()
       CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})

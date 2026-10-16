@@ -28,8 +28,11 @@ defmodule Bilimbi.People.Workforce.MixProject do
 
   def application do
     [
+      mod: {Bilimbi.People.Workforce.Application, []},
       extra_applications: [:logger],
-      env: Bilimbi.Base.ModuleRegistry.MixDiscovery.application_env(__DIR__)
+      env:
+        Bilimbi.Base.ModuleRegistry.MixDiscovery.application_env(__DIR__) ++
+          [bilimbi_production_seed_provider: Bilimbi.People.Workforce.ProductionSeeds]
     ]
   end
 end

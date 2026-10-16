@@ -15,6 +15,7 @@ defmodule BilimbiWeb.ReferenceDataLiveTest do
   describe "authorized operator" do
     setup do
       UserFixtures.create_user_tables!()
+      Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
       ReferenceFixtures.create_reference_tables!()
       CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})
 

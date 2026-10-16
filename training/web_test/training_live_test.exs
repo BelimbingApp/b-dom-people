@@ -13,6 +13,7 @@ defmodule Bilimbi.People.Training.Web.TrainingLiveTest do
 
   setup do
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     TestFixtures.create_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: false})
     CompanyFixtures.insert_tenant!(%{id: 42, is_platform_operator: false})

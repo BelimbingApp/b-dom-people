@@ -9,6 +9,7 @@ defmodule Bilimbi.People.Payroll.Web.RunsLiveTest do
 
   setup do
     Users.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     Bilimbi.People.Payroll.TestFixtures.create_tables!()
     Bilimbi.People.Attendance.TestFixtures.create_attendance_tables!()
     Bilimbi.People.Leave.TestFixtures.create_leave_tables!()

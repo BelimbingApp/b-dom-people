@@ -26,6 +26,7 @@ defmodule BilimbiWeb.LeaveLiveTest do
   describe "linked account" do
     setup do
       UserFixtures.create_user_tables!()
+      Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
       SettingsFixtures.create_settings_table!()
       LeaveFixtures.create_leave_tables!()
       ReferenceFixtures.create_reference_tables!()

@@ -24,6 +24,7 @@ defmodule Bilimbi.People.ReferenceDataTest do
 
     # Creates the company identity tables too.
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     ReferenceFixtures.create_reference_tables!()
     CompanyFixtures.insert_tenant!()

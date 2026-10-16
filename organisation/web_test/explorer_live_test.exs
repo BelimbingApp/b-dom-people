@@ -19,6 +19,7 @@ defmodule Bilimbi.People.Organisation.Web.ExplorerLiveTest do
 
   setup do
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     TestFixtures.create_position_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41})
     CompanyFixtures.insert_company!(%{id: 73, tenant_id: 41, name: "Company A", code: "a"})

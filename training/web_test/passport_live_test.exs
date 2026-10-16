@@ -9,6 +9,7 @@ defmodule Bilimbi.People.Training.Web.PassportLiveTest do
 
   setup %{conn: conn} = context do
     User.TestFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     if context[:passport_record_bound] do
       # Exercise the full PDF record bound with the module's relational fixtures.
       # Migrated session triggers scan pg_timezone_names for every inserted row;
