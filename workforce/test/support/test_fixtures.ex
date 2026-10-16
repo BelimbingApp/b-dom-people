@@ -10,7 +10,8 @@ defmodule Bilimbi.People.Workforce.TestFixtures do
 
   defmodule SeamCore do
     @moduledoc false
-    # A Core that offers the employment-owner seam; the pinned Core does not.
+    # A stand-in Core that offers the employment-owner seam, so tests can
+    # observe registration without touching the real Core's registry.
     def register_employment_owner(owner) do
       send(self(), {:registered, owner})
       :ok

@@ -162,8 +162,7 @@ Core Employee keeps its HR columns, and its deprecated HR path
 documented mirror kept for `core.employee.*` callers, integrations and the
 Core User, principal-grant and system-agent references that key on the
 employee ID. Removing the columns is a later, separately reviewed step, once
-both the Core owner-seam change and this one have landed and no reader
-remains.
+no reader remains.
 
 Core's HR writes reach People through the employment-owner seam in Core
 Employee. `Bilimbi.People.Workforce.Application` registers
