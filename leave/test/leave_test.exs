@@ -1,6 +1,7 @@
 defmodule Bilimbi.People.LeaveTest do
   use ExUnit.Case, async: false
 
+  alias Bilimbi.Base.Audit.TestFixtures, as: AuditFixtures
   alias Bilimbi.Base.Authz.TestFixtures, as: AuthzFixtures
   alias Bilimbi.Base.ModuleRegistry.ContributionRegistry
   alias Bilimbi.Base.Repo
@@ -41,6 +42,7 @@ defmodule Bilimbi.People.LeaveTest do
     Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
+    AuditFixtures.create_audit_tables!()
     TestFixtures.create_leave_tables!()
     CompanyFixtures.insert_tenant!(%{id: 41, name: "First tenant"})
     CompanyFixtures.insert_tenant!(%{id: 42, name: "Second tenant", is_platform_operator: false})
