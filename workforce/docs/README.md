@@ -196,8 +196,8 @@ after a grace period (`:employment_owner_grace_ms`, default 60 s) under the
 workforce supervisor: it repeats that `updated_at` comparison and claims
 employees Core created since the first pass, so writes still in flight when
 Core accepted the registration are adopted too, and logs what it adopted. It
-does all this on every start and adopts nothing when nothing drifted. If that pass
-fails, for example before the migrations have run, People stays unregistered,
-keeps reading drift from Core, and retries on the next start. Unmounting People
-leaves Core's columns complete, and People's tables keep their rows and
-provenance.
+does all this on every start and adopts nothing when nothing drifted. If that
+pass fails, for example before the migrations have run, People stays
+unregistered, keeps reading drift from Core, and retries on the next start.
+Unmounting People leaves Core's columns complete, and People's tables keep
+their rows and provenance.

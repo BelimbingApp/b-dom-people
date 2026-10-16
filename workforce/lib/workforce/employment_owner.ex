@@ -16,7 +16,9 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   That makes the transition safe on every start, with no persisted state: a
   start with nothing drifted adopts nothing. If the pass fails, for example
   because the migrations have not run yet, People stays unregistered and
-  keeps reading drift from Core until the next start.
+  keeps reading drift from Core until the next start. A second pass runs
+  after a grace period (`grace_pass_child/0`); `workforce/docs/README.md`
+  owns the details.
 
   The seam is looked up by name at runtime, so People compiles and runs
   against a Core that predates it.
