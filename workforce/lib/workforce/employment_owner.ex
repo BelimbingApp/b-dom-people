@@ -29,6 +29,8 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   alias Bilimbi.People.Workforce.Employments
 
   @key {__MODULE__, :core}
+  @since_key {__MODULE__, :registered_since}
+  @default_grace_ms 60_000
 
   @doc "Registers as Core's employment owner when Core offers the seam."
   @spec register(module()) :: :ok | {:error, :unavailable | :not_adopted}
@@ -41,6 +43,7 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
            :ok <- apply(core, :register_employment_owner, [__MODULE__]),
            :ok <- adopt_written_since(core, since) do
         :persistent_term.put(@key, core)
+        :persistent_term.put(@since_key, since)
         :ok
       else
         {:error, reason} ->
@@ -82,6 +85,64 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
       {:error, Exception.message(error)}
   end
 
+  @doc """
+  The supervised child that runs the second registration pass after the
+  grace period (`:employment_owner_grace_ms`, default 60 s), or `nil` when
+  People is not registered.
+  """
+  @spec grace_pass_child() :: Supervisor.child_spec() | nil
+  def grace_pass_child do
+    if registered?() do
+      grace =
+        Application.get_env(
+          :bilimbi_people_workforce,
+          :employment_owner_grace_ms,
+          @default_grace_ms
+        )
+
+      Supervisor.child_spec(
+        {Task,
+         fn ->
+           Process.sleep(grace)
+           run_grace_pass()
+         end},
+        id: {__MODULE__, :grace_pass},
+        restart: :temporary
+      )
+    end
+  end
+
+  @doc """
+  The second registration pass: adopts rows Core wrote, and claims rows Core
+  created, since just before registration, comparing `updated_at` as the
+  first pass does. Catches writes that were in flight when Core accepted the
+  registration and so reached neither the first pass nor the callback. Logs
+  what it adopted.
+  """
+  @spec run_grace_pass() :: :ok | {:error, term()}
+  def run_grace_pass do
+    case :persistent_term.get(@since_key, nil) do
+      nil ->
+        :ok
+
+      since ->
+        case Employments.adopt_written_since(since) do
+          {:ok, count} ->
+            if count > 0,
+              do:
+                Logger.info(
+                  "People employment owner adopted #{count} rows in flight at registration"
+                )
+
+            :ok
+
+          {:error, reason} = error ->
+            Logger.warning("People employment owner grace pass failed: #{inspect(reason)}")
+            error
+        end
+    end
+  end
+
   @doc "The owner's name, as Core's employee pages say who owns the HR facts."
   @spec name() :: String.t()
   def name, do: "People"
@@ -95,6 +156,7 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
 
       core ->
         :persistent_term.erase(@key)
+        :persistent_term.erase(@since_key)
 
         if function_exported?(core, :unregister_employment_owner, 1),
           do: apply(core, :unregister_employment_owner, [__MODULE__])

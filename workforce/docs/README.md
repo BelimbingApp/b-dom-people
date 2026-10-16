@@ -191,8 +191,12 @@ what it claimed and adopted), so the transition never reverts a Core edit.
 After Core accepts the registration and before reads stop falling back, it
 adopts any row Core wrote from just before that pass began, comparing Core's
 `updated_at` with People's record so a People write made meanwhile is never
-reverted; a failure there undoes Core's registration. It does all this on
-every start and adopts nothing when nothing drifted. If that pass
+reverted; a failure there undoes Core's registration. A second pass runs
+after a grace period (`:employment_owner_grace_ms`, default 60 s) under the
+workforce supervisor: it repeats that `updated_at` comparison and claims
+employees Core created since the first pass, so writes still in flight when
+Core accepted the registration are adopted too, and logs what it adopted. It
+does all this on every start and adopts nothing when nothing drifted. If that pass
 fails, for example before the migrations have run, People stays unregistered,
 keeps reading drift from Core, and retries on the next start. Unmounting People
 leaves Core's columns complete, and People's tables keep their rows and

@@ -7,7 +7,9 @@ defmodule Bilimbi.People.Workforce.Application do
   @impl true
   def start(_type, _args) do
     EmploymentOwner.register()
-    Supervisor.start_link([], strategy: :one_for_one, name: __MODULE__.Supervisor)
+
+    children = List.wrap(EmploymentOwner.grace_pass_child())
+    Supervisor.start_link(children, strategy: :one_for_one, name: __MODULE__.Supervisor)
   end
 
   @impl true

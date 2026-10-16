@@ -472,6 +472,53 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
     assert {:ok, %ReadResult{value: []}} = Workforce.employees(ctx.scope, 73)
   end
 
+  test "the grace pass adopts writes in flight at registration and claims new rows", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+    assert EmploymentOwner.grace_pass_child() == nil
+
+    assert :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+
+    assert %{id: {EmploymentOwner, :grace_pass}, restart: :temporary} =
+             EmploymentOwner.grace_pass_child()
+
+    # In flight: Core committed these after it accepted the owner, without
+    # reaching the callback.
+    {:ok, _core} =
+      Employee.update_employee(ctx.scope, 73, ctx.human.id, %{status: "terminated"})
+
+    {:ok, hire} =
+      Employee.create_employee(ctx.scope, 73, %{employee_number: "E-9", full_name: "New Hire"})
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "probation"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert :ok = EmploymentOwner.run_grace_pass()
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "terminated"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, employee_number: "E-9"}}} =
+             Workforce.employment(ctx.viewer, 73, hire.id)
+
+    assert :ok = EmploymentOwner.run_grace_pass()
+
+    assert {:ok, %ReadResult{value: %{people: 4, core_legacy: 0}}} =
+             Workforce.employment_summary(ctx.viewer, 73)
+  end
+
+  test "the grace pass never reverts a People write newer than Core's", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+    assert :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+
+    assert {:ok, %Employment{status: "active"}} =
+             Workforce.update_employment(ctx.operator, 73, ctx.human.id, %{status: "active"})
+
+    assert :ok = EmploymentOwner.run_grace_pass()
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "active"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+  end
+
   defmodule WritingSeamCore do
     @moduledoc false
     # A Core with the seam that sees a deprecated HR write land while it

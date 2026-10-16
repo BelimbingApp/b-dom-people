@@ -198,11 +198,14 @@ defmodule Bilimbi.People.Workforce.Employments do
   defp sum(reports, key), do: reports |> Enum.map(&Map.fetch!(&1, key)) |> Enum.sum()
 
   @doc """
-  Adopts Core's values for claimed rows Core wrote at or after `since`, as
-  the owner registers. Closes the window between the registration-time
-  backfill and Core routing its writes to the owner. A row is adopted only
-  when Core's write is not older than People's record (`updated_at`), so a
-  People write made meanwhile is never reverted. Returns the number adopted.
+  Adopts Core's values for claimed rows Core wrote at or after `since`, and
+  claims rows Core created since then, as the owner registers. Closes the
+  window between the registration-time backfill and Core routing its writes
+  to the owner, including writes still in flight at registration. A claimed
+  row is adopted only when Core's write is not older than People's record
+  (`updated_at`), so a People write made meanwhile is never reverted. A new
+  row People cannot claim is recorded as an exception. Returns the number of
+  rows adopted or claimed.
   """
   def adopt_written_since(%NaiveDateTime{} = since) do
     results =
@@ -219,22 +222,26 @@ defmodule Bilimbi.People.Workforce.Employments do
     end
   end
 
+  defp at_or_after?(nil, _since), do: false
+  defp at_or_after?(time, since), do: NaiveDateTime.compare(time, since) != :lt
+
   defp adopt_company_since(scope, company_id, since) do
     Repo.transaction(fn ->
       with {:ok, _proof} <- Company.lock_writable_company(scope, company_id),
            {:ok, employees} <- Employee.list_employees(scope, company_id) do
         written =
-          Enum.filter(employees, fn core ->
-            core.updated_at != nil and NaiveDateTime.compare(core.updated_at, since) != :lt
-          end)
+          Enum.filter(
+            employees,
+            &(at_or_after?(&1.updated_at, since) or at_or_after?(&1.created_at, since))
+          )
 
         records = records(scope, Enum.map(written, & &1.id), lock: true)
+        now = now()
 
         Enum.count(written, fn core ->
           case Map.get(records, core.id) do
             %EmploymentRecord{} = record ->
-              if not in_step?(record, core) and
-                   NaiveDateTime.compare(core.updated_at, record.updated_at) != :lt do
+              if not in_step?(record, core) and at_or_after?(core.updated_at, record.updated_at) do
                 record |> Changeset.change(legacy_facts(core)) |> Repo.update!()
                 true
               else
@@ -242,7 +249,14 @@ defmodule Bilimbi.People.Workforce.Employments do
               end
 
             nil ->
-              false
+              case reconcile_one(scope, core, nil, now) do
+                :claimed ->
+                  true
+
+                {:unclaimed, reason} ->
+                  record_exception(scope, core, reason, now)
+                  false
+              end
           end
         end)
       else
