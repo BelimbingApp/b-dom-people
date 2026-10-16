@@ -4,7 +4,6 @@ defmodule Bilimbi.People.Workforce.TestFixtures do
   # test that reads employees through the workforce seam creates it first.
 
   alias Bilimbi.Base.Repo
-  alias Bilimbi.Core.Employee
   alias Bilimbi.People.Workforce.EmploymentOwner
   alias Bilimbi.People.Workforce.EmploymentRecord
   alias Ecto.Adapters.SQL
@@ -65,31 +64,15 @@ defmodule Bilimbi.People.Workforce.TestFixtures do
   Holds the employee's employment in People with the given facts, differing
   from Core's, and registers People as the employment owner for the test.
   """
-  def hold_in_people!(scope, %{id: employee_id} = employee, facts) do
-    {:ok, identity} = Employee.person_identity(scope, employee_id)
-    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
-
-    Repo.insert!(
-      struct!(
-        EmploymentRecord,
-        Keyword.merge(
-          [
-            tenant_id: Bilimbi.Base.Tenancy.Scope.tenant_id(scope),
-            company_id: employee.company_id,
-            legacy_employee_id: employee_id,
-            person_id: identity.person_id,
-            affiliation_id: identity.affiliation_id,
-            employee_number: employee.employee_number,
-            employment_type: employee.employee_type,
-            status: employee.status,
-            claimed_at: now
-          ],
-          facts
-        )
-      )
-    )
-
+  def hold_in_people!(%{id: employee_id}, facts) do
     :ok = EmploymentOwner.register(SeamCore)
     ExUnit.Callbacks.on_exit(&EmploymentOwner.unregister/0)
+
+    EmploymentRecord
+    |> Repo.get_by!(legacy_employee_id: employee_id)
+    |> Ecto.Changeset.change(facts)
+    |> Repo.update!()
+
+    :ok
   end
 end

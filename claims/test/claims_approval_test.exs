@@ -292,11 +292,11 @@ defmodule Bilimbi.People.ClaimsApprovalTest do
 
   describe "approval" do
     test "queue and export rows carry the employee number People holds",
-         %{scope: scope, employee: employee} = ctx do
+         %{employee: employee} = ctx do
       claim_type = open!(ctx)
       submit!(ctx, employee, claim_type)
 
-      Bilimbi.People.Workforce.TestFixtures.hold_in_people!(scope, employee,
+      Bilimbi.People.Workforce.TestFixtures.hold_in_people!(employee,
         employee_number: "P-1"
       )
 

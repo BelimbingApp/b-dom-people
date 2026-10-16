@@ -10,9 +10,18 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   shutdown. A Core without the seam is left alone: nothing is registered, and
   `registered?/0` stays false, which keeps the `:legacy_drift` reads.
 
+  Registering drops those reads, so first it runs the idempotent claim
+  (`Employments.backfill/0`) that adopts Core's values for every drifted row.
+  That makes the transition safe on every start, with no persisted state: a
+  start with nothing drifted adopts nothing. If the pass fails, for example
+  because the migrations have not run yet, People stays unregistered and
+  keeps reading drift from Core until the next start.
+
   The seam is looked up by name at runtime, so People compiles and runs
   against a Core that predates it.
   """
+
+  require Logger
 
   alias Bilimbi.Base.Tenancy.Scope
   alias Bilimbi.Core.Employee
@@ -21,15 +30,31 @@ defmodule Bilimbi.People.Workforce.EmploymentOwner do
   @key {__MODULE__, :core}
 
   @doc "Registers as Core's employment owner when Core offers the seam."
-  @spec register(module()) :: :ok | {:error, :unavailable}
+  @spec register(module()) :: :ok | {:error, :unavailable | :not_adopted}
   def register(core \\ Employee) when is_atom(core) do
     if Code.ensure_loaded?(core) and function_exported?(core, :register_employment_owner, 1) do
-      apply(core, :register_employment_owner, [__MODULE__])
-      :persistent_term.put(@key, core)
-      :ok
+      case adopt_drift() do
+        :ok ->
+          apply(core, :register_employment_owner, [__MODULE__])
+          :persistent_term.put(@key, core)
+          :ok
+
+        {:error, reason} ->
+          Logger.warning(
+            "People employment owner not registered; drift was not adopted: #{inspect(reason)}"
+          )
+
+          {:error, :not_adopted}
+      end
     else
       {:error, :unavailable}
     end
+  end
+
+  defp adopt_drift do
+    Employments.backfill()
+  rescue
+    error -> {:error, Exception.message(error)}
   end
 
   @doc "Removes the registration this module made, if any."

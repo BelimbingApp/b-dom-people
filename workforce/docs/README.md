@@ -181,7 +181,11 @@ claim. Reads then resolve to Core's newer values as `:legacy_drift` and the
 next claim run adopts them; never resolve drift in People's favour, because
 the Core value is the later write. Once the owner is registered the fallback
 is off: a claimed row is always read from People, and `:legacy_drift` no
-longer occurs. Run the claim from the settings page once after the owner is
-first registered, to adopt any drift that accrued before. Unmounting People
+longer occurs. Registration first runs the same idempotent claim as the seed
+for every company, adopting Core's values for rows that drifted (and logging
+what it claimed and adopted), so the transition never reverts a Core edit. It
+does so on every start and adopts nothing when nothing drifted. If that pass
+fails, for example before the migrations have run, People stays unregistered,
+keeps reading drift from Core, and retries on the next start. Unmounting People
 leaves Core's columns complete, and People's tables keep their rows and
 provenance.

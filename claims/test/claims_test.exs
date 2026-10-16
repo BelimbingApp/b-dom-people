@@ -550,11 +550,10 @@ defmodule Bilimbi.People.ClaimsTest do
   end
 
   test "assignable employees carry the employee number People holds", %{
-    scope: scope,
     employee: employee,
     manager: manager
   } do
-    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(scope, employee,
+    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(employee,
       employee_number: "PEO-1"
     )
 

@@ -297,6 +297,26 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
              Workforce.employment_summary(ctx.viewer, 73)
   end
 
+  test "registering adopts a Core edit made before, so People reads it at once", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+
+    {:ok, _core} =
+      Employee.update_employee(ctx.scope, 73, ctx.human.id, %{status: "terminated"})
+
+    assert {:ok, %ReadResult{value: %Employment{source: :legacy_drift, status: "terminated"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "terminated"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: []}} = Workforce.employees(ctx.scope, 73)
+
+    assert {:ok, %ReadResult{value: %{people: 3, legacy_drift: 0}}} =
+             Workforce.employment_summary(ctx.viewer, 73)
+  end
+
   test "Core's write claims an unclaimed row without a contact grant on its actor", ctx do
     assert :ok = EmploymentOwner.legacy_employee_written(ctx.hr_only, ctx.human.id)
 

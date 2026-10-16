@@ -109,7 +109,7 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     operator: operator,
     employee: employee
   } do
-    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(first, employee,
+    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(employee,
       employee_number: "PEO-01",
       status: "inactive"
     )

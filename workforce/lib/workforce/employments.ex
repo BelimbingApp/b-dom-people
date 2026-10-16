@@ -17,6 +17,8 @@ defmodule Bilimbi.People.Workforce.Employments do
 
   import Ecto.Query
 
+  require Logger
+
   alias Bilimbi.Base.Repo
   alias Bilimbi.Base.Tenancy
   alias Bilimbi.Base.Tenancy.Scope
@@ -163,23 +165,37 @@ defmodule Bilimbi.People.Workforce.Employments do
   end
 
   @doc """
-  Claims the legacy rows of every live company in every tenant, as a system
-  seed. Archived companies are frozen and stay Core-only. A company that fails
-  does not stop the others; the seed reports the failures and is retried.
+  Claims the legacy rows of every live company in every tenant and adopts
+  Core's values for rows that drifted, as a system seed and before the owner
+  registers. Archived companies are frozen and stay Core-only. A company that
+  fails does not stop the others; the failures are returned and the run is
+  safe to repeat. What it claimed and adopted is logged.
   """
   def backfill do
-    failures =
+    results =
       for tenant <- Tenancy.list_tenants(),
           {:ok, scope} <- [Tenancy.scope(tenant.id)],
           {:ok, companies} <- [Company.list_companies(scope)],
           company <- companies,
-          {:error, reason} <- [reconcile(scope, company.id)],
-          reason != :company_archived do
-        {company.id, reason}
+          result = reconcile(scope, company.id),
+          result != {:error, :company_archived} do
+        {company.id, result}
       end
+
+    reports = for {_company_id, {:ok, report}} <- results, do: report
+    failures = for {company_id, {:error, reason}} <- results, do: {company_id, reason}
+
+    Logger.info(
+      "People employment backfill: claimed #{sum(reports, :claimed)}, " <>
+        "adopted #{sum(reports, :adopted)} drifted, " <>
+        "unclaimed #{Enum.sum(Enum.map(reports, &length(&1.unclaimed)))}, " <>
+        "failed companies #{length(failures)}"
+    )
 
     if failures == [], do: :ok, else: {:error, failures}
   end
+
+  defp sum(reports, key), do: reports |> Enum.map(&Map.fetch!(&1, key)) |> Enum.sum()
 
   @doc "The company's legacy rows People could not claim, with the reason."
   def exceptions(%Scope{} = scope, company_id) do
