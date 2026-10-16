@@ -143,7 +143,9 @@ defmodule Bilimbi.People.Workforce.Employments do
         records = records(scope, Enum.map(employees, & &1.id), lock: true)
         now = now()
 
-        clear_exceptions(scope, company_id)
+        # A company without employees has nothing to claim, and `exceptions/2`
+        # already hides rows of employees that are gone.
+        if employees != [], do: clear_exceptions(scope, company_id)
         report = %{claimed: 0, adopted: 0, unchanged: 0, unclaimed: []}
 
         employees
@@ -316,7 +318,7 @@ defmodule Bilimbi.People.Workforce.Employments do
         current = resolve(core, record)
 
         changeset =
-          EmploymentRecord
+          %EmploymentRecord{}
           |> struct(Map.take(Map.from_struct(current), EmploymentRecord.facts()))
           |> EmploymentRecord.update_changeset(attrs)
 

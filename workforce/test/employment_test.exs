@@ -16,6 +16,7 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
   alias Bilimbi.People.Workforce.Employment
   alias Bilimbi.People.Workforce.EmploymentOwner
   alias Bilimbi.People.Workforce.EmploymentRecord
+  alias Bilimbi.People.Workforce.Employments
   alias Bilimbi.People.Workforce.ProductionSeeds
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.TestFixtures, as: WorkforceFixtures
@@ -407,6 +408,15 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
              Workforce.employment(ctx.outsider, 75, other_employee.id)
 
     assert Repo.get_by(EmploymentRecord, legacy_employee_id: frozen.id) == nil
+  end
+
+  test "a company without employees reconciles before People's exception storage is migrated",
+       ctx do
+    CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, name: "Empty", code: "empty"})
+    Ecto.Adapters.SQL.query!(Repo, "DROP TABLE people_workforce_employment_exceptions", [])
+
+    assert {:ok, %{claimed: 0, adopted: 0, unchanged: 0, unclaimed: []}} =
+             Employments.reconcile(ctx.scope, 74)
   end
 
   test "the seed provider is registered with the module", _ctx do
