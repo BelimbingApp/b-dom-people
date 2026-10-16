@@ -10,6 +10,7 @@ defmodule Bilimbi.People.Training.Web.EvaluationLiveTest do
 
   setup %{conn: conn} do
     Users.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     TestFixtures.migrate_evaluation_tables!()
     Companies.insert_tenant!(%{id: 41, is_platform_operator: false})
     Companies.insert_tenant!(%{id: 42, is_platform_operator: false})

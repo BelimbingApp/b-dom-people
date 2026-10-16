@@ -4,6 +4,11 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
 
   The company list comes from `Authorization.selectable_companies/2` under the
   route capability, so an operator only reaches companies they may manage.
+
+  The employment records section shows where the company's employment facts
+  come from and lets an operator holding `people.workforce.employment.manage`
+  claim the legacy Core Employee HR rows into People. The `can_*?` assigns
+  only decide what renders; the facade authorizes each read and the claim.
   """
 
   use Bilimbi.Base.UI, :live_view
@@ -13,6 +18,7 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   alias Bilimbi.People.Workforce.ReadResult
 
   @capability "people.workforce.settings.manage"
+  @employment_manage_capability "people.workforce.employment.manage"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -35,6 +41,13 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   end
 
   @impl true
+  def handle_event(
+        "reconcile_employments",
+        _params,
+        %{assigns: %{can_manage_employment?: false}} = socket
+      ),
+      do: {:noreply, put_flash(socket, :error, "You cannot claim employment records here.")}
+
   def handle_event("select_company", %{"company_id" => company_id}, socket) do
     {:noreply, push_patch(socket, to: ~p"/people/workforce/settings?company_id=#{company_id}")}
   end
@@ -63,22 +76,94 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
 
   def handle_event("save", _params, socket), do: {:noreply, socket}
 
+  def handle_event(
+        "reconcile_employments",
+        _params,
+        %{assigns: %{company: %{id: company_id}}} = socket
+      ) do
+    case Workforce.reconcile_employments(socket.assigns.current_scope.scope, company_id) do
+      {:ok, report} ->
+        {:noreply,
+         socket
+         |> select_company(Integer.to_string(company_id))
+         |> put_flash(:success, reconcile_message(report))}
+
+      {:error, :company_archived} ->
+        {:noreply, put_flash(socket, :error, "An archived company's records cannot be claimed.")}
+
+      {:error, :unauthorized} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Claiming also needs permission to view contacts, which hold each employee's person record."
+         )}
+
+      {:error, _reason} ->
+        {:noreply, put_flash(socket, :error, "Employment records could not be claimed.")}
+    end
+  end
+
+  def handle_event("reconcile_employments", _params, socket), do: {:noreply, socket}
+
   defp select_company(%{assigns: %{companies: []}} = socket, _company_id),
-    do: assign(socket, company: nil, working_statuses: [], freshness_notice: nil)
+    do:
+      assign(socket, company: nil, working_statuses: [], freshness_notice: nil)
+      |> assign_employment(nil)
 
   defp select_company(%{assigns: %{companies: [first | _] = companies}} = socket, company_id) do
     company = Enum.find(companies, first, &(Integer.to_string(&1.id) == company_id))
 
     case Workforce.working_statuses(socket.assigns.current_scope.scope, company.id) do
       {:ok, %ReadResult{value: statuses, freshness: freshness}} ->
-        assign(socket,
+        socket
+        |> assign(
           company: company,
           working_statuses: statuses || [],
           freshness_notice: freshness_notice(freshness)
         )
+        |> assign_employment(company.id)
 
       {:error, :not_found} ->
-        assign(socket, company: nil, working_statuses: [], freshness_notice: nil)
+        socket
+        |> assign(company: nil, working_statuses: [], freshness_notice: nil)
+        |> assign_employment(nil)
+    end
+  end
+
+  defp assign_employment(socket, nil),
+    do: assign(socket, employment_counts: nil, can_manage_employment?: false)
+
+  defp assign_employment(socket, company_id) do
+    scope = socket.assigns.current_scope.scope
+
+    counts =
+      case Workforce.employment_summary(scope, company_id) do
+        {:ok, %ReadResult{value: counts}} -> counts
+        {:error, _reason} -> nil
+      end
+
+    assign(socket,
+      employment_counts: counts,
+      can_manage_employment?:
+        Authorization.allowed?(scope, company_id, @employment_manage_capability)
+    )
+  end
+
+  @doc "Operator-facing summary of one claim run."
+  @spec reconcile_message(map()) :: String.t()
+  def reconcile_message(%{
+        claimed: claimed,
+        adopted: adopted,
+        unchanged: unchanged,
+        unclaimed: unclaimed
+      }) do
+    base =
+      "Claimed #{claimed}, updated #{adopted} from Core HR, #{unchanged} already current."
+
+    case length(unclaimed) do
+      0 -> base
+      count -> base <> " #{count} could not be claimed and stay in Core HR."
     end
   end
 
@@ -169,6 +254,41 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
             <.button id="workforce-settings-save" type="submit" variant="primary">Save</.button>
           </div>
         </form>
+
+        <section
+          :if={@company && @employment_counts}
+          id="workforce-employment-records"
+          class="mt-5 rounded-xl border border-line bg-surface p-4"
+        >
+          <h2 class="text-sm font-medium text-ink-strong">Employment records</h2>
+          <p class="mt-0.5 text-xs text-ink-subtle">
+            People owns employee numbers, employment types, statuses and dates. Claiming copies
+            them from Core HR without changing Core's records.
+          </p>
+          <dl class="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-ink sm:grid-cols-4">
+            <div>
+              <dt class="text-xs text-ink-subtle">Employees</dt>
+              <dd id="workforce-employment-total">{@employment_counts.total}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-ink-subtle">Held by People</dt>
+              <dd id="workforce-employment-people">{@employment_counts.people}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-ink-subtle">Not claimed yet</dt>
+              <dd id="workforce-employment-unclaimed">{@employment_counts.core_legacy}</dd>
+            </div>
+            <div>
+              <dt class="text-xs text-ink-subtle">Changed in Core HR since claimed</dt>
+              <dd id="workforce-employment-drift">{@employment_counts.legacy_drift}</dd>
+            </div>
+          </dl>
+          <div :if={@can_manage_employment?} class="mt-2.5 flex justify-end">
+            <.button id="workforce-employment-claim" type="button" phx-click="reconcile_employments">
+              Claim from Core HR
+            </.button>
+          </div>
+        </section>
       </.page>
     </Layouts.app>
     """

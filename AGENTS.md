@@ -45,6 +45,13 @@ composition-lock commands.
   `.github/workflows/ci.yml` and pins Bilimbi via `.github/bilimbi-revision`.
 - Use `workforce/docs/README.md` and `Bilimbi.People.Workforce.ReadResult` for
   workforce freshness; consumers should not invent their own status wrapper.
+- People owns employee numbers, employment types, statuses and dates. Read
+  them through `Bilimbi.People.Workforce` (`employees/2`, `employment/3`) and
+  change them with `Workforce.update_employment/4`, not from Core Employee
+  summaries or `Employee.update_employee/4`: Core's columns are a
+  compatibility mirror that can drift (`workforce/docs/README.md`). A test
+  that reads employees through Workforce first calls
+  `Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!/0`.
 - Authorize every public write, and every public read of private employee
   facts, inside the facade with `Bilimbi.People.Workforce.Authorization`
   (`authorize/3`, `authorize_self/3`, `with_self_employee_lock/4`), taking

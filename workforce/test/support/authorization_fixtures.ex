@@ -80,6 +80,12 @@ defmodule Bilimbi.People.Workforce.AuthorizationFixtures do
         descriptor: %{id: "core/company", otp_app: :bilimbi_core_company},
         payload: Bilimbi.Core.Company.Contributions.contributions()[:authz]
       },
+      # Core reveals an employee's person mapping only to a contact viewer,
+      # so People employment claims need `admin.person.view` as well.
+      %{
+        descriptor: %{id: "core/person", otp_app: :bilimbi_core_person},
+        payload: Bilimbi.Core.Person.Contributions.contributions()[:authz]
+      },
       # Base Tiling declares the publish verb in a composed application; it is
       # outside a People module's test closure, so the verb is declared here.
       %{

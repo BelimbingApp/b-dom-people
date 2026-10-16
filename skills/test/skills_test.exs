@@ -70,6 +70,7 @@ defmodule Bilimbi.People.SkillsTest do
     on_exit(&ContributionRegistry.clear_for_test!/0)
     on_exit(fn -> Workforce.unregister_position_reader(PositionReader) end)
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     TestFixtures.create_skill_tables!()

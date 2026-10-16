@@ -24,6 +24,7 @@ defmodule BilimbiWeb.AttendanceLiveTest do
   describe "linked account" do
     setup do
       UserFixtures.create_user_tables!()
+      Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
       SettingsFixtures.create_settings_table!()
       AttendanceFixtures.create_attendance_tables!()
       CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})

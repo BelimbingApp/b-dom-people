@@ -13,6 +13,7 @@ for path <- [
       "base/authz/test/support/company_directory.ex",
       "base/authz/test/support/test_fixtures.ex",
       "domains/people/workforce/test/support/authorization_fixtures.ex",
+      "domains/people/workforce/test/support/test_fixtures.ex",
       "domains/people/organisation/test/support/test_fixtures.ex"
     ] do
   Code.require_file(Path.join(workspace_apps, path))

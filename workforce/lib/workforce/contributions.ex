@@ -21,7 +21,19 @@ defmodule Bilimbi.People.Workforce.Contributions do
       },
       authz: %{
         domains: %{"people" => "People domain modules"},
-        capabilities: ["people.workforce.settings.manage"]
+        capabilities: [
+          "people.workforce.settings.manage",
+          "people.workforce.employment.view",
+          "people.workforce.employment.manage"
+        ],
+        roles: %{
+          "tenant_owner" => %{
+            capabilities: [
+              "people.workforce.employment.view",
+              "people.workforce.employment.manage"
+            ]
+          }
+        }
       }
     }
   end

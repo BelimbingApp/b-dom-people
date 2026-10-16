@@ -16,6 +16,7 @@ end
 # Facade writes authorize the signed-in actor; tests sign one in through the
 # shared People fixture.
 Code.require_file(Path.expand("../../workforce/test/support/authorization_fixtures.ex", __DIR__))
+Code.require_file(Path.expand("../../workforce/test/support/test_fixtures.ex", __DIR__))
 
 # Requests count leave days around the public calendar exceptions of
 # people/reference_data, so tests create that module's table through its own

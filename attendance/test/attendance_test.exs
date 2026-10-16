@@ -38,6 +38,7 @@ defmodule Bilimbi.People.AttendanceTest do
 
     on_exit(&ContributionRegistry.clear_for_test!/0)
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     SettingsFixtures.create_settings_table!()
     TestFixtures.create_attendance_tables!()

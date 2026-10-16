@@ -29,6 +29,7 @@ defmodule Bilimbi.People.EmployeeWorkspaceTest do
     on_exit(&ContributionRegistry.clear_for_test!/0)
 
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
     AuthzFixtures.create_authz_tables!()
     :ok = Employee.ensure_system_types()
     WorkspaceFixtures.create_workspace_tables!()

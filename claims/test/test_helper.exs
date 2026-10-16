@@ -16,4 +16,5 @@ for path <- [
 end
 
 Code.require_file(Path.expand("../../workforce/test/support/authorization_fixtures.ex", __DIR__))
+Code.require_file(Path.expand("../../workforce/test/support/test_fixtures.ex", __DIR__))
 Code.require_file(Path.expand("support/test_fixtures.ex", __DIR__))

@@ -4,7 +4,10 @@ This repository is the optional People Domain. It mounts in a Bilimbi checkout
 at `apps/domains/people`. The thirteen module packages reserve ownership
 boundaries. The reference module owns fresh People reference and calendar
 tables, a company-scoped operator route, and an API. The workforce module
-exposes a scoped native read seam and a per-company operator settings page.
+exposes a scoped native read seam and a per-company operator settings page,
+and owns employment records: employee numbers, employment types, statuses and
+dates, referencing the Core person and affiliation and claimed from Core
+Employee's legacy HR columns.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules, shift templates,
@@ -42,7 +45,7 @@ explanation. No sample rows are installed.
 | --- | --- |
 | `people/settings` | People navigation anchor and shared menu groups |
 | `people/reference_data` | Company-scoped People references and calendar exceptions |
-| `people/workforce` | Scoped native company, employee and optional position reads with per-company working statuses |
+| `people/workforce` | Scoped native company, employee and optional position reads, per-company working statuses, and employment records |
 | `people/employee_workspace` | Employee workbench and People-owned employee facts |
 | `people/organisation` | Versioned positions, assignments, and explorer |
 | `people/attendance` | Clock events, day facts, rules, rosters, clocking locations and adjustments |

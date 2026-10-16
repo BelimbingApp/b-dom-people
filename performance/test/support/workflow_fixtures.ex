@@ -13,6 +13,7 @@ defmodule Bilimbi.People.Performance.WorkflowFixtures do
   def seed!(opts \\ []) do
     unless opts[:web], do: install_snapshot!()
     UserFixtures.create_user_tables!()
+    Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
 
     unless opts[:web] do
       SettingsFixtures.create_settings_table!()

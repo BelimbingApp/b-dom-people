@@ -17,6 +17,7 @@ defmodule BilimbiWeb.EmployeeWorkspaceLiveTest do
   describe "authorized actor" do
     setup do
       UserFixtures.create_user_tables!()
+      Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!()
       :ok = Employee.ensure_system_types()
       WorkspaceFixtures.create_workspace_tables!()
       CompanyFixtures.insert_tenant!(%{id: 41, is_platform_operator: true})
