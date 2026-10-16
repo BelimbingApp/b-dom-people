@@ -8,12 +8,15 @@ only because the route, `people.employees.view` capability, company selection,
 and empty state are implemented. The signed-in actor's company is the explicit
 platform company axis. No tenant-wide employee list is implied by the route.
 
-Core Employee owns employee identity and employment facts. This module calls
-its public API and stores only People-specific work profile, portal eligibility,
-profile-change request history, and actor-owned saved view facts. Portal
-eligibility neither creates a login account nor grants a role. An approved
-change request records the decision; an operator must apply an approved master
-change through Core Employee's own workflow.
+Core Employee owns employee identity. People's workforce module owns the
+employee number, employment type, status and dates; this module passes the
+Core summaries it reads through `Workforce.with_employment_facts/2`
+(see `workforce/docs/README.md`). It stores only People-specific work profile,
+portal eligibility, profile-change request history, and actor-owned saved view
+facts. Portal eligibility neither creates a login account nor grants a role.
+An approved change request records the decision; an operator must apply an
+approved master change through Core Employee's own workflow, or through
+`Workforce.update_employment/4` for employment facts.
 
 The public facade requires `Bilimbi.Base.Tenancy.Scope` and explicit company
 and employee IDs. Every function authorizes its own operation for the scope's
