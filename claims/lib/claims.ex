@@ -610,7 +610,8 @@ defmodule Bilimbi.People.Claims do
          {:ok, _company} <- company(scope, company_id),
          {:ok, employees} <- Employee.list_employees(scope, company_id) do
       {:ok,
-       employees
+       scope
+       |> Workforce.with_employment_facts(employees)
        |> Enum.map(&%{id: &1.id, employee_number: &1.employee_number, name: &1.full_name})
        |> Enum.sort_by(&{&1.employee_number, &1.id})}
     else
@@ -1159,7 +1160,10 @@ defmodule Bilimbi.People.Claims do
 
   defp employee_index(scope, employee_ids) do
     {:ok, employees} = Employee.get_tenant_employees(scope, Enum.uniq(employee_ids))
-    employees
+
+    scope
+    |> Workforce.with_employment_facts(Map.values(employees))
+    |> Map.new(&{&1.id, &1})
   end
 
   defp employee_columns(employees, employee_id) do

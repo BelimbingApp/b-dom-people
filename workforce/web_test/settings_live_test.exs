@@ -118,6 +118,43 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLiveTest do
              Workforce.employment(signed_in(scope), 73, employee.id)
   end
 
+  test "rows People could not claim are listed with the reason", %{conn: conn, scope: scope} do
+    {:ok, employee} = create_employee!(scope)
+    {:ok, identity} = Employee.person_identity(scope, employee.id)
+    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+    Bilimbi.Base.Repo.insert!(%Bilimbi.People.Workforce.EmploymentRecord{
+      tenant_id: 41,
+      company_id: 73,
+      legacy_employee_id: 900_001,
+      person_id: identity.person_id,
+      affiliation_id: identity.affiliation_id,
+      employee_number: "X-1",
+      employment_type: "full_time",
+      status: "active",
+      claimed_at: now
+    })
+
+    grant_capabilities!([
+      "people.workforce.settings.manage",
+      "people.workforce.employment.view",
+      "people.workforce.employment.manage",
+      "admin.person.view"
+    ])
+
+    {:ok, view, _html} = conn |> log_in_as() |> live(~p"/people/workforce/settings")
+    refute has_element?(view, "#workforce-employment-exceptions")
+
+    assert view |> element("#workforce-employment-claim") |> render_click() =~
+             "1 could not be claimed and are listed below."
+
+    assert has_element?(
+             view,
+             "#workforce-employment-exception-#{employee.id}",
+             "Another employee already holds this person's employment."
+           )
+  end
+
   test "employment records need their own capabilities", %{conn: conn, scope: scope} do
     {:ok, employee} = create_employee!(scope)
     grant_capabilities!(["people.workforce.settings.manage"])

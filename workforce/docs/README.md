@@ -98,9 +98,9 @@ and end dates, and the HR metadata that came with them. One row of
 `people_workforce_employments` is one employment. It references the Core
 Person (`person_id`) and that person's affiliation with the employer
 (`affiliation_id`); the employer company is the affiliation's company. Names,
-email, phone and titles stay in Core Person and are not copied. Migration
-`20261016090000` is fresh `:bilimbi_only` schema with no rows;
-`Bilimbi.People.Workforce.SchemaContract` stays unregistered and
+email, phone and titles stay in Core Person and are not copied. Migrations
+`20261016090000` and `20261016093000` are fresh `:bilimbi_only` schema with no
+rows; `Bilimbi.People.Workforce.SchemaContract` stays unregistered and
 `test/schema_contract_test.exs` verifies it against a freshly migrated
 database.
 
@@ -112,46 +112,76 @@ creation time and `claimed_at` records when People took the row over.
 
 Use `Workforce.employment/3` (capability `people.workforce.employment.view`)
 for an employee's facts, at any status and including agents. It returns a
-`Bilimbi.People.Workforce.Employment` whose `source` is `:people` (claimed and
-in step), `:legacy_drift` (claimed, then changed through Core's deprecated HR
-path) or `:core_legacy` (not claimed yet). `employment_summary/2` counts the
+`Bilimbi.People.Workforce.Employment` whose `source` is `:people` (claimed),
+`:legacy_drift` (claimed, then changed through Core's deprecated HR path; see
+below) or `:core_legacy` (not claimed yet). `employment_summary/2` counts the
 company's employees by source. Do not read these facts from
-`Bilimbi.Core.Employee` summaries in a People module. Claims' assignable and
-export rows and the employee workbench still show the employee number from
-Core's mirror, which equals or postdates People's value; move them here before
-Core's columns retire.
+`Bilimbi.Core.Employee` summaries in a People module. A module that already
+authorized reading Core summaries with its own capability (the employee
+workbench, Claims' assignable and export rows) passes them through
+`Workforce.with_employment_facts/2`, which swaps in the facts People
+resolves; the working-staff reads (`employees/2`, `employees_by_ids/3`,
+`employee/3`) resolve from People already.
 
 ### Claiming the legacy rows
 
-`Workforce.reconcile_employments/2` (capability
+The `people/workforce/employment-backfill` production seed claims every
+existing Core Employee row into People. Run it with `mix bilimbi.seeds.run`
+after the migrations. It walks every tenant and every live company with the
+system scope, copies values verbatim (agents and every status included) and
+changes nothing in Core. It is idempotent, one failing company does not stop
+the others, and a failed seed is retried. Archived companies are frozen and
+stay Core-only until Core publishes a tenant-wide handoff read.
+
+The seed runs once. `Workforce.reconcile_employments/2` (capability
 `people.workforce.employment.manage`, plus Core's `admin.person.view`, which
-Core requires before it reveals a person mapping) claims a writable company's
-Core Employee rows through Core's public API: `Employee.list_employees/2` and
-`Employee.person_identity/2`. Every row is claimed, agents and every status
-included, with its values copied verbatim; nothing in Core is changed or
-deleted. A row Core has no person mapping for, or whose facts are incomplete,
-stays Core-only and is reported in `unclaimed`. The run holds the company lock
-from `Company.lock_writable_company/2` and is idempotent: a second run reports
-the rows `unchanged`. The workforce settings page shows the counts and a
-**Claim from Core HR** action for operators who hold the capability.
+Core requires before it reveals a person mapping) re-runs the same claim for
+one company: it claims rows created in Core since, and adopts Core's values
+for claimed rows that drifted. A row that cannot be claimed stays Core-only
+and is recorded in `people_workforce_employment_exceptions` with a reason:
+`:no_person_mapping`, `:invalid_facts` (Core's number, type or status is
+missing) or `:duplicate_affiliation` (another employment record already holds
+the person's affiliation). The insert runs in a savepoint, so one conflict
+never aborts the company. `Workforce.employment_exceptions/2` (capability
+`people.workforce.employment.view`) lists them, and the workforce settings
+page shows the list, the counts and a **Claim again from Core HR** action
+for operators who hold the manage capability. A claim run rewrites the
+company's exceptions and claiming an employee removes theirs.
 
-Rows of an archived company cannot be claimed (`:company_archived`): Core
-freezes them, and they stay readable in Core until Core publishes a
-tenant-wide handoff read.
+### People is the writer; Core's columns are a deprecated mirror
 
-### Writing through Core during the transition
+`Workforce.update_employment/4` stores the change in People first and then
+mirrors it to Core Employee's compatibility columns through
+`Employee.update_employee/4`, in one transaction under the order Core uses
+(company, then Core's locks, then People's record). An unclaimed employee is
+claimed by the write. A value Core refuses, or a conflicting claim, rolls
+back both sides and returns an error.
 
-Core Employee keeps its HR columns as a compatibility mirror and still
-accepts writes on its deprecated HR path (`core.employee.*` and the
-`/employees` pages). `Workforce.update_employment/4` therefore writes Core
-first, through `Employee.update_employee/4` under Core's lock order, and then
-stores Core's result in People, in one transaction. An unclaimed employee is
-claimed by the write. People and Core never differ because of a People
-write, so a difference means Core's deprecated path wrote after the claim.
-Reads then resolve to Core's newer values as `:legacy_drift`, and the next
-claim run adopts them. Never resolve drift in People's favour: the Core
-value is the later write.
+Core Employee keeps its HR columns, and its deprecated HR path
+(`core.employee.*`, the `/employees` pages) still accepts writes. They are a
+documented mirror kept for `core.employee.*` callers, integrations and the
+Core User, principal-grant and system-agent references that key on the
+employee ID. Removing the columns is a later, separately reviewed step, once
+both the Core owner-seam change and this one have landed and no reader
+remains.
 
-When Core routes its HR writes to the mounted owner, drift ends and these
-reads come from People alone. Until then, unmounting People leaves Core's
-columns complete, and People's table keeps its rows and provenance.
+Core's HR writes reach People through the employment-owner seam in Core
+Employee. `Bilimbi.People.Workforce.Application` registers
+`Bilimbi.People.Workforce.EmploymentOwner` at startup, but only when the Core
+in use exports `register_employment_owner/1`; it is looked up by name at
+runtime, so People compiles and runs against a Core without it. Core calls
+`EmploymentOwner.legacy_employee_written(scope, employee_id)` inside the
+transaction of each HR write, after its own locks, and People adopts the
+written values, or claims the row (mapping read as the system, since Core
+already authorized the write). That callback never refuses: a row it cannot
+claim is recorded as an exception.
+
+While no owner is registered, Core's deprecated path can write after the
+claim. Reads then resolve to Core's newer values as `:legacy_drift` and the
+next claim run adopts them; never resolve drift in People's favour, because
+the Core value is the later write. Once the owner is registered the fallback
+is off: a claimed row is always read from People, and `:legacy_drift` no
+longer occurs. Run the claim from the settings page once after the owner is
+first registered, to adopt any drift that accrued before. Unmounting People
+leaves Core's columns complete, and People's tables keep their rows and
+provenance.

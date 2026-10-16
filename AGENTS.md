@@ -48,8 +48,10 @@ composition-lock commands.
 - People owns employee numbers, employment types, statuses and dates. Read
   them through `Bilimbi.People.Workforce` (`employees/2`, `employment/3`) and
   change them with `Workforce.update_employment/4`, not from Core Employee
-  summaries or `Employee.update_employee/4`: Core's columns are a
-  compatibility mirror that can drift (`workforce/docs/README.md`). A test
+  summaries or `Employee.update_employee/4`: Core's columns are a deprecated
+  mirror that can drift. A module that holds Core summaries it already
+  authorized passes them through `Workforce.with_employment_facts/2`
+  (`workforce/docs/README.md`). A test
   that reads employees through Workforce first calls
   `Bilimbi.People.Workforce.TestFixtures.create_workforce_tables!/0`.
 - Authorize every public write, and every public read of private employee

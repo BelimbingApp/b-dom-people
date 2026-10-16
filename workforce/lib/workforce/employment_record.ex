@@ -55,6 +55,8 @@ defmodule Bilimbi.People.Workforce.EmploymentRecord do
       :status,
       :claimed_at
     ])
+    |> unique_constraint(:affiliation_id)
+    |> unique_constraint(:legacy_employee_id)
   end
 
   @doc "Validates a People change to the employment facts."

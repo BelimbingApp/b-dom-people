@@ -8,10 +8,10 @@ defmodule Bilimbi.People.Workforce do
   implies a login actor. Which employment statuses count as working staff is
   a per-company Base Setting.
 
-  People owns employment numbers, types, statuses and dates: a claimed
-  employment record references the Core Person and affiliation and keeps the
-  legacy Core Employee ID as its explicit mapping. See `docs/README.md` for the
-  transition from Core's compatibility columns.
+  People owns employment numbers, types, statuses and dates: an employment
+  record references the Core Person and affiliation and keeps the legacy Core
+  Employee ID as its explicit mapping. A production seed claims the existing
+  Core rows; Core's columns remain a deprecated mirror. See `docs/README.md`.
   """
 
   alias Bilimbi.Base.Settings
@@ -229,9 +229,9 @@ defmodule Bilimbi.People.Workforce do
 
   @doc """
   Counts the company's employees by where their employment facts come from:
-  `:people` (claimed and in step), `:legacy_drift` (claimed, then changed
-  through Core's deprecated HR path) and `:core_legacy` (not claimed yet).
-  Requires `people.workforce.employment.view`.
+  `:people` (claimed), `:legacy_drift` (claimed, then changed through Core's
+  deprecated HR path; only while Core does not route those writes to People)
+  and `:core_legacy` (not claimed yet). Requires `people.workforce.employment.view`.
   """
   @spec employment_summary(Scope.t(), term()) ::
           {:ok, ReadResult.t()} | {:error, :unauthorized | :not_found}
@@ -246,14 +246,16 @@ defmodule Bilimbi.People.Workforce do
 
   @doc """
   Claims the company's legacy Core Employee HR rows into People and adopts
-  Core's values for claimed rows that drifted. Idempotent.
+  Core's values for claimed rows that drifted. Idempotent: the production seed
+  runs it for every company, and this re-runs it for one.
 
   Requires `people.workforce.employment.manage` now, and Core's
   `admin.person.view`, which Core requires before it reveals the person
   mapping a claim records. Returns counts of `claimed`, `adopted` and
   `unchanged` rows and the `unclaimed` employee IDs with a reason
-  (`:no_person_mapping` or `:invalid_facts`); those stay Core-only and
-  unchanged. An archived company is `:company_archived`.
+  (`:no_person_mapping`, `:invalid_facts` or `:duplicate_affiliation`); those
+  stay Core-only, unchanged, and are listed by `employment_exceptions/2`. An
+  archived company is `:company_archived`.
   """
   @spec reconcile_employments(Scope.t(), term()) ::
           {:ok, map()} | {:error, :unauthorized | :not_found | :company_archived}
@@ -266,16 +268,46 @@ defmodule Bilimbi.People.Workforce do
   end
 
   @doc """
+  Lists the company's legacy Core rows People could not claim, each with the
+  employee's number and name and the reason: `:no_person_mapping`,
+  `:invalid_facts` or `:duplicate_affiliation`. Requires
+  `people.workforce.employment.view`.
+  """
+  @spec employment_exceptions(Scope.t(), term()) ::
+          {:ok, ReadResult.t()} | {:error, :unauthorized | :not_found}
+  def employment_exceptions(%Scope{} = scope, platform_company_id) do
+    with {:ok, _actor} <-
+           Authorization.authorize(scope, platform_company_id, @employment_view_capability),
+         {:ok, core_company} <- live_company(scope, platform_company_id) do
+      {:ok, ReadResult.current(Employments.exceptions(scope, core_company.id))}
+    end
+  end
+
+  @doc """
+  Replaces the number, type, status, dates and metadata of Core Employee
+  summaries with the facts People resolves for them.
+
+  For a sibling module that has already authorized reading those summaries
+  with its own capability: it reveals no employee and no fact class beyond the
+  summaries passed in, and reads only the scope's tenant.
+  """
+  @spec with_employment_facts(Scope.t(), [Employee.Summary.t()]) :: [Employee.Summary.t()]
+  def with_employment_facts(%Scope{} = scope, summaries) when is_list(summaries) do
+    records = Employments.records(scope, Enum.map(summaries, & &1.id))
+    Enum.map(summaries, &Employments.overlay(&1, Map.get(records, &1.id)))
+  end
+
+  @doc """
   Changes an employee's number, type, status or dates in People.
 
-  Requires `people.workforce.employment.manage` now. The change is written
-  through to Core Employee's compatibility columns in the same transaction, so
-  `core.employee.*` callers keep reading current values, and an unclaimed
-  employee is claimed by the write, which needs Core's `admin.person.view`
-  as `reconcile_employments/2` does. Accepts `employee_number`,
-  `employment_type`, `status`, `employment_start` and `employment_end`;
-  invalid values, and values Core refuses, return a changeset keyed by those
-  names.
+  Requires `people.workforce.employment.manage` now. People stores the change
+  first and mirrors it to Core Employee's compatibility columns in the same
+  transaction, so `core.employee.*` callers keep reading current values. An
+  unclaimed employee is claimed by the write, which needs Core's
+  `admin.person.view` as `reconcile_employments/2` does. Accepts
+  `employee_number`, `employment_type`, `status`, `employment_start` and
+  `employment_end`; invalid values, and values Core refuses, return a
+  changeset keyed by those names and write nothing.
   """
   @spec update_employment(Scope.t(), term(), term(), map()) ::
           {:ok, Employment.t()}
@@ -284,6 +316,8 @@ defmodule Bilimbi.People.Workforce do
              | :not_found
              | :company_archived
              | :no_person_mapping
+             | :invalid_facts
+             | :duplicate_affiliation
              | Ecto.Changeset.t()}
   def update_employment(%Scope{} = scope, platform_company_id, employee_id, attrs)
       when is_integer(employee_id) and employee_id > 0 and is_map(attrs) do

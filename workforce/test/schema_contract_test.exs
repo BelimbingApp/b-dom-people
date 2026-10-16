@@ -3,11 +3,17 @@ Code.require_file(
   __DIR__
 )
 
+Code.require_file(
+  "../priv/repo/migrations/20261016093000_create_workforce_employment_exceptions.exs",
+  __DIR__
+)
+
 defmodule Bilimbi.People.Workforce.SchemaContractTest do
   use ExUnit.Case, async: false
 
   alias Bilimbi.Base.Database.SchemaVerifier
   alias Bilimbi.Base.Repo
+  alias Bilimbi.People.Workforce.Migrations.CreateWorkforceEmploymentExceptions
   alias Bilimbi.People.Workforce.Migrations.CreateWorkforceEmployments
   alias Bilimbi.People.Workforce.SchemaContract
   alias Ecto.Adapters.SQL
@@ -34,6 +40,12 @@ defmodule Bilimbi.People.Workforce.SchemaContractTest do
 
     assert :ok =
              Ecto.Migrator.up(Repo, 20_261_016_090_000, CreateWorkforceEmployments,
+               log: false,
+               dynamic_repo: repo
+             )
+
+    assert :ok =
+             Ecto.Migrator.up(Repo, 20_261_016_093_000, CreateWorkforceEmploymentExceptions,
                log: false,
                dynamic_repo: repo
              )

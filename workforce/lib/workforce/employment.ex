@@ -9,11 +9,11 @@ defmodule Bilimbi.People.Workforce.Employment do
 
   `source` says where the facts come from:
 
-    * `:people` - claimed into People and in step with Core's compatibility
-      columns.
+    * `:people` - claimed into People; the values are People's.
     * `:legacy_drift` - claimed, but Core's deprecated HR path changed a fact
       afterwards. The values are Core's newer ones until a reconcile adopts
-      them.
+      them. It occurs only while Core does not route those writes to People
+      (`EmploymentOwner`); once it does, a claimed row is always `:people`.
     * `:core_legacy` - not claimed yet; the values are Core's. `person_id` and
       `affiliation_id` are nil when Core has no person mapping for the row.
   """

@@ -2,8 +2,10 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   @moduledoc """
   Company-scoped People facts around Core Employee identity.
 
-  Employee master fields remain in Core. A change request records a proposal
-  and review decision; approval does not silently write to Core Employee.
+  Employee master fields remain in Core, except the number, type, status and
+  dates, which People owns and `Workforce.with_employment_facts/2` resolves
+  into the summaries returned here. A change request records a proposal and
+  review decision; approval does not silently write to Core Employee.
 
   Every function authorizes its own operation through
   `Bilimbi.People.Workforce.Authorization` with the scope it is handed: the
@@ -21,6 +23,7 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.Employee
   alias Bilimbi.People.EmployeeWorkspace.{Access, ChangeRequest, SavedView, WorkProfile}
+  alias Bilimbi.People.Workforce
   alias Bilimbi.People.Workforce.Authorization
 
   @view "people.employees.view"
@@ -34,12 +37,15 @@ defmodule Bilimbi.People.EmployeeWorkspace do
   def employees(%Scope{} = scope, company_id) do
     with {:ok, _actor} <- Authorization.authorize(scope, company_id, @view),
          :ok <- company_exists(scope, company_id),
-         do: Employee.list_employees(scope, company_id)
+         {:ok, employees} <- Employee.list_employees(scope, company_id),
+         do: {:ok, Workforce.with_employment_facts(scope, employees)}
   end
 
   def employee(%Scope{} = scope, company_id, employee_id) do
     with {:ok, _actor} <- Authorization.authorize(scope, company_id, @view),
-         do: Employee.get_employee(scope, company_id, employee_id)
+         {:ok, employee} <- Employee.get_employee(scope, company_id, employee_id),
+         [employee] <- Workforce.with_employment_facts(scope, [employee]),
+         do: {:ok, employee}
   end
 
   def work_profile(%Scope{} = scope, company_id, employee_id) do

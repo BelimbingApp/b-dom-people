@@ -14,6 +14,9 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
   alias Bilimbi.People.Workforce.AuthorizationFixtures
   alias Bilimbi.People.Workforce.Contributions
   alias Bilimbi.People.Workforce.Employment
+  alias Bilimbi.People.Workforce.EmploymentOwner
+  alias Bilimbi.People.Workforce.EmploymentRecord
+  alias Bilimbi.People.Workforce.ProductionSeeds
   alias Bilimbi.People.Workforce.ReadResult
   alias Bilimbi.People.Workforce.TestFixtures, as: WorkforceFixtures
 
@@ -22,6 +25,7 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
   @person_view "admin.person.view"
 
   setup do
+    on_exit(&EmploymentOwner.unregister/0)
     owner = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(owner) end)
 
@@ -160,6 +164,11 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
     assert {:ok, core} = Employee.get_employee(ctx.scope, 73, ctx.human.id)
     assert {core.status, core.employee_number, core.employment_end} == {"active", "E-100", nil}
 
+    record = Repo.get_by!(EmploymentRecord, legacy_employee_id: ctx.human.id)
+
+    assert {record.status, record.employee_number, record.employment_end} ==
+             {"active", "E-100", nil}
+
     assert {:ok, %ReadResult{value: [value]}} = Workforce.employees(ctx.scope, 73)
     assert value.employee_number == "E-100"
   end
@@ -254,6 +263,156 @@ defmodule Bilimbi.People.Workforce.EmploymentTest do
 
     assert {:ok, %Employment{source: :people, status: "active"}} =
              Workforce.update_employment(ctx.hr_only, 73, ctx.human.id, %{status: "active"})
+  end
+
+  test "the owner seam is registered only when Core offers it", _ctx do
+    refute EmploymentOwner.registered?()
+    assert {:error, :unavailable} = EmploymentOwner.register(Enum)
+    refute EmploymentOwner.registered?()
+
+    assert :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+    assert_received {:registered, EmploymentOwner}
+    assert EmploymentOwner.registered?()
+
+    assert :ok = EmploymentOwner.unregister()
+    assert_received {:unregistered, EmploymentOwner}
+    refute EmploymentOwner.registered?()
+  end
+
+  test "with the owner registered a claimed row is People's and Core's writes reach it", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+    :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+
+    {:ok, _core} = Employee.update_employee(ctx.scope, 73, ctx.human.id, %{status: "inactive"})
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "probation"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert :ok = EmploymentOwner.legacy_employee_written(ctx.scope, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "inactive"}}} =
+             Workforce.employment(ctx.viewer, 73, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: %{people: 3, legacy_drift: 0}}} =
+             Workforce.employment_summary(ctx.viewer, 73)
+  end
+
+  test "Core's write claims an unclaimed row without a contact grant on its actor", ctx do
+    assert :ok = EmploymentOwner.legacy_employee_written(ctx.hr_only, ctx.human.id)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, status: "probation"}}} =
+             Workforce.employment(ctx.hr_only, 73, ctx.human.id)
+  end
+
+  test "an overlay shows the facts People resolves over Core's summaries", ctx do
+    {:ok, _report} = Workforce.reconcile_employments(ctx.operator, 73)
+    :ok = EmploymentOwner.register(WorkforceFixtures.SeamCore)
+    {:ok, core} = Employee.update_employee(ctx.scope, 73, ctx.human.id, %{status: "inactive"})
+
+    assert [%{status: "probation", employee_number: "E-1"}] =
+             Workforce.with_employment_facts(ctx.scope, [core])
+
+    :ok = EmploymentOwner.unregister()
+
+    assert [%{status: "inactive"}] = Workforce.with_employment_facts(ctx.scope, [core])
+  end
+
+  test "a conflicting claim is reported and the rest of the company is claimed", ctx do
+    {:ok, identity} = Employee.person_identity(ctx.scope, ctx.human.id)
+    conflicting = insert_record!(ctx.human, identity, legacy_employee_id: 900_001)
+
+    assert {:ok, %{claimed: 2, unclaimed: [{human_id, :duplicate_affiliation}]}} =
+             Workforce.reconcile_employments(ctx.operator, 73)
+
+    assert human_id == ctx.human.id
+
+    assert {:ok, %ReadResult{value: [exception]}} =
+             Workforce.employment_exceptions(ctx.viewer, 73)
+
+    assert %{employee_id: ^human_id, employee_number: "E-1", reason: :duplicate_affiliation} =
+             exception
+
+    assert {:error, :duplicate_affiliation} =
+             Workforce.update_employment(ctx.operator, 73, ctx.human.id, %{status: "active"})
+
+    assert {:ok, core} = Employee.get_employee(ctx.scope, 73, ctx.human.id)
+    assert core.status == "probation"
+
+    Repo.delete!(conflicting)
+
+    assert {:ok, %{claimed: 1, unchanged: 2, unclaimed: []}} =
+             Workforce.reconcile_employments(ctx.operator, 73)
+
+    assert {:ok, %ReadResult{value: []}} = Workforce.employment_exceptions(ctx.viewer, 73)
+  end
+
+  test "exceptions are readable only with the employment view capability", ctx do
+    assert {:error, :unauthorized} = Workforce.employment_exceptions(ctx.scope, 73)
+    assert {:error, reason} = Workforce.employment_exceptions(ctx.outsider, 73)
+    assert reason in [:unauthorized, :not_found]
+
+    :ok = AuthorizationFixtures.revoke!(ctx.scope, 73, 92, @view)
+    assert {:error, :unauthorized} = Workforce.employment_exceptions(ctx.viewer, 73)
+  end
+
+  test "the production seed claims every live company in every tenant", ctx do
+    {:ok, other_employee} =
+      Employee.create_employee(elem(Tenancy.scope(42), 1), 75, %{
+        employee_number: "C-1",
+        full_name: "Other Tenant Employee"
+      })
+
+    CompanyFixtures.insert_company!(%{id: 74, tenant_id: 41, name: "Frozen", code: "frozen"})
+
+    {:ok, frozen} =
+      Employee.create_employee(ctx.scope, 74, %{employee_number: "F-1", full_name: "Frozen"})
+
+    Ecto.Adapters.SQL.query!(Repo, "UPDATE companies SET status = 'archived' WHERE id = 74", [])
+
+    assert :ok = ProductionSeeds.backfill(Repo)
+    assert :ok = ProductionSeeds.backfill(Repo)
+
+    assert {:ok, %ReadResult{value: %{total: 3, people: 3}}} =
+             Workforce.employment_summary(ctx.viewer, 73)
+
+    assert {:ok, %ReadResult{value: %Employment{source: :people, employee_number: "C-1"}}} =
+             Workforce.employment(ctx.outsider, 75, other_employee.id)
+
+    assert Repo.get_by(EmploymentRecord, legacy_employee_id: frozen.id) == nil
+  end
+
+  test "the seed provider is registered with the module", _ctx do
+    assert Application.fetch_env!(:bilimbi_people_workforce, :bilimbi_production_seed_provider) ==
+             ProductionSeeds
+
+    behaviours =
+      ProductionSeeds.module_info(:attributes) |> Keyword.get_values(:behaviour) |> List.flatten()
+
+    assert Bilimbi.Base.Database.ProductionSeedProvider in behaviours
+  end
+
+  defp insert_record!(core, identity, overrides) do
+    now = NaiveDateTime.utc_now() |> NaiveDateTime.truncate(:second)
+
+    Repo.insert!(
+      struct!(
+        EmploymentRecord,
+        Keyword.merge(
+          [
+            tenant_id: 41,
+            company_id: core.company_id,
+            legacy_employee_id: core.id,
+            person_id: identity.person_id,
+            affiliation_id: identity.affiliation_id,
+            employee_number: core.employee_number,
+            employment_type: core.employee_type,
+            status: core.status,
+            claimed_at: now
+          ],
+          overrides
+        )
+      )
+    )
   end
 
   defp errors(changeset) do

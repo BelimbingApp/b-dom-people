@@ -4,12 +4,13 @@ defmodule Bilimbi.People.Workforce.Employments do
   # People's employment records and their transition from Core Employee.
   #
   # A record is claimed from a legacy Core Employee row through Core's public
-  # API and keeps that row's ID as the explicit mapping. While Core still
-  # carries the HR columns as a compatibility mirror, every People write goes
-  # through `Employee.update_employee/4` first and then stores Core's result,
-  # so the two never differ because of People. A difference therefore means
-  # Core's deprecated HR path wrote after the claim: reads resolve to Core's
-  # newer values and the next reconcile adopts them.
+  # API and keeps that row's ID as the explicit mapping. People is the writer:
+  # `update/4` stores the change in People first and mirrors it to Core's
+  # deprecated compatibility columns in the same transaction. Until Core
+  # routes its own HR writes to `EmploymentOwner`, Core's deprecated path can
+  # still write afterwards; reads then resolve to Core's newer values
+  # (`:legacy_drift`) and the next reconcile adopts them. Once the owner is
+  # registered, a record is always read as People's.
   #
   # Every write holds the company lock from `Company.lock_writable_company/2`
   # before Core's own locks and People's record, the order Core Employee uses.
@@ -22,6 +23,8 @@ defmodule Bilimbi.People.Workforce.Employments do
   alias Bilimbi.Core.Company
   alias Bilimbi.Core.Employee
   alias Bilimbi.People.Workforce.Employment
+  alias Bilimbi.People.Workforce.EmploymentException
+  alias Bilimbi.People.Workforce.EmploymentOwner
   alias Bilimbi.People.Workforce.EmploymentRecord
   alias Ecto.Changeset
 
@@ -52,9 +55,24 @@ defmodule Bilimbi.People.Workforce.Employments do
   def resolve(core, nil), do: employment(core, legacy_facts(core), nil, :core_legacy)
 
   def resolve(core, %EmploymentRecord{} = record) do
-    if in_step?(record, core),
+    if EmploymentOwner.registered?() or in_step?(record, core),
       do: employment(core, record_facts(record), record, :people),
       else: employment(core, legacy_facts(core), record, :legacy_drift)
+  end
+
+  @doc "A Core Employee summary carrying the employment facts People resolves for it."
+  def overlay(core, record) do
+    employment = resolve(core, record)
+
+    %{
+      core
+      | employee_number: employment.employee_number,
+        employee_type: employment.employment_type,
+        status: employment.status,
+        employment_start: employment.employment_start,
+        employment_end: employment.employment_end,
+        metadata: employment.metadata
+    }
   end
 
   @doc "Reads one employee's employment, with the Core person mapping for an unclaimed row."
@@ -113,7 +131,8 @@ defmodule Bilimbi.People.Workforce.Employments do
   hold yet, and adopts Core's values for claimed rows that drifted.
 
   Idempotent. Agents and every status are claimed. A row Core has no person
-  mapping for, or whose facts are incomplete, stays Core-only and is reported.
+  mapping for, whose facts are incomplete, or whose affiliation another record
+  already holds stays Core-only and is recorded as an exception.
   """
   def reconcile(%Scope{} = scope, company_id) do
     Repo.transaction(fn ->
@@ -122,6 +141,7 @@ defmodule Bilimbi.People.Workforce.Employments do
         records = records(scope, Enum.map(employees, & &1.id), lock: true)
         now = now()
 
+        clear_exceptions(scope, company_id)
         report = %{claimed: 0, adopted: 0, unchanged: 0, unclaimed: []}
 
         employees
@@ -131,6 +151,7 @@ defmodule Bilimbi.People.Workforce.Employments do
               Map.update!(report, outcome, &(&1 + 1))
 
             {:unclaimed, reason} ->
+              record_exception(scope, core, reason, now)
               Map.update!(report, :unclaimed, &[{core.id, reason} | &1])
           end
         end)
@@ -142,8 +163,65 @@ defmodule Bilimbi.People.Workforce.Employments do
   end
 
   @doc """
-  Changes People's employment facts and writes them through to Core's
-  compatibility columns in the same transaction.
+  Claims the legacy rows of every live company in every tenant, as a system
+  seed. Archived companies are frozen and stay Core-only. A company that fails
+  does not stop the others; the seed reports the failures and is retried.
+  """
+  def backfill do
+    failures =
+      for tenant <- Tenancy.list_tenants(),
+          {:ok, scope} <- [Tenancy.scope(tenant.id)],
+          {:ok, companies} <- [Company.list_companies(scope)],
+          company <- companies,
+          {:error, reason} <- [reconcile(scope, company.id)],
+          reason != :company_archived do
+        {company.id, reason}
+      end
+
+    if failures == [], do: :ok, else: {:error, failures}
+  end
+
+  @doc "The company's legacy rows People could not claim, with the reason."
+  def exceptions(%Scope{} = scope, company_id) do
+    rows =
+      Repo.all(
+        from(row in Tenancy.scope_query(EmploymentException, scope),
+          where: row.company_id == ^company_id,
+          order_by: row.legacy_employee_id
+        )
+      )
+
+    case rows do
+      [] ->
+        []
+
+      rows ->
+        {:ok, employees} =
+          Employee.get_tenant_employees(scope, Enum.map(rows, & &1.legacy_employee_id))
+
+        Enum.flat_map(rows, fn row ->
+          case Map.get(employees, row.legacy_employee_id) do
+            %{company_id: ^company_id} = core ->
+              [
+                %{
+                  employee_id: core.id,
+                  employee_number: core.employee_number,
+                  full_name: core.full_name,
+                  reason: String.to_existing_atom(row.reason),
+                  detected_at: row.detected_at
+                }
+              ]
+
+            _gone_or_moved ->
+              []
+          end
+        end)
+    end
+  end
+
+  @doc """
+  Changes People's employment facts and mirrors them to Core's compatibility
+  columns in the same transaction.
   """
   def update(%Scope{} = scope, company_id, employee_id, attrs) do
     Repo.transaction(fn ->
@@ -158,8 +236,8 @@ defmodule Bilimbi.People.Workforce.Employments do
           |> EmploymentRecord.update_changeset(attrs)
 
         with {:ok, changes} <- valid_changes(changeset),
-             {:ok, core} <- write_core(scope, core, changes, changeset),
-             {:ok, record} <- store(scope, core, record) do
+             {:ok, record} <- store(scope, core, record, current, changes),
+             {:ok, core} <- mirror(scope, core, changes, changeset) do
           resolve(core, record)
         else
           {:error, reason} -> Repo.rollback(reason)
@@ -170,12 +248,49 @@ defmodule Bilimbi.People.Workforce.Employments do
     end)
   end
 
+  @doc """
+  Core's deprecated HR path wrote the row in the caller's transaction: adopt
+  its values, or claim the row. Never refuses, so Core's write stands.
+  """
+  def legacy_written(%Scope{} = scope, employee_id) do
+    with {:ok, core} <- Employee.get_employee(scope, employee_id) do
+      case records(scope, [employee_id], lock: true) do
+        %{^employee_id => record} ->
+          record |> Changeset.change(legacy_facts(core)) |> Repo.update!()
+          :ok
+
+        _unclaimed ->
+          claim_written(scope, core)
+      end
+    else
+      _gone -> :ok
+    end
+  end
+
+  defp claim_written(scope, core) do
+    now = now()
+
+    # Core already authorized the write. The mapping holds IDs only, so the
+    # read needs no contact grant from the actor who edited the HR fields.
+    with {:ok, system} <- Tenancy.scope(Scope.tenant_id(scope)),
+         {:ok, identity} <- identity(system, core),
+         {:ok, _record} <- insert(scope, core, identity, legacy_facts(core), now) do
+      :ok
+    else
+      {:error, reason} when reason in [:invalid_facts, :duplicate_affiliation] ->
+        record_exception(scope, core, reason, now)
+
+      _no_mapping ->
+        record_exception(scope, core, :no_person_mapping, now)
+    end
+  end
+
   defp reconcile_one(scope, core, nil, now) do
     case identity(scope, core) do
       {:ok, identity} ->
-        case insert(scope, core, identity, now) do
+        case insert(scope, core, identity, legacy_facts(core), now) do
           {:ok, _record} -> :claimed
-          {:error, _changeset} -> {:unclaimed, :invalid_facts}
+          {:error, reason} -> {:unclaimed, reason}
         end
 
       :error ->
@@ -198,9 +313,9 @@ defmodule Bilimbi.People.Workforce.Employments do
   defp valid_changes(%Changeset{valid?: true, changes: changes}), do: {:ok, changes}
   defp valid_changes(%Changeset{} = changeset), do: {:error, %{changeset | action: :update}}
 
-  defp write_core(_scope, core, changes, _changeset) when map_size(changes) == 0, do: {:ok, core}
+  defp mirror(_scope, core, changes, _changeset) when map_size(changes) == 0, do: {:ok, core}
 
-  defp write_core(scope, core, changes, changeset) do
+  defp mirror(scope, core, changes, changeset) do
     attrs = Map.new(changes, fn {field, value} -> {Map.fetch!(@core_fields, field), value} end)
 
     case Employee.update_employee(scope, core.company_id, core.id, attrs) do
@@ -221,13 +336,13 @@ defmodule Bilimbi.People.Workforce.Employments do
     |> Map.put(:action, :update)
   end
 
-  defp store(scope, core, nil) do
+  # An unclaimed employee is claimed with the change applied; a claimed one
+  # starts from the facts it currently resolves to, so a drifted Core value
+  # that the change does not touch is kept.
+  defp store(scope, core, nil, _current, changes) do
     case identity(scope, core) do
       {:ok, identity} ->
-        case insert(scope, core, identity, now()) do
-          {:ok, record} -> {:ok, record}
-          {:error, changeset} -> {:error, changeset}
-        end
+        insert(scope, core, identity, Map.merge(legacy_facts(core), changes), now())
 
       :error ->
         {:error, :no_person_mapping}
@@ -237,24 +352,75 @@ defmodule Bilimbi.People.Workforce.Employments do
     end
   end
 
-  defp store(_scope, core, record) do
-    {:ok, record |> Changeset.change(legacy_facts(core)) |> Repo.update!()}
+  defp store(_scope, _core, record, current, changes) do
+    facts = current |> Map.take([:metadata | EmploymentRecord.facts()]) |> Map.merge(changes)
+    {:ok, record |> Changeset.change(facts) |> Repo.update!()}
   end
 
-  defp insert(scope, core, identity, now) do
-    %EmploymentRecord{}
-    |> EmploymentRecord.claim_changeset(
-      Map.merge(legacy_facts(core), %{
-        tenant_id: Scope.tenant_id(scope),
-        company_id: identity.company_id,
-        legacy_employee_id: core.id,
-        person_id: identity.person_id,
-        affiliation_id: identity.affiliation_id,
-        legacy_created_at: core.created_at,
-        claimed_at: now
-      })
+  # The insert runs in a savepoint: a unique violation aborts a PostgreSQL
+  # transaction, and a conflict must leave the rest of the claim standing.
+  defp insert(scope, core, identity, facts, now) do
+    changeset =
+      EmploymentRecord.claim_changeset(
+        %EmploymentRecord{},
+        Map.merge(facts, %{
+          tenant_id: Scope.tenant_id(scope),
+          company_id: identity.company_id,
+          legacy_employee_id: core.id,
+          person_id: identity.person_id,
+          affiliation_id: identity.affiliation_id,
+          legacy_created_at: core.created_at,
+          claimed_at: now
+        })
+      )
+
+    case Repo.insert(changeset, mode: :savepoint) do
+      {:ok, record} ->
+        clear_exception(scope, core.id)
+        {:ok, record}
+
+      {:error, %Changeset{errors: errors}} ->
+        if Keyword.has_key?(errors, :affiliation_id),
+          do: {:error, :duplicate_affiliation},
+          else: {:error, :invalid_facts}
+    end
+  end
+
+  defp record_exception(scope, core, reason, now) do
+    Repo.insert_all(
+      EmploymentException,
+      [
+        %{
+          tenant_id: Scope.tenant_id(scope),
+          company_id: core.company_id,
+          legacy_employee_id: core.id,
+          reason: Atom.to_string(reason),
+          detected_at: now,
+          inserted_at: now,
+          updated_at: now
+        }
+      ],
+      on_conflict: {:replace, [:reason, :detected_at, :updated_at]},
+      conflict_target: [:legacy_employee_id]
     )
-    |> Repo.insert()
+
+    :ok
+  end
+
+  defp clear_exception(scope, employee_id) do
+    Repo.delete_all(
+      from(row in Tenancy.scope_query(EmploymentException, scope),
+        where: row.legacy_employee_id == ^employee_id
+      )
+    )
+  end
+
+  defp clear_exceptions(scope, company_id) do
+    Repo.delete_all(
+      from(row in Tenancy.scope_query(EmploymentException, scope),
+        where: row.company_id == ^company_id
+      )
+    )
   end
 
   # The employer is the affiliation's company, which must be the employee's.

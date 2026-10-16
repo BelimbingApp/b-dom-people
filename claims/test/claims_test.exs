@@ -549,6 +549,18 @@ defmodule Bilimbi.People.ClaimsTest do
     assert {:ok, %{status: "withdrawn"}} = Claims.withdraw_request(claimant, 73, request.id)
   end
 
+  test "assignable employees carry the employee number People holds", %{
+    scope: scope,
+    employee: employee,
+    manager: manager
+  } do
+    Bilimbi.People.Workforce.TestFixtures.hold_in_people!(scope, employee,
+      employee_number: "PEO-1"
+    )
+
+    assert {:ok, [%{employee_number: "PEO-1"}]} = Claims.assignable_employees(manager, 73)
+  end
+
   test "operator writes and private reads refuse a system scope and a revoked grant", %{
     scope: scope,
     employee: employee,

@@ -6,8 +6,9 @@ boundaries. The reference module owns fresh People reference and calendar
 tables, a company-scoped operator route, and an API. The workforce module
 exposes a scoped native read seam and a per-company operator settings page,
 and owns employment records: employee numbers, employment types, statuses and
-dates, referencing the Core person and affiliation and claimed from Core
-Employee's legacy HR columns.
+dates, referencing the Core person and affiliation. A production seed claims
+the existing Core Employee HR rows; People is then the writer and Core's
+columns stay as a deprecated mirror until a later step removes them.
 The employee workspace owns People-specific profiles, portal eligibility,
 change requests, and saved views, with a workbench under the People menu.
 Attendance owns clock facts, day projections, company rules, shift templates,

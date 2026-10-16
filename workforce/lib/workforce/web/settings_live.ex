@@ -6,9 +6,10 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   route capability, so an operator only reaches companies they may manage.
 
   The employment records section shows where the company's employment facts
-  come from and lets an operator holding `people.workforce.employment.manage`
-  claim the legacy Core Employee HR rows into People. The `can_*?` assigns
-  only decide what renders; the facade authorizes each read and the claim.
+  come from, lists the legacy Core Employee rows People could not claim and
+  why, and lets an operator holding `people.workforce.employment.manage`
+  re-run the claim that the production seed ran. The `can_*?` assigns only
+  decide what renders; the facade authorizes each read and the claim.
   """
 
   use Bilimbi.Base.UI, :live_view
@@ -132,7 +133,12 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
   end
 
   defp assign_employment(socket, nil),
-    do: assign(socket, employment_counts: nil, can_manage_employment?: false)
+    do:
+      assign(socket,
+        employment_counts: nil,
+        employment_exceptions: [],
+        can_manage_employment?: false
+      )
 
   defp assign_employment(socket, company_id) do
     scope = socket.assigns.current_scope.scope
@@ -143,8 +149,15 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
         {:error, _reason} -> nil
       end
 
+    exceptions =
+      case Workforce.employment_exceptions(scope, company_id) do
+        {:ok, %ReadResult{value: exceptions}} -> exceptions
+        {:error, _reason} -> []
+      end
+
     assign(socket,
       employment_counts: counts,
+      employment_exceptions: exceptions,
       can_manage_employment?:
         Authorization.allowed?(scope, company_id, @employment_manage_capability)
     )
@@ -163,9 +176,17 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
 
     case length(unclaimed) do
       0 -> base
-      count -> base <> " #{count} could not be claimed and stay in Core HR."
+      count -> base <> " #{count} could not be claimed and are listed below."
     end
   end
+
+  @doc "Operator-facing reason a legacy row could not be claimed."
+  @spec exception_label(atom()) :: String.t()
+  def exception_label(:no_person_mapping), do: "Core has no person record for this employee."
+  def exception_label(:invalid_facts), do: "Core's number, type or status is missing."
+
+  def exception_label(:duplicate_affiliation),
+    do: "Another employee already holds this person's employment."
 
   @doc """
   Operator-facing notice for a working-status read that is not current, or
@@ -214,7 +235,11 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
             name="company_id"
             class="mt-2.5 w-full rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink"
           >
-            <option :for={company <- @companies} value={company.id} selected={company.id == @company.id}>
+            <option
+              :for={company <- @companies}
+              value={company.id}
+              selected={company.id == @company.id}
+            >
               {company.name}
             </option>
           </select>
@@ -262,8 +287,8 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
         >
           <h2 class="text-sm font-medium text-ink-strong">Employment records</h2>
           <p class="mt-0.5 text-xs text-ink-subtle">
-            People owns employee numbers, employment types, statuses and dates. Claiming copies
-            them from Core HR without changing Core's records.
+            People owns employee numbers, employment types, statuses and dates. Existing
+            Core HR records are claimed automatically; Core's columns remain a mirror.
           </p>
           <dl class="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-ink sm:grid-cols-4">
             <div>
@@ -285,8 +310,20 @@ defmodule Bilimbi.People.Workforce.Web.SettingsLive do
           </dl>
           <div :if={@can_manage_employment?} class="mt-2.5 flex justify-end">
             <.button id="workforce-employment-claim" type="button" phx-click="reconcile_employments">
-              Claim from Core HR
+              Claim again from Core HR
             </.button>
+          </div>
+          <div :if={@employment_exceptions != []} id="workforce-employment-exceptions" class="mt-4">
+            <h3 class="text-xs font-medium text-ink-strong">Not claimed</h3>
+            <ul class="mt-1 divide-y divide-line text-sm text-ink">
+              <li
+                :for={entry <- @employment_exceptions}
+                id={"workforce-employment-exception-#{entry.employee_id}"}
+                class="py-1"
+              >
+                {entry.full_name} ({entry.employee_number}): {exception_label(entry.reason)}
+              </li>
+            </ul>
           </div>
         </section>
       </.page>
